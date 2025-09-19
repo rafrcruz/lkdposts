@@ -25,6 +25,7 @@ const config = {
   },
   database: {
     url: env.DATABASE_URL,
+    pooledUrl: env.PRISMA_URL && env.PRISMA_URL.length > 0 ? env.PRISMA_URL : null,
   },
   cache: {
     maxAgeSeconds: env.CACHE_MAX_AGE_SECONDS,

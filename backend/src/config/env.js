@@ -64,6 +64,7 @@ const envSchema = z.object({
   SESSION_RENEW_THRESHOLD_SECONDS: z.preprocess((value) => toNumber(value, 900), z.number().int().nonnegative()),
   SUPERADMIN_EMAIL: z.string().email(),
   SENTRY_DSN_BACKEND: z.string().optional().transform((value) => (value ? value.trim() : '')),
+  PRISMA_URL: z.string().url().optional().transform((value) => (value ? value.trim() : '')),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -74,3 +75,4 @@ if (!parsedEnv.success) {
 }
 
 module.exports = parsedEnv.data;
+
