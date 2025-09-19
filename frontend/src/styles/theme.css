@@ -1,0 +1,53 @@
+:root {
+  color-scheme: light dark;
+  --color-background: 210 40% 98%;
+  --color-surface: 0 0% 100%;
+  --color-foreground: 220 15% 15%;
+  --color-muted: 215 16% 90%;
+  --color-muted-foreground: 220 9% 46%;
+  --color-border: 216 12% 84%;
+  --color-ring: 221 83% 53%;
+  --color-primary: 221 83% 53%;
+  --color-primary-foreground: 210 40% 98%;
+  --color-accent: 199 89% 48%;
+  --color-accent-foreground: 210 40% 98%;
+  --color-success: 142 72% 29%;
+  --color-success-foreground: 142 16% 93%;
+  --color-warning: 37 92% 50%;
+  --color-warning-foreground: 48 96% 89%;
+  --color-danger: 0 84% 60%;
+  --color-danger-foreground: 0 0% 100%;
+  --shadow-xs: 0 1px 2px 0 hsl(220 15% 15% / 0.05);
+  --shadow-sm: 0 1px 3px 0 hsl(220 15% 15% / 0.08), 0 1px 2px -1px hsl(220 15% 15% / 0.08);
+  --shadow-md: 0 4px 6px -1px hsl(220 15% 15% / 0.1), 0 2px 4px -2px hsl(220 15% 15% / 0.1);
+  --shadow-lg: 0 10px 15px -3px hsl(220 15% 15% / 0.1), 0 4px 6px -4px hsl(220 15% 15% / 0.1);
+  --radius-base: 0.75rem;
+  --radius-sm: calc(var(--radius-base) - 0.25rem);
+  --radius-md: var(--radius-base);
+  --radius-lg: calc(var(--radius-base) + 0.25rem);
+  --transition-base: 160ms ease;
+}
+
+[data-theme='dark'] {
+  --color-background: 224 43% 7%;
+  --color-surface: 224 43% 12%;
+  --color-foreground: 210 40% 98%;
+  --color-muted: 224 33% 16%;
+  --color-muted-foreground: 220 9% 70%;
+  --color-border: 224 33% 25%;
+  --color-ring: 199 89% 60%;
+  --color-primary: 199 89% 60%;
+  --color-primary-foreground: 210 40% 98%;
+  --color-accent: 267 83% 70%;
+  --color-accent-foreground: 240 40% 12%;
+  --color-success: 142 61% 40%;
+  --color-success-foreground: 142 16% 93%;
+  --color-warning: 45 93% 47%;
+  --color-warning-foreground: 45 100% 88%;
+  --color-danger: 0 84% 63%;
+  --color-danger-foreground: 0 0% 100%;
+  --shadow-xs: 0 1px 2px 0 hsl(222 47% 11% / 0.6);
+  --shadow-sm: 0 2px 4px 0 hsl(222 47% 11% / 0.5);
+  --shadow-md: 0 10px 15px -3px hsl(222 47% 11% / 0.55);
+  --shadow-lg: 0 20px 25px -5px hsl(222 47% 11% / 0.45);
+}

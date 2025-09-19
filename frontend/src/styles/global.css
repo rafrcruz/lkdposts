@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    @apply border-border;
+  }
+
+  :root {
+    font-feature-settings: 'kern' 1, 'liga' 1, 'clig' 1;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground font-sans antialiased transition-colors duration-200;
+  }
+
+  main {
+    @apply min-h-[calc(100vh-4rem)];
+  }
+
+  a {
+    @apply text-primary underline-offset-4 transition-colors duration-200 hover:text-primary/80;
+  }
+
+  button {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+}
+
+@layer components {
+  .container-responsive {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .card {
+    @apply rounded-lg border border-border bg-surface shadow-sm;
+  }
+}
+
+@layer utilities {
+  .flex-center {
+    @apply flex items-center justify-center;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}

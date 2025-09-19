@@ -1,0 +1,140 @@
+name: Sonar → GitHub Issues (digest)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate Sonar digest & upsert GitHub issue
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_BRANCH: ${{ vars.SONAR_BRANCH }}   # opcional; script usa 'main' se vazio
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p .github/scripts
+          cat > .github/scripts/sonar-digest.mjs <<'EOF'
+          import fs from 'node:fs/promises';
+          import { Buffer } from 'node:buffer';
+
+          const SONAR_TOKEN = process.env.SONAR_TOKEN;
+          const PROJECT = process.env.SONAR_PROJECT_KEY;
+          const BRANCH = process.env.SONAR_BRANCH || 'main';
+          const GH_TOKEN = process.env.GITHUB_TOKEN;
+          const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
+
+          const SONAR_API = 'https://sonarcloud.io/api';
+          const title = `📋 SonarCloud – Backlog de issues abertas (branch: ${BRANCH})`;
+          const sevOrder = { BLOCKER: 0, CRITICAL: 1, MAJOR: 2, MINOR: 3, INFO: 4 };
+
+          function assertEnv(name, val) {
+            if (!val) throw new Error(`Missing required env: ${name}`);
+          }
+
+          async function fetchAllIssues() {
+            assertEnv('SONAR_TOKEN', SONAR_TOKEN);
+            assertEnv('SONAR_PROJECT_KEY', PROJECT);
+            let p = 1, all = [];
+            const auth = 'Basic ' + Buffer.from(`${SONAR_TOKEN}:`).toString('base64');
+            while (true) {
+              const url = `${SONAR_API}/issues/search?projects=${encodeURIComponent(PROJECT)}&branch=${encodeURIComponent(BRANCH)}&resolved=false&types=BUG,VULNERABILITY,CODE_SMELL&ps=500&p=${p}`;
+              const res = await fetch(url, { headers: { Authorization: auth, Accept: 'application/json' } });
+              if (!res.ok) throw new Error(`Sonar API error ${res.status}: ${await res.text()}`);
+              const data = await res.json();
+              all = all.concat(data.issues || []);
+              if (all.length >= (data.total || 0)) break;
+              p++;
+            }
+            all.sort((a, b) => (sevOrder[a.severity]-sevOrder[b.severity]) || a.type.localeCompare(b.type));
+            return all;
+          }
+
+          function sonarIssueLink(issueKey) {
+            return `https://sonarcloud.io/project/issues?id=${encodeURIComponent(PROJECT)}&open=${issueKey}&resolved=false&branch=${encodeURIComponent(BRANCH)}`;
+          }
+          function shorten(path = '', n = 80) { return path.length > n ? '…' + path.slice(-n) : path; }
+
+          function toMarkdown(issues) {
+            const total = issues.length;
+            const bySev = { BLOCKER:0, CRITICAL:0, MAJOR:0, MINOR:0, INFO:0 };
+            issues.forEach(i => bySev[i.severity] = (bySev[i.severity]||0)+1);
+
+            let md = '';
+            md += `> Atualizado: ${new Date().toISOString()}\n\n`;
+            md += `**Total abertas**: ${total} — **BLOCKER** ${bySev.BLOCKER} | **CRITICAL** ${bySev.CRITICAL} | **MAJOR** ${bySev.MAJOR} | **MINOR** ${bySev.MINOR} | **INFO** ${bySev.INFO}\n\n`;
+            md += `➡️ Ver no SonarCloud: https://sonarcloud.io/project/issues?id=${encodeURIComponent(PROJECT)}&branch=${encodeURIComponent(BRANCH)}&resolved=false\n\n`;
+            md += `### Checklist para ${BRANCH}\n`;
+            if (!total) return md + `Nenhuma issue aberta 🎉\n`;
+            for (const i of issues) {
+              const file = i.component?.split(':').slice(1).join(':') || i.component || '';
+              const line = i.line ? `:${i.line}` : '';
+              const msg = i.message?.replace(/\s+/g, ' ').trim();
+              const rule = i.rule || '';
+              const key = i.key;
+              md += `- [ ] **${i.severity}** • ${i.type} • \`${rule}\` — ${msg}  \n  ${shorten(file)}${line} • [Abrir no Sonar](${sonarIssueLink(key)}) <!-- sonar-key:${key} -->\n`;
+            }
+            md += `\n---\nDica: marque @codex aqui para sugerir correções arquivo a arquivo.\n`;
+            return md;
+          }
+
+          async function ensureLabels(labels) {
+            for (const name of labels) {
+              await fetch(`https://api.github.com/repos/${owner}/${repo}/labels`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${GH_TOKEN}`, 'Accept': 'application/vnd.github+json' },
+                body: JSON.stringify({ name })
+              }).catch(()=>{});
+            }
+          }
+
+          async function upsertIssue(title, body) {
+            assertEnv('GITHUB_TOKEN', GH_TOKEN);
+            assertEnv('GITHUB_REPOSITORY', process.env.GITHUB_REPOSITORY);
+            const q = encodeURIComponent(`repo:${owner}/${repo} in:title "${title}" state:open`);
+            const searchRes = await fetch(`https://api.github.com/search/issues?q=${q}`, {
+              headers: { 'Authorization': `Bearer ${GH_TOKEN}`, 'Accept': 'application/vnd.github+json' }
+            });
+            if (!searchRes.ok) throw new Error(`GitHub search error ${searchRes.status}: ${await searchRes.text()}`);
+            const search = await searchRes.json();
+            if (search.total_count > 0) {
+              const number = search.items[0].number;
+              const upd = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${number}`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${GH_TOKEN}`, 'Accept': 'application/vnd.github+json' },
+                body: JSON.stringify({ body, labels: ['sonarcloud', 'tech-debt'] })
+              });
+              if (!upd.ok) throw new Error(`GitHub update issue error ${upd.status}: ${await upd.text()}`);
+              return;
+            }
+            const create = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${GH_TOKEN}`, 'Accept': 'application/vnd.github+json' },
+              body: JSON.stringify({ title, body, labels: ['sonarcloud', 'tech-debt'] })
+            });
+            if (!create.ok) throw new Error(`GitHub create issue error ${create.status}: ${await create.text()}`);
+          }
+
+          (async () => {
+            const issues = await fetchAllIssues();
+            const md = toMarkdown(issues);
+            await fs.writeFile('sonarcloud-report.md', md, 'utf8');
+            await ensureLabels(['sonarcloud','tech-debt']);
+            await upsertIssue(title, md);
+            console.log(`Report generated with ${issues.length} issues`);
+          })().catch(err => { console.error(err); process.exit(1); });
+          EOF
+          node .github/scripts/sonar-digest.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonarcloud-report
+          path: sonarcloud-report.md
