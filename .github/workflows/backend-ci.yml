@@ -31,6 +31,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Configure env for tests
+        run: |
+          cat <<EOF > .env
+          ${{ secrets.BACKEND_ENV }}
+          EOF
+          cat <<EOF > .env.test
+          ${{ secrets.BACKEND_ENV }}
+          EOF
+
       - name: Lint (silencioso)
         run: npm run lint:ci --quiet || true
 
