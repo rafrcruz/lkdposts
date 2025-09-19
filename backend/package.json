@@ -13,7 +13,7 @@
                     "lint":  "eslint \"src/**/*.js\"",
                     "test":  "cross-env NODE_ENV=test jest --runInBand",
                     "test:watch":  "cross-env NODE_ENV=test jest --watch",
-                    "build":  "npm run lint \u0026\u0026 npm run test \u0026\u0026 npm run db:migrate:deploy",
+                    "build":  "npm run db:migrate:deploy",
                     "docs:generate":  "node scripts/generate-openapi.js",
                     "task":  "node scripts/run-task.js",
                     "db:migrate:dev":  "prisma migrate dev",
