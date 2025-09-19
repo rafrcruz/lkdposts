@@ -3,12 +3,23 @@ const http = require('http');
 const app = require('./app');
 const config = require('./config');
 const { disconnectDatabase } = require('./lib/prisma');
+const { initializeAuth } = require('./services/auth.service');
 
 const server = http.createServer(app);
 
-server.listen(config.server.port, config.server.host, () => {
-  console.log('Backend listening on http://' + config.server.host + ':' + config.server.port);
-});
+const startServer = async () => {
+  try {
+    await initializeAuth();
+    server.listen(config.server.port, config.server.host, () => {
+      console.log('Backend listening on http://' + config.server.host + ':' + config.server.port);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 let isShuttingDown = false;
 

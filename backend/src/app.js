@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const hpp = require('hpp');
 const morgan = require('morgan');
 const xssClean = require('xss-clean');
+const cookieParser = require('cookie-parser');
 
 const contentSecurityPolicy = helmet.contentSecurityPolicy;
 
@@ -53,49 +54,58 @@ const urlEncodedParser = express.urlencoded({
 app.use(attachRequestId);
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(helmet({
-  crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: {
-    useDefaults: true,
-    directives: {
-      ...contentSecurityPolicy.getDefaultDirectives(),
-      'script-src': ["'self'"],
+app.use(
+  helmet({
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        ...contentSecurityPolicy.getDefaultDirectives(),
+        'script-src': ["'self'", 'https://accounts.google.com', 'https://apis.google.com'],
+        'frame-src': ["'self'", 'https://accounts.google.com'],
+        'connect-src': ["'self'", 'https://accounts.google.com', 'https://oauth2.googleapis.com'],
+      },
     },
-  },
-  referrerPolicy: { policy: 'no-referrer' },
-}));
+    referrerPolicy: { policy: 'no-referrer' },
+  })
+);
 app.use(hpp());
 app.use(compression());
 app.use(metricsMiddleware);
 app.use(globalRateLimiter);
 app.use(morgan(config.isProduction ? 'combined' : 'dev'));
-app.use((req, res, next) => jsonParser(req, res, (error) => {
-  if (error) {
-    return next(
-      new ApiError({
-        statusCode: 400,
-        message: 'Invalid JSON payload',
-        code: 'INVALID_JSON',
-        details: { error: error.message },
-      })
-    );
-  }
-  return next();
-}));
-app.use((req, res, next) => urlEncodedParser(req, res, (error) => {
-  if (error) {
-    return next(
-      new ApiError({
-        statusCode: 400,
-        message: 'Invalid URL encoded payload',
-        code: 'INVALID_FORM_BODY',
-        details: { error: error.message },
-      })
-    );
-  }
-  return next();
-}));
+app.use((req, res, next) =>
+  jsonParser(req, res, (error) => {
+    if (error) {
+      return next(
+        new ApiError({
+          statusCode: 400,
+          message: 'Invalid JSON payload',
+          code: 'INVALID_JSON',
+          details: { error: error.message },
+        })
+      );
+    }
+    return next();
+  })
+);
+app.use((req, res, next) =>
+  urlEncodedParser(req, res, (error) => {
+    if (error) {
+      return next(
+        new ApiError({
+          statusCode: 400,
+          message: 'Invalid URL encoded payload',
+          code: 'INVALID_FORM_BODY',
+          details: { error: error.message },
+        })
+      );
+    }
+    return next();
+  })
+);
 app.use(xssClean());
+app.use(cookieParser(config.auth.session.secret));
 app.use(responseEnvelope);
 
 app.get('/', (req, res) => {
@@ -109,4 +119,3 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 module.exports = app;
-

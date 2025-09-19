@@ -1,6 +1,18 @@
 ﻿import { ENV } from '@/config/env';
 import { z, type ZodSchema } from 'zod';
 
+export class HttpError extends Error {
+  status: number;
+  payload?: unknown;
+
+  constructor(message: string, status: number, payload?: unknown) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 const envelopeSchema = z.object({
   success: z.boolean(),
   data: z.unknown().optional(),
@@ -21,45 +33,93 @@ const buildUrl = (path: string, baseUrl: string) => {
   }
 };
 
-export async function getJson<T>(path: string, schema?: ZodSchema<T>): Promise<T> {
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+interface RequestOptions<TBody> {
+  method?: HttpMethod;
+  body?: TBody;
+  headers?: Record<string, string>;
+}
+
+interface JsonRequestOptions<TBody, TResponse> extends RequestOptions<TBody> {
+  schema?: ZodSchema<TResponse>;
+}
+
+async function requestJson<TResponse, TBody = unknown>(path: string, options: JsonRequestOptions<TBody, TResponse> = {}) {
+  const { method = 'GET', body, schema, headers = {} } = options;
   const url = buildUrl(path, ENV.API_URL);
-  const response = await fetch(url, {
-    method: 'GET',
+
+  const requestInit: RequestInit = {
+    method,
+    credentials: 'include',
     headers: {
       Accept: 'application/json',
+      ...headers,
     },
-    credentials: 'include',
-  });
+  };
 
+  if (body !== undefined) {
+    requestInit.body = JSON.stringify(body);
+    requestInit.headers = {
+      'Content-Type': 'application/json',
+      ...requestInit.headers,
+    } as HeadersInit;
+  }
+
+  const response = await fetch(url, requestInit);
   const contentType = response.headers.get('content-type') ?? '';
   const isJson = contentType.includes('application/json');
   const payload: unknown = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
-    const message = isJson && typeof payload === 'object' && payload !== null && 'message' in payload
-      ? String((payload as Record<string, unknown>).message)
-      : response.statusText || 'Request failed';
-    throw new Error(message);
+    let message = response.statusText || 'Request failed';
+
+    if (isJson && typeof payload === 'object' && payload !== null) {
+      const envelope = envelopeSchema.safeParse(payload);
+      if (envelope.success && !envelope.data.success) {
+        message = envelope.data.error?.message ?? message;
+      } else if ('message' in (payload as Record<string, unknown>)) {
+        message = String((payload as Record<string, unknown>).message);
+      }
+    }
+
+    throw new HttpError(message, response.status, payload);
   }
 
   if (!isJson) {
-    if (schema) {
-      throw new Error('Expected JSON response but received another content type');
-    }
-    return payload as T;
+    return payload as TResponse;
   }
 
   const envelope = envelopeSchema.safeParse(payload);
 
   if (envelope.success) {
     if (!envelope.data.success) {
-      throw new Error(envelope.data.error?.message ?? 'Request failed');
+      throw new HttpError(envelope.data.error?.message ?? 'Request failed', response.status, envelope.data.error);
     }
 
-    const data = envelope.data.data as T;
+    const data = envelope.data.data as TResponse;
     return schema ? schema.parse(data) : data;
   }
 
-  return schema ? schema.parse(payload) : (payload as T);
+  return schema ? schema.parse(payload) : (payload as TResponse);
 }
 
+export function getJson<TResponse>(path: string, schema?: ZodSchema<TResponse>) {
+  return requestJson<TResponse>(path, { method: 'GET', schema });
+}
+
+export function postJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodSchema<TResponse>) {
+  return requestJson<TResponse, TBody>(path, { method: 'POST', body, schema });
+}
+
+export function patchJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodSchema<TResponse>) {
+  return requestJson<TResponse, TBody>(path, { method: 'PATCH', body, schema });
+}
+
+export function deleteJson<TResponse>(path: string, schema?: ZodSchema<TResponse>) {
+  return requestJson<TResponse, undefined>(path, { method: 'DELETE', schema });
+}
+
+export function putJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodSchema<TResponse>) {
+  return requestJson<TResponse, TBody>(path, { method: 'PUT', body, schema });
+}
