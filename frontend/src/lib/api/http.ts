@@ -1,5 +1,5 @@
-﻿import { ENV } from '@/config/env';
-import { z, type ZodSchema } from 'zod';
+import { ENV } from '@/config/env';
+import { z, type ZodType, type ZodTypeDef } from 'zod';
 
 export class HttpError extends Error {
   status: number;
@@ -46,7 +46,7 @@ const extractErrorMessage = (payload: unknown, fallback: string) => {
 
 const parseJsonPayload = <TResponse>(
   payload: unknown,
-  schema: ZodSchema<TResponse> | undefined,
+  schema: ZodType<TResponse, ZodTypeDef, unknown> | undefined,
   status: number,
 ) => {
   const envelope = envelopeSchema.safeParse(payload);
@@ -80,7 +80,7 @@ type RequestOptions<TBody> = {
 };
 
 type JsonRequestOptions<TBody, TResponse> = RequestOptions<TBody> & {
-  schema?: ZodSchema<TResponse>;
+  schema?: ZodType<TResponse, ZodTypeDef, unknown>;
 };
 
 async function requestJson<TResponse, TBody = unknown>(path: string, options: JsonRequestOptions<TBody, TResponse> = {}) {
@@ -122,22 +122,23 @@ async function requestJson<TResponse, TBody = unknown>(path: string, options: Js
   return parseJsonPayload<TResponse>(payload, schema, response.status);
 }
 
-export function getJson<TResponse>(path: string, schema?: ZodSchema<TResponse>) {
+export function getJson<TResponse>(path: string, schema?: ZodType<TResponse, ZodTypeDef, unknown>) {
   return requestJson<TResponse>(path, { method: 'GET', schema });
 }
 
-export function postJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodSchema<TResponse>) {
+export function postJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodType<TResponse, ZodTypeDef, unknown>) {
   return requestJson<TResponse, TBody>(path, { method: 'POST', body, schema });
 }
 
-export function patchJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodSchema<TResponse>) {
+export function patchJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodType<TResponse, ZodTypeDef, unknown>) {
   return requestJson<TResponse, TBody>(path, { method: 'PATCH', body, schema });
 }
 
-export function deleteJson<TResponse>(path: string, schema?: ZodSchema<TResponse>) {
+export function deleteJson<TResponse>(path: string, schema?: ZodType<TResponse, ZodTypeDef, unknown>) {
   return requestJson<TResponse, undefined>(path, { method: 'DELETE', schema });
 }
 
-export function putJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodSchema<TResponse>) {
+export function putJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodType<TResponse, ZodTypeDef, unknown>) {
   return requestJson<TResponse, TBody>(path, { method: 'PUT', body, schema });
 }
+

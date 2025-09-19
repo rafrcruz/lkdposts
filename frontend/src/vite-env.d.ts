@@ -1,9 +1,9 @@
-﻿/* eslint-disable @typescript-eslint/consistent-type-definitions, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/consistent-type-definitions, @typescript-eslint/no-unused-vars */
 /// <reference types="vite/client" />
 
-declare const __APP_VERSION__: string;
-
 declare global {
+  const __APP_VERSION__: string;
+
   interface Window {
     google?: {
       accounts?: {
@@ -23,4 +23,3 @@ declare global {
 }
 
 export {};
-
