@@ -25,6 +25,44 @@ const envelopeSchema = z.object({
     .optional(),
 });
 
+const DEFAULT_ERROR_MESSAGE = 'Request failed';
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const extractErrorMessage = (payload: unknown, fallback: string) => {
+  if (!isRecord(payload)) {
+    return fallback;
+  }
+
+  const envelope = envelopeSchema.safeParse(payload);
+  if (envelope.success && !envelope.data.success) {
+    return envelope.data.error?.message ?? fallback;
+  }
+
+  const { message } = payload as { message?: unknown };
+  return typeof message === 'string' ? message : fallback;
+};
+
+const parseJsonPayload = <TResponse>(
+  payload: unknown,
+  schema: ZodSchema<TResponse> | undefined,
+  status: number,
+) => {
+  const envelope = envelopeSchema.safeParse(payload);
+
+  if (envelope.success) {
+    if (!envelope.data.success) {
+      throw new HttpError(envelope.data.error?.message ?? DEFAULT_ERROR_MESSAGE, status, envelope.data.error);
+    }
+
+    const data = envelope.data.data as TResponse;
+    return schema ? schema.parse(data) : data;
+  }
+
+  return schema ? schema.parse(payload) : (payload as TResponse);
+};
+
 const buildUrl = (path: string, baseUrl: string) => {
   try {
     return new URL(path, baseUrl);
@@ -35,15 +73,15 @@ const buildUrl = (path: string, baseUrl: string) => {
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-interface RequestOptions<TBody> {
+type RequestOptions<TBody> = {
   method?: HttpMethod;
   body?: TBody;
   headers?: Record<string, string>;
-}
+};
 
-interface JsonRequestOptions<TBody, TResponse> extends RequestOptions<TBody> {
+type JsonRequestOptions<TBody, TResponse> = RequestOptions<TBody> & {
   schema?: ZodSchema<TResponse>;
-}
+};
 
 async function requestJson<TResponse, TBody = unknown>(path: string, options: JsonRequestOptions<TBody, TResponse> = {}) {
   const { method = 'GET', body, schema, headers = {} } = options;
@@ -72,17 +110,8 @@ async function requestJson<TResponse, TBody = unknown>(path: string, options: Js
   const payload: unknown = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
-    let message = response.statusText || 'Request failed';
-
-    if (isJson && typeof payload === 'object' && payload !== null) {
-      const envelope = envelopeSchema.safeParse(payload);
-      if (envelope.success && !envelope.data.success) {
-        message = envelope.data.error?.message ?? message;
-      } else if ('message' in (payload as Record<string, unknown>)) {
-        message = String((payload as Record<string, unknown>).message);
-      }
-    }
-
+    const fallback = response.statusText || DEFAULT_ERROR_MESSAGE;
+    const message = isJson ? extractErrorMessage(payload, fallback) : fallback;
     throw new HttpError(message, response.status, payload);
   }
 
@@ -90,18 +119,7 @@ async function requestJson<TResponse, TBody = unknown>(path: string, options: Js
     return payload as TResponse;
   }
 
-  const envelope = envelopeSchema.safeParse(payload);
-
-  if (envelope.success) {
-    if (!envelope.data.success) {
-      throw new HttpError(envelope.data.error?.message ?? 'Request failed', response.status, envelope.data.error);
-    }
-
-    const data = envelope.data.data as TResponse;
-    return schema ? schema.parse(data) : data;
-  }
-
-  return schema ? schema.parse(payload) : (payload as TResponse);
+  return parseJsonPayload<TResponse>(payload, schema, response.status);
 }
 
 export function getJson<TResponse>(path: string, schema?: ZodSchema<TResponse>) {
