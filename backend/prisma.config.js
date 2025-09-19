@@ -16,6 +16,10 @@ envFiles.forEach((relativePath) => {
   }
 });
 
+if (process.env.PRISMA_FORCE_DIRECT === '1') {
+  delete process.env.PRISMA_URL;
+}
+
 module.exports = defineConfig({
   schema: './prisma/schema.prisma',
   seed: 'node prisma/seed.js',

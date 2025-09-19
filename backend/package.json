@@ -13,16 +13,17 @@
                     "lint":  "eslint \"src/**/*.js\"",
                     "test":  "cross-env NODE_ENV=test jest --runInBand",
                     "test:watch":  "cross-env NODE_ENV=test jest --watch",
-                    "build":  "npm run db:migrate:deploy",
+                    "build":  "npm run db:migrate:deploy:vercel",
                     "docs:generate":  "node scripts/generate-openapi.js",
                     "task":  "node scripts/run-task.js",
                     "db:migrate:dev":  "prisma migrate dev",
-                    "db:migrate:deploy":  "cross-env PRISMA_URL=\"\" prisma migrate deploy",
+                    "db:migrate:deploy":  "prisma migrate deploy",
                     "db:generate":  "prisma generate",
                     "db:seed":  "prisma db seed",
                     "lint:ci":  "eslint \"src/**/*.{ts,tsx,js,jsx}\" -f json -o eslint-report.json",
                     "test:ci":  "jest --coverage --coverageReporters=lcov",
-                    "postinstall":  "prisma generate"
+                    "postinstall":  "prisma generate",
+                    "db:migrate:deploy:vercel":  "node scripts/db-migrate-deploy-vercel.js"
                 },
     "keywords":  [
 
