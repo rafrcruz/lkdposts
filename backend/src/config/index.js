@@ -1,9 +1,11 @@
 const env = require('./env');
 
 const SESSION_COOKIE_NAME = 'lkd_session';
+const release = process.env.VERCEL_GIT_COMMIT_SHA || env.NODE_ENV;
 
 const config = {
   env: env.NODE_ENV,
+  release,
   isProduction: env.NODE_ENV === 'production',
   isTest: env.NODE_ENV === 'test',
   server: {

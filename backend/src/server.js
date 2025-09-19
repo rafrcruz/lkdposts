@@ -11,6 +11,7 @@ const server = http.createServer(app);
 const startServer = async () => {
   try {
     await ensureAppBootstrapped();
+    console.info(`Application bootstrapped (env=${config.env}, release=${config.release})`);
     server.listen(config.server.port, config.server.host, () => {
       console.log('Backend listening on http://' + config.server.host + ':' + config.server.port);
     });
@@ -57,12 +58,12 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled promise rejection:', reason);
+  console.error('Unhandled promise rejection', { reason });
   captureException(reason instanceof Error ? reason : new Error(String(reason)));
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+  console.error('Uncaught exception', { message: error.message });
   captureException(error);
   gracefulShutdown('uncaughtException');
 });

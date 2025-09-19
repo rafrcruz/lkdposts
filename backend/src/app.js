@@ -29,6 +29,11 @@ if (config.isProduction) {
 app.disable('x-powered-by');
 app.set('etag', 'strong');
 
+app.use((req, res, next) => {
+  res.setHeader('x-app-release', config.release);
+  next();
+});
+
 const corsOptions = {
   origin(origin, callback) {
     if (!origin || config.cors.allowedOrigins.includes(origin)) {
@@ -117,7 +122,7 @@ app.use(responseEnvelope);
 
 app.get('/', (req, res) => {
   res.withCache(30);
-  return res.success({ message: 'lkdposts API', version: 'v1' });
+  return res.success({ message: 'lkdposts API', version: 'v1', release: config.release });
 });
 
 app.use(routes);
@@ -127,6 +132,3 @@ setupSentryErrorHandler(app);
 app.use(errorHandler);
 
 module.exports = app;
-
-
-
