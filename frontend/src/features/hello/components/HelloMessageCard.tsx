@@ -9,6 +9,11 @@ import { useHelloMessage } from '../hooks/useHelloMessage';
 export const HelloMessageCard = () => {
   const { t } = useTranslation();
   const { data, isLoading, isError, refetch, isRefetching } = useHelloMessage();
+  const handleRefetch = () => {
+    refetch().catch((error) => {
+      console.error('Failed to refetch hello message', error);
+    });
+  };
 
   if (isLoading) {
     return (
@@ -28,7 +33,7 @@ export const HelloMessageCard = () => {
           <button
             type="button"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-            onClick={() => { void refetch(); }}
+            onClick={handleRefetch}
             disabled={isRefetching}
           >
             {isRefetching ? t('actions.tryingAgain') : t('actions.tryAgain')}
@@ -58,7 +63,7 @@ export const HelloMessageCard = () => {
       <div className="flex flex-wrap items-center justify-center gap-3">
         <button
           type="button"
-          onClick={() => { void refetch(); }}
+          onClick={handleRefetch}
           className="inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground shadow-sm transition hover:border-primary hover:text-primary"
           disabled={isRefetching}
         >
