@@ -23,7 +23,9 @@ const app = express();
 
 setupSentryRequestHandler(app);
 
-app.set('trust proxy', 1);
+if (config.isProduction) {
+  app.set('trust proxy', 1);
+}
 app.disable('x-powered-by');
 app.set('etag', 'strong');
 
@@ -123,3 +125,4 @@ setupSentryErrorHandler(app);
 app.use(errorHandler);
 
 module.exports = app;
+

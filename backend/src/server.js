@@ -3,14 +3,14 @@ const http = require('http');
 const app = require('./app');
 const config = require('./config');
 const { disconnectDatabase } = require('./lib/prisma');
-const { initializeAuth } = require('./services/auth.service');
+const { ensureAppBootstrapped } = require('./startup');
 const { flushSentry, captureException } = require('./lib/sentry');
 
 const server = http.createServer(app);
 
 const startServer = async () => {
   try {
-    await initializeAuth();
+    await ensureAppBootstrapped();
     server.listen(config.server.port, config.server.host, () => {
       console.log('Backend listening on http://' + config.server.host + ':' + config.server.port);
     });
@@ -66,3 +66,4 @@ process.on('uncaughtException', (error) => {
   captureException(error);
   gracefulShutdown('uncaughtException');
 });
+
