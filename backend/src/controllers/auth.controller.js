@@ -6,17 +6,9 @@ const {
   revokeSessionByToken,
 } = require('../services/auth.service');
 const { Sentry } = require('../lib/sentry');
+const { getSessionCookieOptions, getSessionCookieBaseOptions } = require('../utils/session-cookie');
 
 const { session: sessionConfig } = config.auth;
-
-const getCookieOptions = (expiresAt) => ({
-  httpOnly: true,
-  secure: config.isProduction,
-  sameSite: 'lax',
-  signed: true,
-  expires: expiresAt,
-  path: '/',
-});
 
 const loginWithGoogle = asyncHandler(async (req, res) => {
   const { idToken } = req.body ?? {};
@@ -27,7 +19,7 @@ const loginWithGoogle = asyncHandler(async (req, res) => {
     ipAddress: req.ip,
   });
 
-  res.cookie(sessionConfig.cookieName, token, getCookieOptions(session.expiresAt));
+  res.cookie(sessionConfig.cookieName, token, getSessionCookieOptions(session.expiresAt));
 
   console.info('User logged in', {
     email: session.user.email,
@@ -46,13 +38,7 @@ const logout = asyncHandler(async (req, res) => {
 
   await revokeSessionByToken(token);
 
-  res.clearCookie(sessionConfig.cookieName, {
-    httpOnly: true,
-    secure: config.isProduction,
-    sameSite: 'lax',
-    signed: true,
-    path: '/',
-  });
+  res.clearCookie(sessionConfig.cookieName, getSessionCookieBaseOptions());
 
   try {
     Sentry.configureScope((scope) => {
@@ -86,5 +72,6 @@ module.exports = {
   logout,
   getCurrentUser,
 };
+
 
 

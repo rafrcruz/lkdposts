@@ -44,6 +44,8 @@ const corsOptions = {
   },
   credentials: true,
   optionsSuccessStatus: 204,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 
 const jsonParser = express.json({
@@ -125,4 +127,6 @@ setupSentryErrorHandler(app);
 app.use(errorHandler);
 
 module.exports = app;
+
+
 

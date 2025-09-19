@@ -2,6 +2,7 @@ const config = require('../config');
 const asyncHandler = require('../utils/async-handler');
 const ApiError = require('../utils/api-error');
 const { validateSessionToken } = require('../services/auth.service');
+const { getSessionCookieBaseOptions, getSessionCookieOptions } = require('../utils/session-cookie');
 const { Sentry } = require('../lib/sentry');
 
 const cookieName = config.auth.session.cookieName;
@@ -33,13 +34,7 @@ const requireAuth = asyncHandler(async (req, res, next) => {
   });
 
   if (!result) {
-    res.clearCookie(cookieName, {
-      httpOnly: true,
-      secure: config.isProduction,
-      sameSite: 'lax',
-      signed: true,
-      path: '/',
-    });
+    res.clearCookie(cookieName, getSessionCookieBaseOptions());
     throw new ApiError({ statusCode: 401, code: 'SESSION_INVALID', message: 'Session expired or invalid' });
   }
 
@@ -67,14 +62,7 @@ const requireAuth = asyncHandler(async (req, res, next) => {
     console.warn('Failed to configure Sentry user scope', error);
   }
 
-  res.cookie(cookieName, token, {
-    httpOnly: true,
-    secure: config.isProduction,
-    sameSite: 'lax',
-    signed: true,
-    expires: session.expiresAt,
-    path: '/',
-  });
+  res.cookie(cookieName, token, getSessionCookieOptions(session.expiresAt));
 
   next();
 });
@@ -82,5 +70,6 @@ const requireAuth = asyncHandler(async (req, res, next) => {
 module.exports = {
   requireAuth,
 };
+
 
 
