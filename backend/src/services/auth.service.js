@@ -177,8 +177,7 @@ const authenticateWithGoogle = async ({ idToken, userAgent, ipAddress }) => {
   if (!allowedUser) {
     throw new ApiError({
       statusCode: 403,
-      code: 'ALLOWLIST_DENIED',
-      message: 'Seu email nÃ£o estÃ¡ autorizado para acessar este aplicativo.',
+      code: 'ALLOWLIST_DENIED',      message: 'Seu email nao esta autorizado para acessar este aplicativo.',
       details: { email: googleProfile.email },
     });
   }
@@ -215,5 +214,4 @@ module.exports = {
   validateSessionToken,
   revokeSessionByToken,
   verifyGoogleIdToken,
-  ROLES,
 };

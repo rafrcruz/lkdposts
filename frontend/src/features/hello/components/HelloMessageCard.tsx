@@ -1,19 +1,32 @@
-import { useTranslation } from 'react-i18next';
+﻿import { useTranslation } from 'react-i18next';
 
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 
 import { useHelloMessage } from '../hooks/useHelloMessage';
 
 export const HelloMessageCard = () => {
   const { t } = useTranslation();
-  const { data, isLoading, isError, refetch, isRefetching } = useHelloMessage();
+  const { status } = useAuth();
+  const isEnabled = status === 'authenticated';
+  const { data, isLoading, isError, refetch, isRefetching } = useHelloMessage({ enabled: isEnabled });
+
   const handleRefetch = () => {
     refetch().catch((error) => {
       console.error('Failed to refetch hello message', error);
     });
   };
+
+  if (!isEnabled) {
+    return (
+      <EmptyState
+        title={t('hello.authRequiredTitle', 'Autenticacao necessaria')}
+        description={t('hello.authRequiredDescription', 'Realize login para visualizar a mensagem do backend.')}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -73,4 +86,3 @@ export const HelloMessageCard = () => {
     </div>
   );
 };
-

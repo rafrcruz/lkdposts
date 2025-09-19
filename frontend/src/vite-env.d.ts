@@ -1,3 +1,26 @@
+﻿/* eslint-disable @typescript-eslint/consistent-type-definitions, @typescript-eslint/no-unused-vars */
 /// <reference types="vite/client" />
 
 declare const __APP_VERSION__: string;
+
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        id?: {
+          initialize: (options: {
+            client_id: string;
+            callback: (response: { credential?: string }) => void;
+            ux_mode?: 'popup' | 'redirect';
+          }) => void;
+          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
+          cancel?: () => void;
+          prompt?: (momentListener?: () => void) => void;
+        };
+      };
+    };
+  }
+}
+
+export {};
+

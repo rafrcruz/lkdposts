@@ -4,14 +4,18 @@ import { vi } from 'vitest';
 import type { UseQueryResult } from '@tanstack/react-query';
 
 import i18n from '@/config/i18n';
+import type { AuthContextValue } from '@/features/auth/context/AuthContext';
 
 import { HelloMessageCard } from './HelloMessageCard';
 import { useHelloMessage } from '../hooks/useHelloMessage';
 import type { HelloMessage } from '../types/hello';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 
 vi.mock('../hooks/useHelloMessage');
+vi.mock('@/features/auth/hooks/useAuth');
 
 const mockedUseHelloMessage = vi.mocked(useHelloMessage);
+const mockedUseAuth = vi.mocked(useAuth);
 
 const renderComponent = () =>
   render(
@@ -53,15 +57,38 @@ describe('HelloMessageCard', () => {
     ...override,
   });
 
+  const buildAuthValue = (override: Partial<AuthContextValue> = {}): AuthContextValue => ({
+    status: 'authenticated',
+    user: { email: 'user@example.com', role: 'user', expiresAt: new Date().toISOString() },
+    isAuthenticating: false,
+    authError: null,
+    loginWithGoogle: vi.fn(),
+    logout: vi.fn(),
+    clearAuthError: vi.fn(),
+    refreshSession: vi.fn(),
+    ...override,
+  });
+
+  it('renders authentication notice when session is missing', () => {
+    mockedUseAuth.mockReturnValue(buildAuthValue({ status: 'unauthenticated', user: null }));
+    mockedUseHelloMessage.mockReturnValue(buildResult({ isSuccess: false, isFetched: false }));
+
+    renderComponent();
+
+    expect(screen.getByText(/Autenticacao necessaria/i)).toBeInTheDocument();
+  });
+
   it('renders loading skeleton', () => {
+    mockedUseAuth.mockReturnValue(buildAuthValue());
     mockedUseHelloMessage.mockReturnValue(buildResult({ isLoading: true }));
 
     renderComponent();
 
-    expect(screen.getAllByRole('status', { hidden: true })).toHaveLength(2);
+    expect(screen.getAllByTestId('loading-skeleton')).toHaveLength(2);
   });
 
   it('renders message when data is available', () => {
+    mockedUseAuth.mockReturnValue(buildAuthValue());
     mockedUseHelloMessage.mockReturnValue(
       buildResult({ data: { message: 'hello mundo' }, isLoading: false, isSuccess: true })
     );
@@ -72,6 +99,7 @@ describe('HelloMessageCard', () => {
   });
 
   it('renders error state when query fails', () => {
+    mockedUseAuth.mockReturnValue(buildAuthValue());
     mockedUseHelloMessage.mockReturnValue(
       buildResult({ isError: true, isSuccess: false, error: new Error('fail') })
     );
@@ -81,6 +109,4 @@ describe('HelloMessageCard', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 });
-
-
 

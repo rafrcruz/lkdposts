@@ -5,6 +5,7 @@ const {
   authenticateWithGoogle,
   revokeSessionByToken,
 } = require('../services/auth.service');
+const { Sentry } = require('../lib/sentry');
 
 const { session: sessionConfig } = config.auth;
 
@@ -49,8 +50,17 @@ const logout = asyncHandler(async (req, res) => {
     httpOnly: true,
     secure: config.isProduction,
     sameSite: 'lax',
+    signed: true,
     path: '/',
   });
+
+  try {
+    Sentry.configureScope((scope) => {
+      scope.setUser(null);
+    });
+  } catch (error) {
+    // ignore scope errors when Sentry is disabled
+  }
 
   console.info('User logged out', {
     email: req.user?.email ?? 'anonymous',

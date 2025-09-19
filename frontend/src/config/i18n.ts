@@ -1,4 +1,4 @@
-import i18n from 'i18next';
+﻿import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
@@ -11,42 +11,83 @@ const resources = {
         primary: 'Primary navigation',
         home: 'Home',
         dashboard: 'Dashboard',
+        allowlist: 'Allowlist',
         skipToContent: 'Skip to content',
+        signIn: 'Sign in',
+        logout: 'Sign out',
+        signingOut: 'Signing out...',
+        checking: 'Checking...'
       },
       footer: {
         rights: 'All rights reserved.',
         version: 'Version {{version}}',
       },
       home: {
-        meta: { title: 'lkdposts · Home' },
+        meta: { title: 'lkdposts - Home' },
         hero: {
           badge: 'Automation ready',
-          title: 'Generate LinkedIn posts straight from your feeds',
-          subtitle: 'A curated experience that connects your backend automation with a polished and responsive frontend.',
+          title: 'Generate LinkedIn posts straight from your RSS feeds',
+          subtitle: 'Connect your automation backend with a polished and responsive interface.',
+        },
+        auth: {
+          title: 'Authentication required',
+          description: 'Use your authorised Google account to access the protected content.',
+          welcome: 'Active session for {{email}}',
         },
       },
       hello: {
-        subtitle: 'This message is served by the backend API and cached with intelligent revalidation.',
+        subtitle: 'This message is served by the backend API and cached with smart revalidation.',
         errorTitle: 'Could not load the hello message',
         errorDescription: 'Check your connection or try again in a few moments.',
         emptyTitle: 'No greeting available right now',
         emptyDescription: 'Once the backend responds with a message it will appear here automatically.',
+        authRequiredTitle: 'Authentication required',
+        authRequiredDescription: 'Sign in to view the backend hello message.',
       },
       actions: {
         tryAgain: 'Try again',
-        tryingAgain: 'Trying again…',
+        tryingAgain: 'Trying again...',
         refresh: 'Refresh message',
-        refreshing: 'Refreshing…',
+        refreshing: 'Refreshing...',
       },
       dashboard: {
-        meta: { title: 'lkdposts · Dashboard' },
+        meta: { title: 'lkdposts - Dashboard' },
         empty: {
           title: 'Dashboard coming soon',
-          description: 'Feature protected by routing guard. Enable authentication to access internal content.',
+          description: 'This area is protected. Sign in to explore internal content.',
+        },
+      },
+      allowlist: {
+        heading: 'Allowlist management',
+        subtitle: 'Manage which email addresses can access the application.',
+        form: {
+          title: 'Add email',
+          email: 'Email',
+          role: 'Role',
+          submit: 'Add',
+        },
+        roles: {
+          user: 'User',
+          admin: 'Admin',
+        },
+        table: {
+          title: 'Authorised users',
+          loading: 'Loading data...',
+          error: 'Unable to load the list. Try refreshing the page.',
+          empty: 'No authorised email yet.',
+          remove: 'Remove',
+          removeConfirm: 'Remove this email from the allowlist?',
+          syncing: 'Syncing...',
+          immutable: 'Super admin is immutable.',
+          headers: {
+            email: 'Email',
+            role: 'Role',
+            actions: 'Actions',
+          },
         },
       },
       notFound: {
-        meta: { title: 'lkdposts · Not found' },
+        meta: { title: 'lkdposts - Not found' },
         title: 'Page not found',
         description: 'The page you are looking for may have been moved or deleted.',
         cta: 'Go back home',
@@ -56,48 +97,89 @@ const resources = {
   'pt-BR': {
     translation: {
       navigation: {
-        primary: 'Navegação principal',
-        home: 'Início',
+        primary: 'Navegacao principal',
+        home: 'Inicio',
         dashboard: 'Painel',
-        skipToContent: 'Ir para o conteúdo',
+        allowlist: 'Allowlist',
+        skipToContent: 'Ir para o conteudo',
+        signIn: 'Entrar',
+        logout: 'Sair',
+        signingOut: 'Saindo...',
+        checking: 'Verificando...'
       },
       footer: {
         rights: 'Todos os direitos reservados.',
-        version: 'Versão {{version}}',
+        version: 'Versao {{version}}',
       },
       home: {
-        meta: { title: 'lkdposts · Início' },
+        meta: { title: 'lkdposts - Inicio' },
         hero: {
-          badge: 'Automação pronta',
-          title: 'Gere posts para o LinkedIn direto dos seus feeds',
-          subtitle: 'Uma experiência moderna que conecta a automação do backend a uma interface responsiva e acessível.',
+          badge: 'Automacao pronta',
+          title: 'Gere posts para o LinkedIn direto dos seus feeds RSS',
+          subtitle: 'Gere automaticamente posts para o linkedin com IA a partir de novidades e noticias.',
+        },
+        auth: {
+          title: 'Autenticacao necessaria',
+          description: 'Use sua conta Google autorizada para acessar o conteudo protegido.',
+          welcome: 'Sessao ativa para {{email}}',
         },
       },
       hello: {
-        subtitle: 'Esta mensagem é servida pela API e utiliza cache com revalidação inteligente.',
-        errorTitle: 'Não foi possível carregar a mensagem',
-        errorDescription: 'Verifique sua conexão ou tente novamente em instantes.',
-        emptyTitle: 'Nenhuma saudação disponível no momento',
-        emptyDescription: 'Assim que o backend responder com uma mensagem ela aparecerá aqui automaticamente.',
+        subtitle: 'Esta mensagem vem da API e usa cache com revalidacao inteligente.',
+        errorTitle: 'Nao foi possivel carregar a mensagem',
+        errorDescription: 'Verifique sua conexao ou tente novamente em instantes.',
+        emptyTitle: 'Nenhuma saudacao disponivel no momento',
+        emptyDescription: 'Assim que o backend responder com uma mensagem ela aparecera aqui automaticamente.',
+        authRequiredTitle: 'Autenticacao necessaria',
+        authRequiredDescription: 'Entre para visualizar a mensagem do backend.',
       },
       actions: {
         tryAgain: 'Tentar novamente',
-        tryingAgain: 'Tentando…',
+        tryingAgain: 'Tentando...',
         refresh: 'Atualizar mensagem',
-        refreshing: 'Atualizando…',
+        refreshing: 'Atualizando...',
       },
       dashboard: {
-        meta: { title: 'lkdposts · Painel' },
+        meta: { title: 'lkdposts - Painel' },
         empty: {
           title: 'Painel em desenvolvimento',
-          description: 'Recurso protegido por guarda de rota. Habilite autenticação para acessar conteúdos internos.',
+          description: 'Esta area e protegida. Entre para acessar conteudos internos.',
+        },
+      },
+      allowlist: {
+        heading: 'Gerenciar allowlist',
+        subtitle: 'Defina quais emails podem acessar o aplicativo.',
+        form: {
+          title: 'Adicionar email',
+          email: 'Email',
+          role: 'Papel',
+          submit: 'Adicionar',
+        },
+        roles: {
+          user: 'Usuario',
+          admin: 'Administrador',
+        },
+        table: {
+          title: 'Usuarios autorizados',
+          loading: 'Carregando dados...',
+          error: 'Nao foi possivel carregar a lista. Tente atualizar a pagina.',
+          empty: 'Nenhum email autorizado ainda.',
+          remove: 'Remover',
+          removeConfirm: 'Remover este email da allowlist?',
+          syncing: 'Sincronizando...',
+          immutable: 'Super admin nao pode ser alterado.',
+          headers: {
+            email: 'Email',
+            role: 'Papel',
+            actions: 'Acoes',
+          },
         },
       },
       notFound: {
-        meta: { title: 'lkdposts · Não encontrado' },
-        title: 'Página não encontrada',
-        description: 'A página que você procura pode ter sido movida ou removida.',
-        cta: 'Voltar ao início',
+        meta: { title: 'lkdposts - Nao encontrado' },
+        title: 'Pagina nao encontrada',
+        description: 'A pagina que voce procura pode ter sido movida ou removida.',
+        cta: 'Voltar ao inicio',
       },
     },
   },
@@ -123,3 +205,6 @@ i18n
   });
 
 export default i18n;
+
+
+

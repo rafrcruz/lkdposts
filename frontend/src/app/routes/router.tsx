@@ -3,9 +3,12 @@ import { createBrowserRouter } from 'react-router-dom';
 
 import { MainLayout } from '../layout/MainLayout';
 import { LoadingSplash } from '@/components/feedback/LoadingSplash';
+import { RequireAdmin } from '@/features/auth/components/RequireAdmin';
+import { RequireAuth } from '@/features/auth/components/RequireAuth';
 
 const HomePage = lazy(() => import('@/pages/home/HomePage'));
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'));
+const AllowlistPage = lazy(() => import('@/pages/allowlist/AllowlistPage'));
 const NotFoundPage = lazy(() => import('@/pages/not-found/NotFoundPage'));
 
 const withSuspense = (node: ReactNode) => <Suspense fallback={<LoadingSplash />}>{node}</Suspense>;
@@ -21,7 +24,19 @@ export const router = createBrowserRouter([
       },
       {
         path: 'dashboard',
-        element: withSuspense(<DashboardPage />),
+        element: withSuspense(
+          <RequireAuth>
+            <DashboardPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'allowlist',
+        element: withSuspense(
+          <RequireAdmin>
+            <AllowlistPage />
+          </RequireAdmin>
+        ),
       },
     ],
   },

@@ -65,3 +65,22 @@ A interface consome o backend usando `VITE_API_URL` (padrão `http://localhost:3
 
 ## Documentação adicional
 - `backend/docs/endpoints.md`: visão rápida dos endpoints expostos.
+## Autenticacao e autorizacao
+- Login exclusivo via Google. Apenas emails presentes na allowlist conseguem iniciar sessao.
+- O primeiro acesso ja garante que `rafrcruz@gmail.com` seja administrador fixo.
+- Usuarios autenticados recebem uma sessao assinada via cookie; todas as rotas `/api/v1` exigem essa sessao.
+- Administradores acessam a pagina `/allowlist` no frontend para cadastrar, alterar papel ou remover emails.
+
+## Variaveis de ambiente relevantes
+### Backend
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
+- `SESSION_SECRET`, `SESSION_TTL_SECONDS`, `SESSION_RENEW_THRESHOLD_SECONDS`
+- `SUPERADMIN_EMAIL`
+- `SENTRY_DSN_BACKEND`
+
+### Frontend
+- `VITE_API_URL`
+- `VITE_GOOGLE_CLIENT_ID`
+- `VITE_SENTRY_DSN_FRONTEND`
+
+Configure `.env` e `.env.example` conforme os exemplos fornecidos para habilitar login e observabilidade.

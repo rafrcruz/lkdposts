@@ -4,14 +4,26 @@ import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 import { clsx } from 'clsx';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 
 export const TopNav = () => {
   const { t } = useTranslation();
+  const { status, user, logout, isAuthenticating } = useAuth();
 
-  const links = [
-    { to: '/', label: t('navigation.home') },
-    { to: '/dashboard', label: t('navigation.dashboard') },
-  ];
+  const links = [{ to: '/', label: t('navigation.home') }];
+
+  if (status === 'authenticated') {
+    links.push({ to: '/dashboard', label: t('navigation.dashboard') });
+    if (user?.role === 'admin') {
+      links.push({ to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') });
+    }
+  }
+
+  const handleLogout = () => {
+    logout().catch((error) => {
+      console.error('Failed to logout', error);
+    });
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur">
@@ -21,7 +33,7 @@ export const TopNav = () => {
       <div className="container-responsive flex h-16 items-center justify-between gap-4">
         <div className="flex items-center gap-6">
           <span className="text-lg font-display font-semibold tracking-tight text-primary">
-            lkdposts
+            LinkedIn Posts
           </span>
           <nav aria-label={t('navigation.primary')}>
             <ul className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
@@ -47,8 +59,30 @@ export const TopNav = () => {
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
           <ThemeToggle />
+          {status === 'loading' ? (
+            <span className="text-xs text-muted-foreground">{t('navigation.checking', 'Verificando...')}</span>
+          ) : status === 'authenticated' ? (
+            <div className="flex items-center gap-2">
+              <span className="hidden text-xs text-muted-foreground sm:inline-flex">
+                {user?.email}
+              </span>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleLogout}
+                disabled={isAuthenticating}
+              >
+                {isAuthenticating ? t('navigation.signingOut', 'Saindo...') : t('navigation.logout', 'Sair')}
+              </button>
+            </div>
+          ) : (
+            <a href="/" className="text-sm font-medium text-primary hover:underline">
+              {t('navigation.signIn', 'Entrar')}
+            </a>
+          )}
         </div>
       </div>
     </header>
   );
 };
+

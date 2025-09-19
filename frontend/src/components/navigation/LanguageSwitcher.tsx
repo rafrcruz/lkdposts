@@ -1,9 +1,9 @@
-import { ChangeEvent } from 'react';
+﻿import { ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const SUPPORTED_LOCALES = [
-  { value: 'pt-BR', label: 'Português' },
-  { value: 'en', label: 'English' },
+  { value: 'pt-BR', label: '\u{1F1E7}\u{1F1F7} Portugu\u00EAs' },
+  { value: 'en', label: '\u{1F1FA}\u{1F1F8} English' },
 ];
 
 export const LanguageSwitcher = () => {
@@ -21,7 +21,7 @@ export const LanguageSwitcher = () => {
       <select
         value={i18n.language}
         onChange={handleChange}
-        className="rounded-md border border-border bg-surface px-2 py-1 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+        className="min-w-[10rem] rounded-md border border-border bg-surface px-3 py-1 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
         aria-label="Selecionar idioma"
       >
         {SUPPORTED_LOCALES.map((locale) => (
