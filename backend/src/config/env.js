@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const { config: loadEnv } = require('dotenv');
 const { z } = require('zod');
@@ -55,6 +55,7 @@ const envSchema = z.object({
   ENABLE_METRICS: z.preprocess((value) => toBoolean(value, true), z.boolean()),
   CACHE_MAX_AGE_SECONDS: z.preprocess((value) => toNumber(value, 60), z.number().int().nonnegative()),
   SWAGGER_UI_ENABLED: z.preprocess((value) => toBoolean(value, true), z.boolean()),
+  DATABASE_URL: z.string().url(),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

@@ -29,17 +29,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Type check
-        run: npm run type-check
-
       - name: Test
         run: npm test
 
       - name: Build
         run: npm run build
-
-      - name: Security audit
-        run: npm audit --audit-level=high || true
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

@@ -1,0 +1,18 @@
+// Prisma schema file for lkdposts backend
+// Defines database models and datasource configuration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model HelloMessage {
+  id        Int      @id @default(autoincrement())
+  message   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,4 +1,4 @@
-﻿const env = require('./env');
+const env = require('./env');
 
 const config = {
   env: env.NODE_ENV,
@@ -20,6 +20,9 @@ const config = {
       windowMs: env.RATE_LIMIT_WINDOW_MS,
       max: env.RATE_LIMIT_MAX,
     },
+  },
+  database: {
+    url: env.DATABASE_URL,
   },
   cache: {
     maxAgeSeconds: env.CACHE_MAX_AGE_SECONDS,

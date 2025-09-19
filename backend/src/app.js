@@ -36,6 +36,7 @@ const corsOptions = {
     });
     return callback(corsError);
   },
+  credentials: true,
   optionsSuccessStatus: 204,
 };
 
@@ -108,3 +109,4 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 module.exports = app;
+

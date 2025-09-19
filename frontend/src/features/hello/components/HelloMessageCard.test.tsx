@@ -58,7 +58,7 @@ describe('HelloMessageCard', () => {
 
     renderComponent();
 
-    expect(screen.getAllByTestId('loading-skeleton')).toHaveLength(2);
+    expect(screen.getAllByRole('status', { hidden: true })).toHaveLength(2);
   });
 
   it('renders message when data is available', () => {
@@ -81,5 +81,6 @@ describe('HelloMessageCard', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 });
+
 
 
