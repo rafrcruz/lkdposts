@@ -1,4 +1,4 @@
-﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   ALLOWLIST_QUERY_KEY,
@@ -22,7 +22,7 @@ export const useCreateAllowlistEntry = () => {
   return useMutation<AllowlistEntry, HttpError, { email: string; role: AllowedRole }>({
     mutationFn: ({ email, role }) => createAllowlistEntry({ email, role }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ALLOWLIST_QUERY_KEY });
+      return queryClient.invalidateQueries({ queryKey: ALLOWLIST_QUERY_KEY });
     },
   });
 };
@@ -56,3 +56,4 @@ export const useRemoveAllowlistEntry = () => {
     },
   });
 };
+

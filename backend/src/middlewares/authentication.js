@@ -64,7 +64,7 @@ const requireAuth = asyncHandler(async (req, res, next) => {
       });
     });
   } catch (error) {
-    // ignore scope errors when Sentry is disabled
+    console.warn('Failed to configure Sentry user scope', error);
   }
 
   res.cookie(cookieName, token, {
@@ -82,3 +82,5 @@ const requireAuth = asyncHandler(async (req, res, next) => {
 module.exports = {
   requireAuth,
 };
+
+

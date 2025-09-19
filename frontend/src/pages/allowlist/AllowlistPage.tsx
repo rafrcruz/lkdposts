@@ -1,4 +1,4 @@
-﻿import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -89,6 +89,86 @@ export const AllowlistPage = () => {
     removeEntry.mutate(id, { onError: handleError });
   };
 
+  const renderTableContent = () => {
+    if (isLoading) {
+      return (
+        <div className="px-6 py-6 text-sm text-muted-foreground">
+          {t('allowlist.table.loading', 'Carregando dados...')}
+        </div>
+      );
+    }
+
+    if (isError) {
+      return (
+        <div className="px-6 py-6 text-sm text-destructive" role="alert">
+          {t('allowlist.table.error', 'Nao foi possivel carregar a lista. Tente atualizar a pagina.')}
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/50 text-left uppercase text-xs tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-6 py-3">{t('allowlist.table.headers.email', 'Email')}</th>
+              <th className="px-6 py-3">{t('allowlist.table.headers.role', 'Papel')}</th>
+              <th className="px-6 py-3 text-right">{t('allowlist.table.headers.actions', 'Acoes')}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {sortedEntries.length === 0 ? (
+              <tr>
+                <td className="px-6 py-6 text-sm text-muted-foreground" colSpan={3}>
+                  {t('allowlist.table.empty', 'Nenhum email autorizado ainda.')}
+                </td>
+              </tr>
+            ) : (
+              sortedEntries.map((entry) => (
+                <tr key={entry.id}>
+                  <td className="px-6 py-4 font-medium text-foreground">{entry.email}</td>
+                  <td className="px-6 py-4">
+                    <select
+                      value={entry.role}
+                      onChange={(event) => handleRoleChange(entry.id, event.target.value as AllowedRole)}
+                      className="rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={entry.immutable || isBusy}
+                    >
+                      <option value="user">{t('allowlist.roles.user', 'Usuario')}</option>
+                      <option value="admin">{t('allowlist.roles.admin', 'Administrador')}</option>
+                    </select>
+                    {entry.immutable ? (
+                      <p className="mt-1 text-xs text-muted-foreground">{t('allowlist.table.immutable', 'Super admin nao pode ser alterado.')}</p>
+                    ) : null}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-destructive px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => {
+                        if (entry.immutable) {
+                          return;
+                        }
+                        const confirmed = window.confirm(t('allowlist.table.removeConfirm', 'Remover este email da allowlist?'));
+                        if (!confirmed) {
+                          return;
+                        }
+                        handleRemove(entry.id);
+                      }}
+                      disabled={entry.immutable || isBusy}
+                    >
+                      {t('allowlist.table.remove', 'Remover')}
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-8">
       <header className="space-y-2">
@@ -149,73 +229,7 @@ export const AllowlistPage = () => {
           <h2 className="text-lg font-medium text-foreground">{t('allowlist.table.title', 'Usuarios autorizados')}</h2>
           {isBusy ? <span className="text-xs text-muted-foreground">{t('allowlist.table.syncing', 'Sincronizando...')}</span> : null}
         </div>
-        {isLoading ? (
-          <div className="px-6 py-6 text-sm text-muted-foreground">{t('allowlist.table.loading', 'Carregando dados...')}</div>
-        ) : isError ? (
-          <div className="px-6 py-6 text-sm text-destructive" role="alert">
-            {t('allowlist.table.error', 'Nao foi possivel carregar a lista. Tente atualizar a pagina.')}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-border text-sm">
-              <thead className="bg-muted/50 text-left uppercase text-xs tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-6 py-3">{t('allowlist.table.headers.email', 'Email')}</th>
-                  <th className="px-6 py-3">{t('allowlist.table.headers.role', 'Papel')}</th>
-                  <th className="px-6 py-3 text-right">{t('allowlist.table.headers.actions', 'Acoes')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {sortedEntries.length === 0 ? (
-                  <tr>
-                    <td className="px-6 py-6 text-sm text-muted-foreground" colSpan={3}>
-                      {t('allowlist.table.empty', 'Nenhum email autorizado ainda.')}
-                    </td>
-                  </tr>
-                ) : (
-                  sortedEntries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className="px-6 py-4 font-medium text-foreground">{entry.email}</td>
-                      <td className="px-6 py-4">
-                        <select
-                          value={entry.role}
-                          onChange={(event) => handleRoleChange(entry.id, event.target.value as AllowedRole)}
-                          className="rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={entry.immutable || isBusy}
-                        >
-                          <option value="user">{t('allowlist.roles.user', 'Usuario')}</option>
-                          <option value="admin">{t('allowlist.roles.admin', 'Administrador')}</option>
-                        </select>
-                        {entry.immutable ? (
-                          <p className="mt-1 text-xs text-muted-foreground">{t('allowlist.table.immutable', 'Super admin nao pode ser alterado.')}</p>
-                        ) : null}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center rounded-md border border-destructive px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={() => {
-                            if (entry.immutable) {
-                              return;
-                            }
-                            const confirmed = window.confirm(t('allowlist.table.removeConfirm', 'Remover este email da allowlist?'));
-                            if (!confirmed) {
-                              return;
-                            }
-                            handleRemove(entry.id);
-                          }}
-                          disabled={entry.immutable || isBusy}
-                        >
-                          {t('allowlist.table.remove', 'Remover')}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {renderTableContent()}
       </section>
     </div>
   );

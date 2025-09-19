@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ENV } from '@/config/env';
 import { useAuth } from '../hooks/useAuth';
@@ -58,8 +58,8 @@ export const GoogleLoginButton: React.FC = () => {
 
       google.accounts.id.initialize({
         client_id: ENV.GOOGLE_CLIENT_ID,
-        callback: (response: CredentialResponse) => {
-          void handleCredential(response);
+        callback: async (response: CredentialResponse) => {
+          await handleCredential(response);
         },
         ux_mode: 'popup',
       });
@@ -104,3 +104,6 @@ export const GoogleLoginButton: React.FC = () => {
     </div>
   );
 };
+
+
+

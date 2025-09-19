@@ -1,4 +1,5 @@
-﻿import { NavLink } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -24,6 +25,36 @@ export const TopNav = () => {
       console.error('Failed to logout', error);
     });
   };
+
+  let authSection: ReactNode;
+
+  if (status === 'loading') {
+    authSection = (
+      <span className="text-xs text-muted-foreground">{t('navigation.checking', 'Verificando...')}</span>
+    );
+  } else if (status === 'authenticated') {
+    authSection = (
+      <div className="flex items-center gap-2">
+        <span className="hidden text-xs text-muted-foreground sm:inline-flex">
+          {user?.email}
+        </span>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={handleLogout}
+          disabled={isAuthenticating}
+        >
+          {isAuthenticating ? t('navigation.signingOut', 'Saindo...') : t('navigation.logout', 'Sair')}
+        </button>
+      </div>
+    );
+  } else {
+    authSection = (
+      <a href="/" className="text-sm font-medium text-primary hover:underline">
+        {t('navigation.signIn', 'Entrar')}
+      </a>
+    );
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur">
@@ -59,30 +90,13 @@ export const TopNav = () => {
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
           <ThemeToggle />
-          {status === 'loading' ? (
-            <span className="text-xs text-muted-foreground">{t('navigation.checking', 'Verificando...')}</span>
-          ) : status === 'authenticated' ? (
-            <div className="flex items-center gap-2">
-              <span className="hidden text-xs text-muted-foreground sm:inline-flex">
-                {user?.email}
-              </span>
-              <button
-                type="button"
-                className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={handleLogout}
-                disabled={isAuthenticating}
-              >
-                {isAuthenticating ? t('navigation.signingOut', 'Saindo...') : t('navigation.logout', 'Sair')}
-              </button>
-            </div>
-          ) : (
-            <a href="/" className="text-sm font-medium text-primary hover:underline">
-              {t('navigation.signIn', 'Entrar')}
-            </a>
-          )}
+          {authSection}
         </div>
       </div>
     </header>
   );
 };
+
+
+
 

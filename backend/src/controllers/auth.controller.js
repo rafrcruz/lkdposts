@@ -59,7 +59,7 @@ const logout = asyncHandler(async (req, res) => {
       scope.setUser(null);
     });
   } catch (error) {
-    // ignore scope errors when Sentry is disabled
+    console.warn('Failed to clear Sentry user scope', error);
   }
 
   console.info('User logged out', {
@@ -86,3 +86,5 @@ module.exports = {
   logout,
   getCurrentUser,
 };
+
+
