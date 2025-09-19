@@ -1,14 +1,15 @@
-﻿/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import * as Sentry from '@sentry/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, setLogger } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 
 import App from './app/App';
 import { AuthProvider } from './features/auth/context/AuthContext';
 import { ENV } from './config/env';
 import i18n from './config/i18n';
+import { HttpError } from './lib/api/http';
 
 import './styles/theme.css';
 import './styles/global.css';
@@ -27,6 +28,21 @@ if (ENV.SENTRY_DSN) {
   });
 }
 
+setLogger({
+  log: (...params) => {
+    console.log(...params);
+  },
+  warn: (...params) => {
+    console.warn(...params);
+  },
+  error: (error) => {
+    if (error instanceof HttpError && error.status === 401) {
+      return;
+    }
+    console.error(error);
+  },
+});
+
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
@@ -37,7 +53,12 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: 2,
+      retry: (failureCount, error) => {
+        if (error instanceof HttpError && error.status === 401) {
+          return false;
+        }
+        return failureCount < 2;
+      },
       staleTime: 60_000,
     },
   },
@@ -77,8 +98,3 @@ ReactDOM.createRoot(rootElement).render(
     </Sentry.ErrorBoundary>
   </React.StrictMode>
 );
-
-
-
-
-
