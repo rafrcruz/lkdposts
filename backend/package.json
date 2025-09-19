@@ -17,7 +17,7 @@
                     "docs:generate":  "node scripts/generate-openapi.js",
                     "task":  "node scripts/run-task.js",
                     "db:migrate:dev":  "prisma migrate dev",
-                    "db:migrate:deploy":  "prisma migrate deploy",
+                    "db:migrate:deploy":  "cross-env PRISMA_URL=\"\" prisma migrate deploy",
                     "db:generate":  "prisma generate",
                     "db:seed":  "prisma db seed",
                     "lint:ci":  "eslint \"src/**/*.{ts,tsx,js,jsx}\" -f json -o eslint-report.json",
