@@ -1,39 +1,46 @@
-﻿import { useTranslation } from 'react-i18next';
+import { useTranslation } from 'react-i18next';
 
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { HttpError } from '@/lib/api/http';
 
 import { useHelloMessage } from '../hooks/useHelloMessage';
+
+const renderLoading = () => (
+  <div className="card flex flex-col gap-4 px-8 py-10">
+    <LoadingSkeleton className="h-8 w-1/2 self-center" />
+    <LoadingSkeleton className="h-4 w-2/3 self-center" />
+  </div>
+);
 
 export const HelloMessageCard = () => {
   const { t } = useTranslation();
   const { status } = useAuth();
-  const isEnabled = status === 'authenticated';
-  const { data, isLoading, isError, refetch, isRefetching } = useHelloMessage({ enabled: isEnabled });
+  const isAuthenticated = status === 'authenticated';
+  const isCheckingSession = status === 'unknown';
+  const { data, isLoading, isError, refetch, isRefetching } = useHelloMessage({ enabled: isAuthenticated });
 
   const handleRefetch = () => {
     refetch().catch((error) => {
+      if (error instanceof HttpError && error.status === 401) {
+        return;
+      }
       console.error('Failed to refetch hello message', error);
     });
   };
 
-  if (!isEnabled) {
+  if (isCheckingSession || isLoading) {
+    return renderLoading();
+  }
+
+  if (!isAuthenticated) {
     return (
       <EmptyState
         title={t('hello.authRequiredTitle', 'Autenticacao necessaria')}
         description={t('hello.authRequiredDescription', 'Realize login para visualizar a mensagem do backend.')}
       />
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="card flex flex-col gap-4 px-8 py-10">
-        <LoadingSkeleton className="h-8 w-1/2 self-center" />
-        <LoadingSkeleton className="h-4 w-2/3 self-center" />
-      </div>
     );
   }
 

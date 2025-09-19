@@ -1,10 +1,11 @@
-﻿import { render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { vi } from 'vitest';
 import type { UseQueryResult } from '@tanstack/react-query';
 
 import i18n from '@/config/i18n';
 import type { AuthContextValue } from '@/features/auth/context/AuthContext';
+import type { AuthSession } from '@/features/auth/api/auth';
 
 import { HelloMessageCard } from './HelloMessageCard';
 import { useHelloMessage } from '../hooks/useHelloMessage';
@@ -57,20 +58,31 @@ describe('HelloMessageCard', () => {
     ...override,
   });
 
-  const buildAuthValue = (override: Partial<AuthContextValue> = {}): AuthContextValue => ({
-    status: 'authenticated',
-    user: { email: 'user@example.com', role: 'user', expiresAt: new Date().toISOString() },
-    isAuthenticating: false,
-    authError: null,
-    loginWithGoogle: vi.fn(),
-    logout: vi.fn(),
-    clearAuthError: vi.fn(),
-    refreshSession: vi.fn(),
-    ...override,
-  });
+  const buildAuthValue = (override: Partial<AuthContextValue> = {}): AuthContextValue => {
+    const defaultUser = { email: 'user@example.com', role: 'user', expiresAt: new Date().toISOString() };
+    const hasUserOverride = Object.prototype.hasOwnProperty.call(override, 'user');
+    const resolvedUser = (hasUserOverride ? override.user : defaultUser) as AuthContextValue['user'];
+    const resolvedSession: AuthSession = resolvedUser
+      ? { authenticated: true, user: resolvedUser }
+      : { authenticated: false, user: null };
+
+    return {
+      status: 'authenticated',
+      user: resolvedUser,
+      isAuthenticating: false,
+      authError: null,
+      loginWithGoogle: vi.fn(),
+      logout: vi.fn(),
+      clearAuthError: vi.fn(),
+      refreshSession:
+        override.refreshSession ??
+        vi.fn<[], Promise<AuthSession>>(() => Promise.resolve(resolvedSession)),
+      ...override,
+    };
+  };
 
   it('renders authentication notice when session is missing', () => {
-    mockedUseAuth.mockReturnValue(buildAuthValue({ status: 'unauthenticated', user: null }));
+    mockedUseAuth.mockReturnValue(buildAuthValue({ status: 'guest', user: null }));
     mockedUseHelloMessage.mockReturnValue(buildResult({ isSuccess: false, isFetched: false }));
 
     renderComponent();
@@ -109,4 +121,3 @@ describe('HelloMessageCard', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 });
-

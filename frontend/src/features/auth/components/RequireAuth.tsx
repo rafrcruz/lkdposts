@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
 import { LoadingSplash } from '@/components/feedback/LoadingSplash';
@@ -12,7 +12,7 @@ export const RequireAuth: React.FC<RequireAuthProps> = ({ children }) => {
   const { status } = useAuth();
   const location = useLocation();
 
-  if (status === 'loading') {
+  if (status === 'unknown') {
     return <LoadingSplash />;
   }
 
@@ -22,3 +22,4 @@ export const RequireAuth: React.FC<RequireAuthProps> = ({ children }) => {
 
   return children;
 };
+

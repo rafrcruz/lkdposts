@@ -28,7 +28,7 @@ export const TopNav = () => {
 
   let authSection: ReactNode;
 
-  if (status === 'loading') {
+  if (status === 'unknown') {
     authSection = (
       <span className="text-xs text-muted-foreground">{t('navigation.checking', 'Verificando...')}</span>
     );
@@ -96,6 +96,7 @@ export const TopNav = () => {
     </header>
   );
 };
+
 
 
 

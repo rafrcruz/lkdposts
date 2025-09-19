@@ -1,13 +1,20 @@
-﻿/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { fetchCurrentUser, loginWithGoogle as loginWithGoogleRequest, logout as logoutRequest, type AuthenticatedUser } from '../api/auth';
-import { HttpError } from '@/lib/api/http';
+import {
+  getCurrentUser,
+  loginWithGoogle as loginWithGoogleRequest,
+  logout as logoutRequest,
+  type AuthenticatedUser,
+  type AuthSession,
+} from '../api/auth';
 import { ALLOWLIST_QUERY_KEY } from '@/features/allowlist/api/allowlist';
 import { HELLO_QUERY_KEY } from '@/features/hello/hooks/useHelloMessage';
 
-export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+const GUEST_SESSION: AuthSession = { authenticated: false, user: null };
+
+export type AuthStatus = 'unknown' | 'authenticated' | 'guest';
 
 export type AuthContextValue = {
   status: AuthStatus;
@@ -17,21 +24,27 @@ export type AuthContextValue = {
   loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   clearAuthError: () => void;
-  refreshSession: () => Promise<void>;
-}
+  refreshSession: () => Promise<AuthSession>;
+};
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<AuthStatus>('loading');
+  const [status, setStatus] = useState<AuthStatus>('unknown');
   const [user, setUser] = useState<AuthenticatedUser | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  const applyUser = useCallback((nextUser: AuthenticatedUser | null) => {
-    setUser(nextUser);
-    setStatus(nextUser ? 'authenticated' : 'unauthenticated');
+  const applySession = useCallback((session: AuthSession) => {
+    if (session.authenticated) {
+      setUser(session.user);
+      setStatus('authenticated');
+      return;
+    }
+
+    setUser(null);
+    setStatus('guest');
   }, []);
 
   const clearCaches = useCallback(() => {
@@ -45,36 +58,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshSession = useCallback(async () => {
     try {
-      const currentUser = await fetchCurrentUser();
+      const session = await getCurrentUser();
       setAuthError(null);
-      applyUser(currentUser);
-    } catch (error) {
-      applyUser(null);
-      if (error instanceof HttpError && error.status === 401) {
-        return;
+      applySession(session);
+      if (session.authenticated) {
+        clearCaches();
       }
+      return session;
+    } catch (error) {
+      applySession(GUEST_SESSION);
       if (error instanceof Error) {
         setAuthError(error.message);
       }
+      throw error;
     }
-  }, [applyUser]);
+  }, [applySession, clearCaches]);
 
   useEffect(() => {
     let isMounted = true;
 
     const initialise = async () => {
       try {
-        const currentUser = await fetchCurrentUser();
-        if (!isMounted) return;
+        const session = await getCurrentUser();
+        if (!isMounted) {
+          return;
+        }
         setAuthError(null);
-        applyUser(currentUser);
+        applySession(session);
       } catch (error) {
-        if (!isMounted) return;
-        applyUser(null);
-        if (!(error instanceof HttpError && error.status === 401) && error instanceof Error) {
+        if (!isMounted) {
+          return;
+        }
+        applySession(GUEST_SESSION);
+        if (error instanceof Error) {
           setAuthError(error.message);
         }
-        setStatus('unauthenticated');
       }
     };
 
@@ -85,18 +103,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMounted = false;
     };
-  }, [applyUser]);
+  }, [applySession]);
 
   const loginWithGoogle = useCallback(
     async (idToken: string) => {
       setIsAuthenticating(true);
       setAuthError(null);
       try {
-        const nextUser = await loginWithGoogleRequest(idToken);
-        applyUser(nextUser);
-        clearCaches();
+        await loginWithGoogleRequest(idToken);
+        const session = await refreshSession();
+        if (!session.authenticated) {
+          throw new Error('Sessao nao estabelecida apos o login. Tente novamente.');
+        }
       } catch (error) {
-        applyUser(null);
+        applySession(GUEST_SESSION);
         if (error instanceof Error) {
           setAuthError(error.message);
         }
@@ -105,7 +125,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsAuthenticating(false);
       }
     },
-    [applyUser, clearCaches]
+    [applySession, refreshSession]
   );
 
   const logout = useCallback(async () => {
@@ -117,10 +137,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsAuthenticating(false);
       setAuthError(null);
-      applyUser(null);
+      applySession(GUEST_SESSION);
       queryClient.clear();
     }
-  }, [applyUser, queryClient]);
+  }, [applySession, queryClient]);
 
   const clearAuthError = useCallback(() => {
     setAuthError(null);
@@ -142,26 +162,3 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
