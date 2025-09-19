@@ -60,6 +60,8 @@ A interface consome o backend usando `VITE_API_URL` (padrão `http://localhost:3
 ## CI
 - `.github/workflows/backend-ci.yml`: lint → test → audit → build + OpenAPI como artefato.
 - `.github/workflows/frontend-ci.yml`: lint → type-check → test → build com artefato do bundle.
+- **Branch protection**: configure apenas os checks obrigatórios `backend-ci / build-test` e `frontend-ci / quality`; evite checks extras de lint bloqueando merge.
+- **SonarCloud**: se surgirem comentários duplicados no PR, desative "Pull Request decoration" em SonarCloud (Project Settings -> General Settings -> Pull Request Decoration) ou mantenha apenas essa decoração sem outros bots.
 
 ## Documentação adicional
 - `backend/docs/endpoints.md`: visão rápida dos endpoints expostos.
