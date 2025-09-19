@@ -17,8 +17,11 @@ const { responseEnvelope } = require('./middlewares/response-envelope');
 const { attachRequestId } = require('./middlewares/request-context');
 const { globalRateLimiter } = require('./middlewares/rate-limit');
 const { notFoundHandler, errorHandler } = require('./middlewares/error-handler');
+const { setupSentryRequestHandler, setupSentryErrorHandler } = require('./lib/sentry');
 
 const app = express();
+
+setupSentryRequestHandler(app);
 
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -116,6 +119,7 @@ app.get('/', (req, res) => {
 app.use(routes);
 
 app.use(notFoundHandler);
+setupSentryErrorHandler(app);
 app.use(errorHandler);
 
 module.exports = app;

@@ -2,6 +2,7 @@ const config = require('../config');
 const asyncHandler = require('../utils/async-handler');
 const ApiError = require('../utils/api-error');
 const { validateSessionToken } = require('../services/auth.service');
+const { Sentry } = require('../lib/sentry');
 
 const cookieName = config.auth.session.cookieName;
 
@@ -53,6 +54,18 @@ const requireAuth = asyncHandler(async (req, res, next) => {
     id: session.id,
     expiresAt: session.expiresAt,
   };
+
+  try {
+    Sentry.configureScope((scope) => {
+      scope.setUser({
+        id: String(session.userId),
+        email: session.user.email,
+        role: session.user.role,
+      });
+    });
+  } catch (error) {
+    // ignore scope errors when Sentry is disabled
+  }
 
   res.cookie(cookieName, token, {
     httpOnly: true,

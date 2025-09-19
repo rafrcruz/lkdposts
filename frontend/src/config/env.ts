@@ -20,6 +20,10 @@ const envSchema = z.object({
     .optional()
     .transform((value) => value?.trim() ?? '')
     .pipe(z.string().min(1, 'VITE_GOOGLE_CLIENT_ID is required')),
+  VITE_SENTRY_DSN_FRONTEND: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() ?? ''),
 });
 
 const parsed = envSchema.safeParse(import.meta.env);
@@ -34,4 +38,5 @@ export const ENV = {
   DEFAULT_LOCALE: parsed.data.VITE_DEFAULT_LOCALE,
   FALLBACK_LOCALE: parsed.data.VITE_FALLBACK_LOCALE,
   GOOGLE_CLIENT_ID: parsed.data.VITE_GOOGLE_CLIENT_ID,
+  SENTRY_DSN: parsed.data.VITE_SENTRY_DSN_FRONTEND,
 } as const;

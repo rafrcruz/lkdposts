@@ -47,6 +47,11 @@ const config = {
     },
     superAdminEmail: env.SUPERADMIN_EMAIL.toLowerCase(),
   },
+  sentry: {
+    dsn: env.SENTRY_DSN_BACKEND || null,
+    tracesSampleRate: 0,
+    profilesSampleRate: 0,
+  },
 };
 
 module.exports = config;
