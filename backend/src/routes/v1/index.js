@@ -8,8 +8,8 @@ const { requireRole, ROLES } = require('../../middlewares/authorization');
 const router = express.Router();
 
 router.use('/auth', authRoutes);
-router.use(requireAuth);
 router.use(helloRoutes);
+router.use(requireAuth);
 router.use('/allowlist', requireRole(ROLES.ADMIN), allowlistRoutes);
 
 module.exports = router;
