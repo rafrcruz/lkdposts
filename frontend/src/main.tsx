@@ -2,7 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import * as Sentry from '@sentry/react';
-import { QueryClient, QueryClientProvider, setLogger } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 
 import App from './app/App';
@@ -13,6 +13,16 @@ import { HttpError } from './lib/api/http';
 
 import './styles/theme.css';
 import './styles/global.css';
+
+type QueryLogger = {
+  log: (...params: unknown[]) => void;
+  warn: (...params: unknown[]) => void;
+  error: (error: unknown) => void;
+};
+
+type QueryClientConfigWithLogger = ConstructorParameters<typeof QueryClient>[0] & {
+  logger?: QueryLogger;
+};
 
 const releaseVersion: string = __APP_VERSION__ || 'unknown';
 const environmentMode: string = typeof import.meta.env.MODE === 'string' && import.meta.env.MODE !== '' ? import.meta.env.MODE : 'development';
@@ -28,20 +38,20 @@ if (ENV.SENTRY_DSN) {
   });
 }
 
-setLogger({
-  log: (...params) => {
+const queryLogger: QueryLogger = {
+  log: (...params: unknown[]) => {
     console.log(...params);
   },
-  warn: (...params) => {
+  warn: (...params: unknown[]) => {
     console.warn(...params);
   },
-  error: (error) => {
+  error: (error: unknown) => {
     if (error instanceof HttpError && error.status === 401) {
       return;
     }
     console.error(error);
   },
-});
+};
 
 const rootElement = document.getElementById('root');
 
@@ -49,7 +59,8 @@ if (!rootElement) {
   throw new Error('Root element not found');
 }
 
-const queryClient = new QueryClient({
+const queryClientConfig: QueryClientConfigWithLogger = {
+  logger: queryLogger,
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
@@ -62,7 +73,9 @@ const queryClient = new QueryClient({
       staleTime: 60_000,
     },
   },
-});
+};
+
+const queryClient = new QueryClient(queryClientConfig);
 
 // eslint-disable-next-line react-refresh/only-export-components
 const ErrorFallback: React.FC = () => (
