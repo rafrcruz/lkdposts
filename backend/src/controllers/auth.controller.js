@@ -73,6 +73,8 @@ const debugAuth = asyncHandler(async (req, res) => {
     throw createDebugNotFoundError();
   }
 
+  const origin = typeof req.headers?.origin === 'string' ? req.headers.origin : null;
+
   const cookieNames = Array.from(
     new Set([
       ...Object.keys(req.cookies ?? {}),
@@ -81,17 +83,21 @@ const debugAuth = asyncHandler(async (req, res) => {
   ).sort();
 
   const token = req.signedCookies?.[sessionCookieName] ?? req.cookies?.[sessionCookieName] ?? null;
+  const hasCookie = Boolean(token);
 
   let authenticated = false;
-  let userIdOrEmail = null;
+  let userIdOrEmail;
 
   if (token) {
     try {
-      const result = await validateSessionToken({
-        token,
-        userAgent: req.headers['user-agent'] ?? 'unknown',
-        ipAddress: req.ip,
-      });
+      const result = await validateSessionToken(
+        {
+          token,
+          userAgent: req.headers['user-agent'] ?? 'unknown',
+          ipAddress: req.ip,
+        },
+        { touch: false }
+      );
 
       if (result?.session) {
         authenticated = true;
@@ -101,17 +107,26 @@ const debugAuth = asyncHandler(async (req, res) => {
         }
       }
     } catch (error) {
-      console.warn('Auth debug validation failed', error);
+      console.error('auth.debug.internal_error', { message: error.message });
+      throw error;
     }
   }
 
-  return res.success({
-    hasCookie: Boolean(token),
+  res.set('Cache-Control', 'no-store');
+
+  const payload = {
+    origin,
+    hasCookie,
     cookieNames,
     authenticated,
-    userIdOrEmail,
     release: config.release,
-  });
+  };
+
+  if (typeof userIdOrEmail === 'string' && userIdOrEmail.length > 0) {
+    payload.userIdOrEmail = userIdOrEmail;
+  }
+
+  return res.success(payload);
 });
 
 const getCurrentUser = asyncHandler(async (req, res) => {

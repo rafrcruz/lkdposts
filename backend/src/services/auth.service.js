@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 const config = require('../config');
 const { prisma } = require('../lib/prisma');
@@ -198,11 +198,19 @@ const authenticateWithGoogle = async ({ idToken, userAgent, ipAddress }) => {
   };
 };
 
-const validateSessionToken = async ({ token, userAgent, ipAddress }) => {
+const validateSessionToken = async ({ token, userAgent, ipAddress }, options = {}) => {
+  const { touch = true } = options;
   const existingSession = await findActiveSessionByToken(token);
 
   if (!existingSession) {
     return null;
+  }
+
+  if (!touch) {
+    return {
+      session: existingSession,
+      renewed: false,
+    };
   }
 
   return touchSession(existingSession, { userAgent, ipAddress });
