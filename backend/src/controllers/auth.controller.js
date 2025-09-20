@@ -62,14 +62,10 @@ const logout = asyncHandler(async (req, res) => {
 
 const debugAuth = asyncHandler(async (req, res) => {
   const isPreviewDeployment = config.runtime?.isPreviewDeployment ?? false;
-  const isProductionDeployment = config.runtime?.isProductionDeployment ?? false;
   const debugFlagEnabled = config.debug?.authInspector ?? false;
+  const debugEnabled = debugFlagEnabled || isPreviewDeployment;
 
-  if (isProductionDeployment) {
-    throw createDebugNotFoundError();
-  }
-
-  if (!debugFlagEnabled && !isPreviewDeployment) {
+  if (!debugEnabled) {
     throw createDebugNotFoundError();
   }
 
@@ -86,7 +82,7 @@ const debugAuth = asyncHandler(async (req, res) => {
   const hasCookie = Boolean(token);
 
   let authenticated = false;
-  let userIdOrEmail;
+  let userIdOrEmail = null;
 
   if (token) {
     try {
@@ -114,19 +110,14 @@ const debugAuth = asyncHandler(async (req, res) => {
 
   res.set('Cache-Control', 'no-store');
 
-  const payload = {
+  return res.success({
     origin,
     hasCookie,
     cookieNames,
     authenticated,
+    userIdOrEmail,
     release: config.release,
-  };
-
-  if (typeof userIdOrEmail === 'string' && userIdOrEmail.length > 0) {
-    payload.userIdOrEmail = userIdOrEmail;
-  }
-
-  return res.success(payload);
+  });
 });
 
 const getCurrentUser = asyncHandler(async (req, res) => {
