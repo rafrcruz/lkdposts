@@ -1,11 +1,20 @@
 const config = require('../config');
 
+const productionCookieOptions = {
+  secure: true,
+  sameSite: 'none',
+};
+
+const nonProductionCookieOptions = {
+  secure: false,
+  sameSite: 'lax',
+};
+
 const getSessionCookieBaseOptions = () => ({
   httpOnly: true,
-  secure: config.isProduction,
-  sameSite: config.isProduction ? 'none' : 'lax',
   signed: true,
   path: '/',
+  ...(config.isProduction ? productionCookieOptions : nonProductionCookieOptions),
 });
 
 const getSessionCookieOptions = (expiresAt) => ({
