@@ -1,18 +1,18 @@
-﻿import { useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 
 import { getHelloMessage } from '../api/hello';
 import type { HelloMessage } from '../types/hello';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 
-export const HELLO_QUERY_KEY = ['hello'] as const;
+import { HELLO_QUERY_KEY } from './constants';
 
-export type UseHelloMessageOptions = {
-  enabled?: boolean;
-};
+export const useHelloMessage = () => {
+  const { status } = useAuth();
+  const isAuthenticated = status === 'authenticated';
 
-export const useHelloMessage = (options?: UseHelloMessageOptions) => {
   return useQuery<HelloMessage>({
     queryKey: HELLO_QUERY_KEY,
     queryFn: getHelloMessage,
-    enabled: options?.enabled ?? true,
+    enabled: isAuthenticated,
   });
 };

@@ -20,7 +20,7 @@ export const HelloMessageCard = () => {
   const { status } = useAuth();
   const isAuthenticated = status === 'authenticated';
   const isCheckingSession = status === 'unknown';
-  const { data, isLoading, isError, refetch, isRefetching } = useHelloMessage({ enabled: isAuthenticated });
+  const { data, isLoading, isError, refetch, isRefetching } = useHelloMessage();
 
   const handleRefetch = () => {
     refetch().catch((error) => {
