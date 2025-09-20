@@ -9,11 +9,17 @@ import {
 } from '../api/allowlist';
 import type { AllowedRole, AllowlistEntry } from '../types/allowlist';
 import { HttpError } from '@/lib/api/http';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 
 export const useAllowlist = () => {
+  const { status, user } = useAuth();
+  const isAuthenticated = status === 'authenticated';
+  const isAdmin = user?.role === 'admin';
+
   return useQuery({
     queryKey: ALLOWLIST_QUERY_KEY,
     queryFn: fetchAllowlist,
+    enabled: isAuthenticated && isAdmin,
   });
 };
 

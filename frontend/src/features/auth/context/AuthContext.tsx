@@ -1,4 +1,4 @@
-﻿/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -10,7 +10,7 @@ import {
   type AuthSession,
 } from '../api/auth';
 import { ALLOWLIST_QUERY_KEY } from '@/features/allowlist/api/allowlist';
-import { HELLO_QUERY_KEY } from '@/features/hello/hooks/useHelloMessage';
+import { HELLO_QUERY_KEY } from '@/features/hello/hooks/constants';
 import { onUnauthorized } from '@/lib/api/http';
 
 const GUEST_SESSION: AuthSession = { authenticated: false, user: null };
