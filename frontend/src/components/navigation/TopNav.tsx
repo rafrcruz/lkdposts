@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+﻿import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -6,6 +6,7 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 import { clsx } from 'clsx';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { HttpError } from '@/lib/api/http';
 
 export const TopNav = () => {
   const { t } = useTranslation();
@@ -22,6 +23,9 @@ export const TopNav = () => {
 
   const handleLogout = () => {
     logout().catch((error) => {
+      if (error instanceof HttpError && error.status === 401) {
+        return;
+      }
       console.error('Failed to logout', error);
     });
   };
@@ -96,6 +100,7 @@ export const TopNav = () => {
     </header>
   );
 };
+
 
 
 

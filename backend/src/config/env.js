@@ -55,6 +55,7 @@ const envSchema = z.object({
   ENABLE_METRICS: z.preprocess((value) => toBoolean(value, true), z.boolean()),
   CACHE_MAX_AGE_SECONDS: z.preprocess((value) => toNumber(value, 60), z.number().int().nonnegative()),
   SWAGGER_UI_ENABLED: z.preprocess((value) => toBoolean(value, true), z.boolean()),
+  DEBUG_AUTH: z.preprocess((value) => toBoolean(value, false), z.boolean()),
   DATABASE_URL: z.string().url(),
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),

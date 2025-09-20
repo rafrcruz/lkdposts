@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { ENV } from '@/config/env';
 import { z, type ZodType, type ZodTypeDef } from 'zod';
 
@@ -13,6 +14,31 @@ export class HttpError extends Error {
   }
 }
 
+type UnauthorizedHandler = (error: HttpError) => void;
+
+const unauthorizedHandlers = new Set<UnauthorizedHandler>();
+
+const notifyUnauthorized = (error: HttpError) => {
+  if (error.status !== 401) {
+    return;
+  }
+
+  unauthorizedHandlers.forEach((handler) => {
+    try {
+      handler(error);
+    } catch {
+      // ignore listener failures so they do not affect the request flow
+    }
+  });
+};
+
+export const onUnauthorized = (handler: UnauthorizedHandler) => {
+  unauthorizedHandlers.add(handler);
+  return () => {
+    unauthorizedHandlers.delete(handler);
+  };
+};
+
 const envelopeSchema = z.object({
   success: z.boolean(),
   data: z.unknown().optional(),
@@ -26,6 +52,12 @@ const envelopeSchema = z.object({
 });
 
 const DEFAULT_ERROR_MESSAGE = 'Request failed';
+
+const createHttpError = (message: string, status: number, payload?: unknown) => {
+  const error = new HttpError(message, status, payload);
+  notifyUnauthorized(error);
+  return error;
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -53,7 +85,7 @@ const parseJsonPayload = <TResponse>(
 
   if (envelope.success) {
     if (!envelope.data.success) {
-      throw new HttpError(envelope.data.error?.message ?? DEFAULT_ERROR_MESSAGE, status, envelope.data.error);
+      throw createHttpError(envelope.data.error?.message ?? DEFAULT_ERROR_MESSAGE, status, envelope.data.error);
     }
 
     const data = envelope.data.data as TResponse;
@@ -67,9 +99,15 @@ const buildUrl = (path: string, baseUrl: string) => {
   try {
     return new URL(path, baseUrl);
   } catch (error) {
-    throw new Error(`Failed to construct URL for ${path}: ${(error as Error).message}`);
+    const message = (error as Error).message;
+    throw new Error('Failed to construct URL for ' + path + ': ' + message);
   }
 };
+
+export const apiHttpClient = axios.create({
+  baseURL: ENV.API_URL,
+  withCredentials: true,
+});
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -82,6 +120,20 @@ type RequestOptions<TBody> = {
 type JsonRequestOptions<TBody, TResponse> = RequestOptions<TBody> & {
   schema?: ZodType<TResponse, ZodTypeDef, unknown>;
 };
+
+apiHttpClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response) {
+      const { status, statusText, data } = error.response;
+      const fallback = statusText || DEFAULT_ERROR_MESSAGE;
+      const message = extractErrorMessage(data, fallback);
+      return Promise.reject(createHttpError(message, status, data));
+    }
+
+    return Promise.reject(error);
+  },
+);
 
 async function requestJson<TResponse, TBody = unknown>(path: string, options: JsonRequestOptions<TBody, TResponse> = {}) {
   const { method = 'GET', body, schema, headers = {} } = options;
@@ -112,7 +164,7 @@ async function requestJson<TResponse, TBody = unknown>(path: string, options: Js
   if (!response.ok) {
     const fallback = response.statusText || DEFAULT_ERROR_MESSAGE;
     const message = isJson ? extractErrorMessage(payload, fallback) : fallback;
-    throw new HttpError(message, response.status, payload);
+    throw createHttpError(message, response.status, payload);
   }
 
   if (!isJson) {
@@ -141,4 +193,3 @@ export function deleteJson<TResponse>(path: string, schema?: ZodType<TResponse, 
 export function putJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodType<TResponse, ZodTypeDef, unknown>) {
   return requestJson<TResponse, TBody>(path, { method: 'PUT', body, schema });
 }
-

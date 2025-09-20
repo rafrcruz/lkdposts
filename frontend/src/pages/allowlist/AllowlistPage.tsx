@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+﻿import { FormEvent, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -33,6 +33,10 @@ export const AllowlistPage = () => {
   const isBusy = createEntry.isPending || updateEntry.isPending || removeEntry.isPending;
 
   const handleError = (error: unknown) => {
+    if (error instanceof HttpError && error.status === 401) {
+      return;
+    }
+
     if (error instanceof HttpError) {
       const payload = error.payload as {
         message?: string;

@@ -2,12 +2,23 @@ const env = require('./env');
 
 const SESSION_COOKIE_NAME = 'lkd_session';
 const release = process.env.VERCEL_GIT_COMMIT_SHA || env.NODE_ENV;
+const vercelEnv = process.env.VERCEL_ENV ? process.env.VERCEL_ENV.toLowerCase() : null;
+const isPreviewDeployment = vercelEnv === 'preview';
+const isProductionDeployment = vercelEnv === 'production';
 
 const config = {
   env: env.NODE_ENV,
   release,
   isProduction: env.NODE_ENV === 'production',
   isTest: env.NODE_ENV === 'test',
+  runtime: {
+    vercelEnv,
+    isPreviewDeployment,
+    isProductionDeployment,
+  },
+  debug: {
+    authInspector: env.DEBUG_AUTH,
+  },
   server: {
     host: env.HOST,
     port: env.PORT,

@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components */
+﻿/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -11,6 +11,7 @@ import {
 } from '../api/auth';
 import { ALLOWLIST_QUERY_KEY } from '@/features/allowlist/api/allowlist';
 import { HELLO_QUERY_KEY } from '@/features/hello/hooks/useHelloMessage';
+import { onUnauthorized } from '@/lib/api/http';
 
 const GUEST_SESSION: AuthSession = { authenticated: false, user: null };
 
@@ -55,6 +56,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // ignore cache errors
     });
   }, [queryClient]);
+
+  useEffect(() => {
+    const unsubscribe = onUnauthorized(() => {
+      applySession(GUEST_SESSION);
+      setIsAuthenticating(false);
+      setAuthError(null);
+      queryClient.clear();
+    });
+
+    return unsubscribe;
+  }, [applySession, queryClient, setAuthError, setIsAuthenticating]);
 
   const refreshSession = useCallback(async () => {
     try {

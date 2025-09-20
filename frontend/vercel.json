@@ -1,4 +1,4 @@
-{
+﻿{
   "headers": [
     {
       "source": "/(.*)",
@@ -7,6 +7,11 @@
         { "key": "Cross-Origin-Embedder-Policy", "value": "unsafe-none" }
       ]
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/((?!.*\\.).*)",
+      "destination": "/index.html"
+    }
   ]
 }
-
