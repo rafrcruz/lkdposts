@@ -50,6 +50,47 @@ const definition = {
           },
         },
       },
+      Feed: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          url: { type: 'string', format: 'uri', example: 'https://example.com/rss.xml' },
+          title: { type: ['string', 'null'], example: 'My RSS feed' },
+          lastFetchedAt: { type: ['string', 'null'], format: 'date-time', example: null },
+          createdAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
+          updatedAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
+        },
+      },
+      FeedBulkResult: {
+        type: 'object',
+        properties: {
+          created: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Feed' },
+          },
+          duplicates: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                url: { type: 'string', format: 'uri' },
+                reason: { type: 'string', example: 'ALREADY_EXISTS' },
+                feedId: { type: ['integer', 'null'], example: 1 },
+              },
+            },
+          },
+          invalid: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                url: { type: 'string' },
+                reason: { type: 'string', example: 'INVALID_URL' },
+              },
+            },
+          },
+        },
+      },
     },
   },
 };
