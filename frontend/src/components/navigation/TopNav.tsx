@@ -16,6 +16,7 @@ export const TopNav = () => {
 
   if (status === 'authenticated') {
     links.push({ to: '/dashboard', label: t('navigation.dashboard') });
+    links.push({ to: '/posts', label: t('navigation.posts', 'Posts') });
     links.push({ to: '/feeds', label: t('navigation.feeds', 'Feeds') });
     if (user?.role === 'admin') {
       links.push({ to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') });
