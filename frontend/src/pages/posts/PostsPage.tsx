@@ -1,0 +1,623 @@
+import type { ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { useCleanupPosts, usePostList, useRefreshPosts } from '@/features/posts/hooks/usePosts';
+import type {
+  CleanupResult,
+  PostListItem,
+  RefreshFeedSummary,
+  RefreshSummary,
+} from '@/features/posts/types/post';
+import { useFeedList } from '@/features/feeds/hooks/useFeeds';
+import type { FeedListResponse } from '@/features/feeds/api/feeds';
+import type { Feed } from '@/features/feeds/types/feed';
+import type { PostListResponse } from '@/features/posts/api/posts';
+import { EmptyState } from '@/components/feedback/EmptyState';
+import { ErrorState } from '@/components/feedback/ErrorState';
+import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
+import { HttpError } from '@/lib/api/http';
+import { formatDate, formatNumber, useLocale } from '@/utils/formatters';
+
+const PAGE_SIZE = 10;
+const FEED_OPTIONS_LIMIT = 50;
+
+type ExpandedSections = Record<number, { post: boolean; article: boolean }>;
+
+type RefreshOptions = {
+  resetPagination?: boolean;
+};
+
+const resolveFeedLabel = (feed: Feed, t: ReturnType<typeof useTranslation>['t']) => {
+  if (feed.title) {
+    return feed.title;
+  }
+
+  if (feed.url) {
+    return feed.url;
+  }
+
+  return t('posts.filters.feedFallback', `Feed ${feed.id}`, { id: feed.id });
+};
+
+const resolveArticleFeedLabel = (feed: PostListItem['feed'], t: ReturnType<typeof useTranslation>['t']) => {
+  if (!feed) {
+    return t('posts.list.metadata.feedUnknown', 'Feed not available');
+  }
+
+  if (feed.title) {
+    return feed.title;
+  }
+
+  if (feed.url) {
+    return feed.url;
+  }
+
+  return t('posts.list.metadata.feedFallback', `Feed ${feed.id}`, { id: feed.id });
+};
+
+const buildSummaryTitle = (summary: RefreshFeedSummary, t: ReturnType<typeof useTranslation>['t']) => {
+  if (summary.feedTitle) {
+    return summary.feedTitle;
+  }
+
+  if (summary.feedUrl) {
+    return summary.feedUrl;
+  }
+
+  return t('posts.summary.feedFallback', `Feed ${summary.feedId}`, { id: summary.feedId });
+};
+
+const resolveErrorMessage = (error: unknown, t: ReturnType<typeof useTranslation>['t']) => {
+  if (error instanceof HttpError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return t('posts.errors.generic', 'The operation failed. Try again.');
+};
+
+const PostsPage = () => {
+  const { t } = useTranslation();
+  const locale = useLocale();
+
+  useEffect(() => {
+    document.title = t('posts.meta.title', 'lkdposts - Posts');
+  }, [t]);
+
+  const [selectedFeedId, setSelectedFeedId] = useState<number | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [previousCursors, setPreviousCursors] = useState<(string | null)[]>([]);
+  const [hasExecutedSequence, setHasExecutedSequence] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
+  const [refreshSummary, setRefreshSummary] = useState<RefreshSummary | null>(null);
+  const [isSummaryVisible, setIsSummaryVisible] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<ExpandedSections>({});
+
+  const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT });
+  const feedListData = feedList.data as FeedListResponse | undefined;
+  const feeds: Feed[] = feedListData?.items ?? [];
+  const totalFeeds: number = feedListData?.meta.total ?? 0;
+  const hasFeeds = totalFeeds > 0;
+
+  const postListQuery = usePostList({ cursor, limit: PAGE_SIZE, feedId: selectedFeedId, enabled: hasExecutedSequence });
+  const postListData = postListQuery.data as PostListResponse | undefined;
+  const posts = useMemo<PostListItem[]>(() => postListData?.items ?? [], [postListData?.items]);
+  const nextCursor: string | null = postListData?.meta.nextCursor ?? null;
+  const isLoading = postListQuery.isLoading && !postListQuery.isFetched;
+  const isError = postListQuery.isError;
+  const isFetching = postListQuery.isFetching;
+  const currentPage = previousCursors.length + 1;
+
+  const { mutateAsync: refreshPostsAsync } = useRefreshPosts();
+  const { mutateAsync: cleanupPostsAsync } = useCleanupPosts();
+
+  const syncPosts = useCallback(
+    async ({ resetPagination = false }: RefreshOptions = {}) => {
+      setRefreshError(null);
+      setCleanupError(null);
+
+      if (resetPagination) {
+        setCursor(null);
+        setPreviousCursors([]);
+      }
+
+      setIsSyncing(true);
+
+      const wasExecutedBefore = hasExecutedSequence;
+
+      const [refreshResult, cleanupResultEntry] = await Promise.allSettled([
+        refreshPostsAsync(),
+        cleanupPostsAsync(),
+      ]);
+
+      if (refreshResult.status === 'fulfilled') {
+        setRefreshSummary(refreshResult.value);
+      } else {
+        setRefreshSummary(null);
+        setRefreshError(resolveErrorMessage(refreshResult.reason, t));
+      }
+
+      if (cleanupResultEntry.status === 'fulfilled') {
+        setCleanupResult(cleanupResultEntry.value);
+      } else {
+        setCleanupResult(null);
+        setCleanupError(resolveErrorMessage(cleanupResultEntry.reason, t));
+      }
+
+      setHasExecutedSequence(true);
+
+      setIsSyncing(false);
+      return wasExecutedBefore;
+    },
+    [cleanupPostsAsync, hasExecutedSequence, refreshPostsAsync, t],
+  );
+
+  useEffect(() => {
+    if (hasExecutedSequence) {
+      return;
+    }
+
+    syncPosts().catch(() => {
+      setIsSyncing(false);
+    });
+  }, [hasExecutedSequence, syncPosts]);
+
+  useEffect(() => {
+    setExpandedSections((current) => {
+      let hasChanges = false;
+      const next: ExpandedSections = {};
+
+      posts.forEach((item) => {
+        const existing = current[item.id];
+        if (existing) {
+          next[item.id] = existing;
+          return;
+        }
+
+        hasChanges = true;
+        next[item.id] = { post: true, article: false };
+      });
+
+      const currentIds = Object.keys(current);
+      if (!hasChanges) {
+        if (currentIds.length !== posts.length) {
+          hasChanges = true;
+        } else {
+          for (const id of currentIds) {
+            if (!Object.prototype.hasOwnProperty.call(next, id)) {
+              hasChanges = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!hasChanges) {
+        return current;
+      }
+
+      return next;
+    });
+  }, [posts]);
+
+  const toggleSection = (id: number, section: 'post' | 'article') => {
+    setExpandedSections((current) => {
+      const currentEntry = current[id] ?? { post: true, article: false };
+      return {
+        ...current,
+        [id]: { ...currentEntry, [section]: !currentEntry[section] },
+      };
+    });
+  };
+
+  const handleFeedChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value;
+    const nextFeedId = value ? Number.parseInt(value, 10) : null;
+
+    setSelectedFeedId(Number.isNaN(nextFeedId) ? null : nextFeedId);
+    setCursor(null);
+    setPreviousCursors([]);
+  };
+
+  const handleNextPage = () => {
+    if (!nextCursor) {
+      return;
+    }
+
+    setPreviousCursors((current) => [...current, cursor]);
+    setCursor(nextCursor);
+  };
+
+  const handlePreviousPage = () => {
+    setPreviousCursors((current) => {
+      if (current.length === 0) {
+        return current;
+      }
+
+      const updated = [...current];
+      const previousCursor = updated.pop() ?? null;
+      setCursor(previousCursor);
+      return updated;
+    });
+  };
+
+  const renderPosts = () => {
+    if (!hasExecutedSequence) {
+      return (
+        <div className="card space-y-3 px-6 py-6">
+          <LoadingSkeleton className="h-5" />
+          <LoadingSkeleton className="h-5" />
+          <LoadingSkeleton className="h-5" />
+        </div>
+      );
+    }
+
+    if (!hasFeeds && feedList.isSuccess) {
+      return (
+        <EmptyState
+          title={t('posts.filters.empty.title', 'No feed available yet.')}
+          description={t(
+            'posts.filters.empty.description',
+            'Add feeds on the Feeds page to start generating posts.',
+          )}
+          action={
+            <a
+              href="/feeds"
+              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+            >
+              {t('posts.filters.empty.cta', 'Manage feeds')}
+            </a>
+          }
+        />
+      );
+    }
+
+    if (isLoading) {
+      return (
+        <div className="card space-y-3 px-6 py-6">
+          <LoadingSkeleton className="h-5" />
+          <LoadingSkeleton className="h-5" />
+          <LoadingSkeleton className="h-5" />
+        </div>
+      );
+    }
+
+    if (isError) {
+      return (
+        <ErrorState
+          title={t('posts.errors.list', 'Could not load posts. Try again later.')}
+          description={postListQuery.error instanceof Error ? postListQuery.error.message : undefined}
+          action={
+            <button
+              type="button"
+              className="mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
+              onClick={() => {
+                postListQuery.refetch().catch(() => {
+                  // error handled by query state
+                });
+              }}
+            >
+              {t('actions.tryAgain', 'Try again')}
+            </button>
+          }
+        />
+      );
+    }
+
+    if (posts.length === 0) {
+      const emptyTitleKey = selectedFeedId
+        ? 'posts.list.empty.filtered.title'
+        : 'posts.list.empty.default.title';
+      const emptyDescriptionKey = selectedFeedId
+        ? 'posts.list.empty.filtered.description'
+        : 'posts.list.empty.default.description';
+
+      return (
+        <EmptyState
+          title={t(emptyTitleKey, selectedFeedId ? 'No posts for this feed.' : 'No recent posts.')}
+          description={t(
+            emptyDescriptionKey,
+            selectedFeedId
+              ? 'Select another feed or refresh to get new posts.'
+              : 'Posts from the last seven days will appear here after a refresh.',
+          )}
+        />
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {posts.map((item) => {
+          const sectionState = expandedSections[item.id] ?? { post: true, article: false };
+          const postContentId = `post-content-${item.id}`;
+          const articleContentId = `article-content-${item.id}`;
+          const feedLabel = resolveArticleFeedLabel(item.feed, t);
+
+          return (
+            <article key={item.id} className="card space-y-4 px-6 py-6">
+              <header className="space-y-1">
+                <h2 className="text-lg font-semibold text-foreground">{item.title}</h2>
+                <p className="text-xs text-muted-foreground">
+                  {t('posts.list.metadata.publishedAt', 'Published {{date}}', {
+                    date: formatDate(item.publishedAt, locale),
+                  })}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('posts.list.metadata.feed', 'Feed: {{feed}}', { feed: feedLabel })}
+                </p>
+                {item.post?.createdAt ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t('posts.list.metadata.createdAt', 'Generated {{date}}', {
+                      date: formatDate(item.post.createdAt, locale),
+                    })}
+                  </p>
+                ) : null}
+              </header>
+              <section className="space-y-2">
+                <button
+                  type="button"
+                  aria-expanded={sectionState.post}
+                  aria-controls={postContentId}
+                  className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
+                  onClick={() => toggleSection(item.id, 'post')}
+                >
+                  {t('posts.list.sections.post', 'Post')}
+                  <span aria-hidden="true">{sectionState.post ? '−' : '+'}</span>
+                </button>
+                {sectionState.post ? (
+                  <div id={postContentId} className="rounded-md border border-border bg-background px-4 py-4 text-sm text-foreground">
+                    {item.post?.content ? (
+                      <p className="whitespace-pre-wrap leading-relaxed">{item.post.content}</p>
+                    ) : (
+                      <p className="text-muted-foreground">{t('posts.list.postUnavailable', 'Post not available yet.')}</p>
+                    )}
+                  </div>
+                ) : null}
+              </section>
+              <section className="space-y-2">
+                <button
+                  type="button"
+                  aria-expanded={sectionState.article}
+                  aria-controls={articleContentId}
+                  className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
+                  onClick={() => toggleSection(item.id, 'article')}
+                >
+                  {t('posts.list.sections.article', 'Article')}
+                  <span aria-hidden="true">{sectionState.article ? '−' : '+'}</span>
+                </button>
+                {sectionState.article ? (
+                  <div
+                    id={articleContentId}
+                    className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
+                  >
+                    <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.contentSnippet}</p>
+                  </div>
+                ) : null}
+              </section>
+            </article>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const summaryContent = useMemo(() => {
+    if (!refreshSummary || !isSummaryVisible) {
+      return null;
+    }
+
+    if (refreshSummary.feeds.length === 0) {
+      return (
+        <p className="text-sm text-muted-foreground">
+          {t('posts.summary.empty', 'No feed was processed during the latest refresh.')}
+        </p>
+      );
+    }
+
+    return (
+      <ul className="space-y-4">
+        {refreshSummary.feeds.map((summary) => (
+          <li key={summary.feedId} className="rounded-md border border-border px-4 py-4">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-sm font-semibold text-foreground">{buildSummaryTitle(summary, t)}</h3>
+              {summary.skippedByCooldown ? (
+                <p className="text-xs text-warning">
+                  {t('posts.summary.skippedByCooldown', 'Skipped by cooldown window.')}
+                  {summary.cooldownSecondsRemaining != null
+                    ? ` ${t('posts.summary.cooldownRemaining', 'Cooldown remaining: {{seconds}}s', {
+                        seconds: formatNumber(summary.cooldownSecondsRemaining, locale),
+                      })}`
+                    : ''}
+                </p>
+              ) : null}
+              <dl className="grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
+                  <dt className="font-medium text-foreground">{t('posts.summary.itemsRead', 'Items read')}</dt>
+                  <dd>{formatNumber(summary.itemsRead, locale)}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
+                  <dt className="font-medium text-foreground">
+                    {t('posts.summary.itemsWithinWindow', 'Items within window')}
+                  </dt>
+                  <dd>{formatNumber(summary.itemsWithinWindow, locale)}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
+                  <dt className="font-medium text-foreground">
+                    {t('posts.summary.articlesCreated', 'Articles created')}
+                  </dt>
+                  <dd>{formatNumber(summary.articlesCreated, locale)}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
+                  <dt className="font-medium text-foreground">{t('posts.summary.duplicates', 'Duplicates')}</dt>
+                  <dd>{formatNumber(summary.duplicates, locale)}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
+                  <dt className="font-medium text-foreground">
+                    {t('posts.summary.invalidItems', 'Invalid entries')}
+                  </dt>
+                  <dd>{formatNumber(summary.invalidItems, locale)}</dd>
+                </div>
+              </dl>
+              {summary.error ? (
+                <p className="text-xs text-danger">
+                  {t('posts.summary.error', 'Error: {{message}}', { message: summary.error })}
+                </p>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  }, [locale, refreshSummary, isSummaryVisible, t]);
+
+  return (
+    <div className="container-responsive space-y-6 py-10" id="conteudo">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-display font-semibold tracking-tight text-foreground">
+          {t('posts.heading', 'Recent posts')}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {t('posts.subtitle', 'Review the generated posts alongside the original article excerpts.')}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-4 rounded-md border border-border bg-card px-6 py-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-muted-foreground" htmlFor="feed-filter">
+            {t('posts.filters.feedLabel', 'Filter by feed')}
+          </label>
+          <select
+            id="feed-filter"
+            className="w-full min-w-[16rem] rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            value={selectedFeedId ?? ''}
+            onChange={handleFeedChange}
+            disabled={feedList.isLoading || feedList.isFetching || (!hasFeeds && feedList.isSuccess)}
+          >
+            <option value="">{t('posts.filters.feedAll', 'All feeds')}</option>
+            {feeds.map((feed) => (
+              <option key={feed.id} value={feed.id}>
+                {resolveFeedLabel(feed, t)}
+              </option>
+            ))}
+          </select>
+          {feedList.isError ? (
+            <p className="text-xs text-danger">
+              {t('posts.filters.error', 'Could not load your feeds. Try refreshing the page.')}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          {isSyncing || isFetching ? (
+            <span className="text-xs text-muted-foreground">{t('posts.messages.syncing', 'Syncing...')}</span>
+          ) : null}
+          {refreshError || cleanupError ? (
+            <span className="text-xs text-danger">
+              {t('posts.errors.partial', 'Some operations finished with errors.')}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => {
+              syncPosts({ resetPagination: true })
+                .then((shouldRefetch) => {
+                  if (!shouldRefetch) {
+                    return;
+                  }
+
+                  postListQuery
+                    .refetch()
+                    .catch(() => {
+                      // error handled by query state
+                    });
+                })
+                .catch(() => {
+                  setIsSyncing(false);
+                });
+            }}
+            disabled={isSyncing}
+          >
+            {isSyncing ? t('posts.actions.refreshing', 'Refreshing...') : t('posts.actions.refresh', 'Refresh')}
+          </button>
+        </div>
+      </div>
+
+      {refreshError ? (
+        <ErrorState title={t('posts.errors.refresh', 'Could not refresh your feeds.')} description={refreshError} />
+      ) : null}
+
+      {cleanupError ? (
+        <ErrorState title={t('posts.errors.cleanup', 'Could not clean old articles.')} description={cleanupError} />
+      ) : null}
+
+      {cleanupResult ? (
+        <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+          {t('posts.cleanup.description', 'Removed {{articles}} articles and {{posts}} posts older than seven days.', {
+            articles: formatNumber(cleanupResult.removedArticles, locale),
+            posts: formatNumber(cleanupResult.removedPosts, locale),
+          })}
+        </div>
+      ) : null}
+
+      {refreshSummary ? (
+        <section className="card space-y-4 px-6 py-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">{t('posts.summary.title', 'Refresh summary')}</h2>
+              <p className="text-xs text-muted-foreground">
+                {t('posts.summary.executedAt', 'Executed at {{date}}', {
+                  date: formatDate(refreshSummary.now, locale),
+                })}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
+              onClick={() => setIsSummaryVisible((value) => !value)}
+            >
+              {isSummaryVisible
+                ? t('posts.summary.hide', 'Hide refresh summary')
+                : t('posts.summary.show', 'Show refresh summary')}
+            </button>
+          </div>
+          {summaryContent}
+        </section>
+      ) : null}
+
+      {renderPosts()}
+
+      {posts.length > 0 ? (
+        <div className="flex items-center justify-between rounded-md border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
+          <div>{t('posts.pagination.page', 'Page {{page}}', { page: currentPage })}</div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={handlePreviousPage}
+              disabled={previousCursors.length === 0 || isLoading || isSyncing}
+            >
+              {t('posts.pagination.previous', 'Previous')}
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={handleNextPage}
+              disabled={!nextCursor || isLoading || isSyncing}
+            >
+              {t('posts.pagination.next', 'Next')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+export default PostsPage;

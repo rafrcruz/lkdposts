@@ -9,6 +9,7 @@ import { RequireAuth } from '@/features/auth/components/RequireAuth';
 const HomePage = lazy(() => import('@/pages/home/HomePage'));
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'));
 const FeedsPage = lazy(() => import('@/pages/feeds/FeedsPage'));
+const PostsPage = lazy(() => import('@/pages/posts/PostsPage'));
 const AllowlistPage = lazy(() => import('@/pages/allowlist/AllowlistPage'));
 const NotFoundPage = lazy(() => import('@/pages/not-found/NotFoundPage'));
 
@@ -36,6 +37,14 @@ export const router = createBrowserRouter([
         element: withSuspense(
           <RequireAuth>
             <FeedsPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'posts',
+        element: withSuspense(
+          <RequireAuth>
+            <PostsPage />
           </RequireAuth>
         ),
       },
