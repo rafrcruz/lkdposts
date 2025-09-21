@@ -28,6 +28,16 @@ type RefreshOptions = {
   resetPagination?: boolean;
 };
 
+type RefreshAggregates = {
+  itemsRead: number;
+  itemsWithinWindow: number;
+  articlesCreated: number;
+  duplicates: number;
+  invalidItems: number;
+  skippedFeeds: number;
+  errorFeeds: number;
+};
+
 const resolveFeedLabel = (feed: Feed, t: ReturnType<typeof useTranslation>['t']) => {
   if (feed.title) {
     return feed.title;
@@ -68,12 +78,19 @@ const buildSummaryTitle = (summary: RefreshFeedSummary, t: ReturnType<typeof use
   return t('posts.summary.feedFallback', `Feed ${summary.feedId}`, { id: summary.feedId });
 };
 
-const resolveErrorMessage = (error: unknown, t: ReturnType<typeof useTranslation>['t']) => {
+const NETWORK_ERROR_KEYWORDS = ['network', 'timeout', 'failed to fetch', 'load failed'];
+
+const resolveOperationErrorMessage = (error: unknown, t: ReturnType<typeof useTranslation>['t']) => {
   if (error instanceof HttpError) {
     return error.message;
   }
 
   if (error instanceof Error) {
+    const normalizedMessage = error.message.toLowerCase();
+    if (NETWORK_ERROR_KEYWORDS.some((keyword) => normalizedMessage.includes(keyword))) {
+      return t('posts.errors.network', 'We could not connect. Check your network and try again.');
+    }
+
     return error.message;
   }
 
@@ -97,7 +114,7 @@ const PostsPage = () => {
   const [cleanupError, setCleanupError] = useState<string | null>(null);
   const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
   const [refreshSummary, setRefreshSummary] = useState<RefreshSummary | null>(null);
-  const [isSummaryVisible, setIsSummaryVisible] = useState(false);
+  const [isSummaryDismissed, setIsSummaryDismissed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<ExpandedSections>({});
 
   const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT });
@@ -123,10 +140,8 @@ const PostsPage = () => {
       setRefreshError(null);
       setCleanupError(null);
 
-      if (resetPagination) {
-        setCursor(null);
-        setPreviousCursors([]);
-      }
+      const previousCursorValue = cursor;
+      const hadPreviousCursors = previousCursors.length;
 
       setIsSyncing(true);
 
@@ -141,22 +156,32 @@ const PostsPage = () => {
         setRefreshSummary(refreshResult.value);
       } else {
         setRefreshSummary(null);
-        setRefreshError(resolveErrorMessage(refreshResult.reason, t));
+        setRefreshError(resolveOperationErrorMessage(refreshResult.reason, t));
       }
 
       if (cleanupResultEntry.status === 'fulfilled') {
         setCleanupResult(cleanupResultEntry.value);
       } else {
         setCleanupResult(null);
-        setCleanupError(resolveErrorMessage(cleanupResultEntry.reason, t));
+        setCleanupError(resolveOperationErrorMessage(cleanupResultEntry.reason, t));
+      }
+
+      if (resetPagination) {
+        setCursor(null);
+        setPreviousCursors([]);
       }
 
       setHasExecutedSequence(true);
 
       setIsSyncing(false);
-      return wasExecutedBefore;
+
+      const shouldRefetchList =
+        wasExecutedBefore &&
+        (!resetPagination || (previousCursorValue === null && hadPreviousCursors === 0));
+
+      return { shouldRefetchList };
     },
-    [cleanupPostsAsync, hasExecutedSequence, refreshPostsAsync, t],
+    [cleanupPostsAsync, cursor, hasExecutedSequence, previousCursors.length, refreshPostsAsync, t],
   );
 
   useEffect(() => {
@@ -164,10 +189,32 @@ const PostsPage = () => {
       return;
     }
 
-    syncPosts().catch(() => {
-      setIsSyncing(false);
-    });
+    void syncPosts();
   }, [hasExecutedSequence, syncPosts]);
+
+  useEffect(() => {
+    if (refreshSummary) {
+      setIsSummaryDismissed(false);
+    }
+  }, [refreshSummary]);
+
+  const runSequence = ({ resetPagination = false }: RefreshOptions = {}) => {
+    if (isSyncing) {
+      return;
+    }
+
+    void syncPosts({ resetPagination }).then(({ shouldRefetchList }) => {
+      if (!shouldRefetchList) {
+        return;
+      }
+
+      postListQuery
+        .refetch()
+        .catch(() => {
+          // error handled by query state
+        });
+    });
+  };
 
   useEffect(() => {
     setExpandedSections((current) => {
@@ -221,7 +268,13 @@ const PostsPage = () => {
     const value = event.target.value;
     const nextFeedId = value ? Number.parseInt(value, 10) : null;
 
-    setSelectedFeedId(Number.isNaN(nextFeedId) ? null : nextFeedId);
+    const resolvedFeedId = Number.isNaN(nextFeedId) ? null : nextFeedId;
+
+    if (resolvedFeedId === selectedFeedId) {
+      return;
+    }
+
+    setSelectedFeedId(resolvedFeedId);
     setCursor(null);
     setPreviousCursors([]);
   };
@@ -249,6 +302,10 @@ const PostsPage = () => {
   };
 
   const renderPosts = () => {
+    const listErrorMessage = postListQuery.error
+      ? resolveOperationErrorMessage(postListQuery.error, t)
+      : undefined;
+
     if (!hasExecutedSequence) {
       return (
         <div className="card space-y-3 px-6 py-6">
@@ -293,16 +350,13 @@ const PostsPage = () => {
       return (
         <ErrorState
           title={t('posts.errors.list', 'Could not load posts. Try again later.')}
-          description={postListQuery.error instanceof Error ? postListQuery.error.message : undefined}
+          description={listErrorMessage}
           action={
             <button
               type="button"
-              className="mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
-              onClick={() => {
-                postListQuery.refetch().catch(() => {
-                  // error handled by query state
-                });
-              }}
+              className="mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => runSequence()}
+              disabled={isSyncing}
             >
               {t('actions.tryAgain', 'Try again')}
             </button>
@@ -408,74 +462,79 @@ const PostsPage = () => {
     );
   };
 
-  const summaryContent = useMemo(() => {
-    if (!refreshSummary || !isSummaryVisible) {
+  const summaryAggregates = useMemo<RefreshAggregates | null>(() => {
+    if (!refreshSummary) {
       return null;
     }
 
-    if (refreshSummary.feeds.length === 0) {
-      return (
-        <p className="text-sm text-muted-foreground">
-          {t('posts.summary.empty', 'No feed was processed during the latest refresh.')}
-        </p>
-      );
-    }
-
-    return (
-      <ul className="space-y-4">
-        {refreshSummary.feeds.map((summary) => (
-          <li key={summary.feedId} className="rounded-md border border-border px-4 py-4">
-            <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-semibold text-foreground">{buildSummaryTitle(summary, t)}</h3>
-              {summary.skippedByCooldown ? (
-                <p className="text-xs text-warning">
-                  {t('posts.summary.skippedByCooldown', 'Skipped by cooldown window.')}
-                  {summary.cooldownSecondsRemaining != null
-                    ? ` ${t('posts.summary.cooldownRemaining', 'Cooldown remaining: {{seconds}}s', {
-                        seconds: formatNumber(summary.cooldownSecondsRemaining, locale),
-                      })}`
-                    : ''}
-                </p>
-              ) : null}
-              <dl className="grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
-                  <dt className="font-medium text-foreground">{t('posts.summary.itemsRead', 'Items read')}</dt>
-                  <dd>{formatNumber(summary.itemsRead, locale)}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
-                  <dt className="font-medium text-foreground">
-                    {t('posts.summary.itemsWithinWindow', 'Items within window')}
-                  </dt>
-                  <dd>{formatNumber(summary.itemsWithinWindow, locale)}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
-                  <dt className="font-medium text-foreground">
-                    {t('posts.summary.articlesCreated', 'Articles created')}
-                  </dt>
-                  <dd>{formatNumber(summary.articlesCreated, locale)}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
-                  <dt className="font-medium text-foreground">{t('posts.summary.duplicates', 'Duplicates')}</dt>
-                  <dd>{formatNumber(summary.duplicates, locale)}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
-                  <dt className="font-medium text-foreground">
-                    {t('posts.summary.invalidItems', 'Invalid entries')}
-                  </dt>
-                  <dd>{formatNumber(summary.invalidItems, locale)}</dd>
-                </div>
-              </dl>
-              {summary.error ? (
-                <p className="text-xs text-danger">
-                  {t('posts.summary.error', 'Error: {{message}}', { message: summary.error })}
-                </p>
-              ) : null}
-            </div>
-          </li>
-        ))}
-      </ul>
+    return refreshSummary.feeds.reduce<RefreshAggregates>(
+      (accumulator, feedSummary) => {
+        return {
+          itemsRead: accumulator.itemsRead + feedSummary.itemsRead,
+          itemsWithinWindow: accumulator.itemsWithinWindow + feedSummary.itemsWithinWindow,
+          articlesCreated: accumulator.articlesCreated + feedSummary.articlesCreated,
+          duplicates: accumulator.duplicates + feedSummary.duplicates,
+          invalidItems: accumulator.invalidItems + feedSummary.invalidItems,
+          skippedFeeds: accumulator.skippedFeeds + (feedSummary.skippedByCooldown ? 1 : 0),
+          errorFeeds: accumulator.errorFeeds + (feedSummary.error ? 1 : 0),
+        };
+      },
+      {
+        itemsRead: 0,
+        itemsWithinWindow: 0,
+        articlesCreated: 0,
+        duplicates: 0,
+        invalidItems: 0,
+        skippedFeeds: 0,
+        errorFeeds: 0,
+      },
     );
-  }, [locale, refreshSummary, isSummaryVisible, t]);
+  }, [refreshSummary]);
+
+  const summaryFeeds = refreshSummary?.feeds ?? [];
+  const summaryHasPartialErrors = (summaryAggregates?.errorFeeds ?? 0) > 0;
+  const summaryMetricCards = [
+    {
+      key: 'feedsProcessed',
+      label: t('posts.summary.metrics.feedsProcessed', 'Feeds processed'),
+      value: formatNumber(summaryFeeds.length, locale),
+    },
+    {
+      key: 'feedsSkipped',
+      label: t('posts.summary.metrics.feedsSkipped', 'Feeds skipped'),
+      value: formatNumber(summaryAggregates?.skippedFeeds ?? 0, locale),
+    },
+    {
+      key: 'feedsWithErrors',
+      label: t('posts.summary.metrics.feedsWithErrors', 'Feeds with errors'),
+      value: formatNumber(summaryAggregates?.errorFeeds ?? 0, locale),
+    },
+    {
+      key: 'itemsRead',
+      label: t('posts.summary.itemsRead', 'Items read'),
+      value: formatNumber(summaryAggregates?.itemsRead ?? 0, locale),
+    },
+    {
+      key: 'itemsWithinWindow',
+      label: t('posts.summary.itemsWithinWindow', 'Items within window'),
+      value: formatNumber(summaryAggregates?.itemsWithinWindow ?? 0, locale),
+    },
+    {
+      key: 'articlesCreated',
+      label: t('posts.summary.articlesCreated', 'Articles created'),
+      value: formatNumber(summaryAggregates?.articlesCreated ?? 0, locale),
+    },
+    {
+      key: 'duplicates',
+      label: t('posts.summary.duplicates', 'Duplicates'),
+      value: formatNumber(summaryAggregates?.duplicates ?? 0, locale),
+    },
+    {
+      key: 'invalidItems',
+      label: t('posts.summary.invalidItems', 'Invalid entries'),
+      value: formatNumber(summaryAggregates?.invalidItems ?? 0, locale),
+    },
+  ];
 
   return (
     <div className="container-responsive space-y-6 py-10" id="conteudo">
@@ -525,23 +584,7 @@ const PostsPage = () => {
           <button
             type="button"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={() => {
-              syncPosts({ resetPagination: true })
-                .then((shouldRefetch) => {
-                  if (!shouldRefetch) {
-                    return;
-                  }
-
-                  postListQuery
-                    .refetch()
-                    .catch(() => {
-                      // error handled by query state
-                    });
-                })
-                .catch(() => {
-                  setIsSyncing(false);
-                });
-            }}
+            onClick={() => runSequence({ resetPagination: true })}
             disabled={isSyncing}
           >
             {isSyncing ? t('posts.actions.refreshing', 'Refreshing...') : t('posts.actions.refresh', 'Refresh')}
@@ -550,11 +593,37 @@ const PostsPage = () => {
       </div>
 
       {refreshError ? (
-        <ErrorState title={t('posts.errors.refresh', 'Could not refresh your feeds.')} description={refreshError} />
+        <ErrorState
+          title={t('posts.errors.refresh', 'Could not refresh your feeds.')}
+          description={refreshError}
+          action={
+            <button
+              type="button"
+              className="mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => runSequence()}
+              disabled={isSyncing}
+            >
+              {t('actions.tryAgain', 'Try again')}
+            </button>
+          }
+        />
       ) : null}
 
       {cleanupError ? (
-        <ErrorState title={t('posts.errors.cleanup', 'Could not clean old articles.')} description={cleanupError} />
+        <ErrorState
+          title={t('posts.errors.cleanup', 'Could not clean old articles.')}
+          description={cleanupError}
+          action={
+            <button
+              type="button"
+              className="mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => runSequence()}
+              disabled={isSyncing}
+            >
+              {t('actions.tryAgain', 'Try again')}
+            </button>
+          }
+        />
       ) : null}
 
       {cleanupResult ? (
@@ -566,9 +635,9 @@ const PostsPage = () => {
         </div>
       ) : null}
 
-      {refreshSummary ? (
+      {refreshSummary && !isSummaryDismissed ? (
         <section className="card space-y-4 px-6 py-6">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-foreground">{t('posts.summary.title', 'Refresh summary')}</h2>
               <p className="text-xs text-muted-foreground">
@@ -580,14 +649,117 @@ const PostsPage = () => {
             <button
               type="button"
               className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
-              onClick={() => setIsSummaryVisible((value) => !value)}
+              onClick={() => setIsSummaryDismissed(true)}
             >
-              {isSummaryVisible
-                ? t('posts.summary.hide', 'Hide refresh summary')
-                : t('posts.summary.show', 'Show refresh summary')}
+              {t('posts.summary.dismiss', 'Dismiss summary')}
             </button>
           </div>
-          {summaryContent}
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {summaryMetricCards.map((metric) => (
+              <div key={metric.key} className="rounded-md border border-border/70 bg-muted/30 px-3 py-3">
+                <p className="text-[0.6875rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {metric.label}
+                </p>
+                <p className="text-lg font-semibold text-foreground">{metric.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {summaryHasPartialErrors ? (
+            <p className="text-xs text-warning">
+              {t('posts.summary.partialError', 'Some feeds returned errors during the refresh.')}
+            </p>
+          ) : null}
+
+          {summaryFeeds.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t('posts.summary.empty', 'No feed was processed during the latest refresh.')}
+            </p>
+          ) : (
+            <ul className="space-y-4">
+              {summaryFeeds.map((summary) => {
+                const statusLabel = summary.error
+                  ? t('posts.summary.feedStatus.error', 'Error')
+                  : summary.skippedByCooldown
+                    ? t('posts.summary.feedStatus.skipped', 'Skipped')
+                    : t('posts.summary.feedStatus.ok', 'Updated');
+                const statusClassName = summary.error
+                  ? 'border-danger/40 bg-danger/10 text-danger'
+                  : summary.skippedByCooldown
+                    ? 'border-warning/40 bg-warning/10 text-warning'
+                    : 'border-primary/40 bg-primary/10 text-primary';
+                const metrics = [
+                  {
+                    key: 'itemsRead',
+                    label: t('posts.summary.itemsRead', 'Items read'),
+                    value: formatNumber(summary.itemsRead, locale),
+                  },
+                  {
+                    key: 'itemsWithinWindow',
+                    label: t('posts.summary.itemsWithinWindow', 'Items within window'),
+                    value: formatNumber(summary.itemsWithinWindow, locale),
+                  },
+                  {
+                    key: 'articlesCreated',
+                    label: t('posts.summary.articlesCreated', 'Articles created'),
+                    value: formatNumber(summary.articlesCreated, locale),
+                  },
+                  {
+                    key: 'duplicates',
+                    label: t('posts.summary.duplicates', 'Duplicates'),
+                    value: formatNumber(summary.duplicates, locale),
+                  },
+                  {
+                    key: 'invalidItems',
+                    label: t('posts.summary.invalidItems', 'Invalid entries'),
+                    value: formatNumber(summary.invalidItems, locale),
+                  },
+                ];
+
+                return (
+                  <li key={summary.feedId} className="rounded-md border border-border px-4 py-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-semibold text-foreground">{buildSummaryTitle(summary, t)}</h3>
+                        {summary.skippedByCooldown ? (
+                          <p className="text-xs text-warning">
+                            {t('posts.summary.skippedByCooldown', 'Skipped by cooldown window.')}
+                            {summary.cooldownSecondsRemaining != null
+                              ? ` ${t('posts.summary.cooldownRemaining', 'Cooldown remaining: {{seconds}}s', {
+                                  seconds: formatNumber(summary.cooldownSecondsRemaining, locale),
+                                })}`
+                              : ''}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span
+                        className={`inline-flex items-center justify-center rounded-full border px-2 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide ${statusClassName}`}
+                      >
+                        {statusLabel}
+                      </span>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
+                      {metrics.map((metric) => (
+                        <div
+                          key={metric.key}
+                          className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2"
+                        >
+                          <dt className="font-medium text-foreground">{metric.label}</dt>
+                          <dd>{metric.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {summary.error ? (
+                      <p className="mt-2 text-xs text-danger">
+                        {t('posts.summary.error', 'Error: {{message}}', { message: summary.error })}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       ) : null}
 
