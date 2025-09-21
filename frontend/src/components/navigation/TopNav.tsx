@@ -1,4 +1,4 @@
-﻿import type { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -16,6 +16,7 @@ export const TopNav = () => {
 
   if (status === 'authenticated') {
     links.push({ to: '/dashboard', label: t('navigation.dashboard') });
+    links.push({ to: '/feeds', label: t('navigation.feeds', 'Feeds') });
     if (user?.role === 'admin') {
       links.push({ to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') });
     }

@@ -1,0 +1,784 @@
+import { FormEvent, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { useBulkCreateFeeds, useCreateFeed, useDeleteFeed, useFeedList, useUpdateFeed } from '@/features/feeds/hooks/useFeeds';
+import type {
+  Feed,
+  FeedBulkResult,
+  FeedDuplicateReason,
+  FeedInvalidReason,
+  FeedListMeta,
+} from '@/features/feeds/types/feed';
+import type { FeedListResponse } from '@/features/feeds/api/feeds';
+import type { UseQueryResult } from '@tanstack/react-query';
+import { HttpError } from '@/lib/api/http';
+import { EmptyState } from '@/components/feedback/EmptyState';
+import { formatDate, useLocale } from '@/utils/formatters';
+
+const PAGE_SIZE = 10;
+
+type FeedbackMessage = {
+  type: 'success' | 'error';
+  message: string;
+};
+
+type BulkSummary = {
+  created: FeedBulkResult['created'];
+  duplicates: FeedBulkResult['duplicates'];
+  invalid: FeedBulkResult['invalid'];
+};
+
+const isValidUrl = (value: string) => {
+  const candidate = value.trim();
+
+  if (!candidate) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const extractErrorCode = (error: HttpError) => {
+  const payload = error.payload;
+
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+
+  if (typeof record.code === 'string') {
+    return record.code;
+  }
+
+  if (record.error && typeof record.error === 'object') {
+    const nested = record.error as Record<string, unknown>;
+    if (typeof nested.code === 'string') {
+      return nested.code;
+    }
+  }
+
+  return null;
+};
+
+const buildFeedbackClassName = (feedback: FeedbackMessage | null) => {
+  if (!feedback) {
+    return '';
+  }
+
+  return feedback.type === 'success' ? 'text-sm text-primary' : 'text-sm text-destructive';
+};
+
+const buildFeedbackRole = (feedback: FeedbackMessage | null) => {
+  if (!feedback) {
+    return undefined;
+  }
+
+  return feedback.type === 'error' ? 'alert' : 'status';
+};
+
+const FeedsPage = () => {
+  const { t } = useTranslation();
+  const locale = useLocale();
+
+  useEffect(() => {
+    document.title = t('feeds.meta.title', 'lkdposts - Feeds');
+  }, [t]);
+
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [previousCursors, setPreviousCursors] = useState<(string | null)[]>([]);
+
+  const [singleUrl, setSingleUrl] = useState('');
+  const [singleTitle, setSingleTitle] = useState('');
+  const [singleFeedback, setSingleFeedback] = useState<FeedbackMessage | null>(null);
+
+  const [bulkInput, setBulkInput] = useState('');
+  const [bulkFeedback, setBulkFeedback] = useState<FeedbackMessage | null>(null);
+  const [bulkSummary, setBulkSummary] = useState<BulkSummary | null>(null);
+
+  const [editingFeed, setEditingFeed] = useState<Feed | null>(null);
+  const [editUrl, setEditUrl] = useState('');
+  const [editTitle, setEditTitle] = useState('');
+  const [editFeedback, setEditFeedback] = useState<FeedbackMessage | null>(null);
+
+  const [listFeedback, setListFeedback] = useState<FeedbackMessage | null>(null);
+
+  const feedList: UseQueryResult<FeedListResponse, HttpError> = useFeedList({ cursor, limit: PAGE_SIZE });
+  const createFeed = useCreateFeed();
+  const bulkCreate = useBulkCreateFeeds();
+  const updateFeedMutation = useUpdateFeed();
+  const deleteFeedMutation = useDeleteFeed();
+
+  const feeds: Feed[] = feedList.data?.items ?? [];
+  const meta: FeedListMeta | undefined = feedList.data?.meta;
+  const nextCursor: string | null = meta?.nextCursor ?? null;
+  const totalFeeds: number = meta?.total ?? 0;
+  const currentPage = previousCursors.length + 1;
+
+  const isLoading = feedList.isLoading && !feedList.isFetched;
+  const isError = feedList.isError;
+  const isFetching = feedList.isFetching;
+
+  const isCreating = createFeed.isPending;
+  const isBulkCreating = bulkCreate.isPending;
+  const isUpdating = updateFeedMutation.isPending;
+  const isDeleting = deleteFeedMutation.isPending;
+
+  const resetPagination = () => {
+    setCursor(null);
+    setPreviousCursors([]);
+  };
+
+  const resolveErrorMessage = (error: unknown): string => {
+    if (error instanceof HttpError) {
+      const code = extractErrorCode(error);
+
+      if (error.status === 409 && code === 'FEED_ALREADY_EXISTS') {
+        return t('feeds.errors.duplicate', 'Este feed ja foi adicionado.');
+      }
+
+      if (error.status === 400 && code === 'INVALID_URL') {
+        return t('feeds.errors.invalidUrl', 'Informe uma URL valida iniciando com http:// ou https://');
+      }
+
+      return error.message;
+    }
+
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return t('feeds.errors.generic', 'A operacao falhou. Tente novamente.');
+  };
+
+  const getDuplicateReasonLabel = (reason: FeedDuplicateReason) => {
+    if (reason === 'ALREADY_EXISTS') {
+      return t('feeds.bulkForm.reasons.alreadyExists', 'Este feed ja existe para o usuario.');
+    }
+
+    return t('feeds.bulkForm.reasons.duplicateInPayload', 'URL duplicada no envio em lote.');
+  };
+
+  const getInvalidReasonLabel = (reason: FeedInvalidReason) => {
+    if (reason === 'URL_REQUIRED') {
+      return t('feeds.bulkForm.reasons.urlRequired', 'URL obrigatoria.');
+    }
+
+    return t('feeds.bulkForm.reasons.invalidUrl', 'Formato de URL invalido.');
+  };
+
+  const handleCreateSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSingleFeedback(null);
+    setListFeedback(null);
+
+    const trimmedUrl = singleUrl.trim();
+    const trimmedTitle = singleTitle.trim();
+
+    if (!trimmedUrl) {
+      setSingleFeedback({
+        type: 'error',
+        message: t('feeds.form.errors.urlRequired', 'Informe uma URL.'),
+      });
+      return;
+    }
+
+    if (!isValidUrl(trimmedUrl)) {
+      setSingleFeedback({
+        type: 'error',
+        message: t('feeds.form.errors.invalidUrl', 'Informe uma URL valida iniciando com http:// ou https://'),
+      });
+      return;
+    }
+
+    const payload: { url: string; title?: string | null } = { url: trimmedUrl };
+
+    if (trimmedTitle.length > 0) {
+      payload.title = trimmedTitle;
+    }
+
+    createFeed.mutate(payload, {
+      onSuccess: () => {
+        setSingleFeedback({
+          type: 'success',
+          message: t('feeds.form.success', 'Feed adicionado com sucesso.'),
+        });
+        setSingleUrl('');
+        setSingleTitle('');
+        resetPagination();
+      },
+      onError: (error) => {
+        setSingleFeedback({ type: 'error', message: resolveErrorMessage(error) });
+      },
+    });
+  };
+
+  const handleBulkSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBulkFeedback(null);
+    setListFeedback(null);
+
+    const lines = bulkInput
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) {
+      setBulkSummary(null);
+      setBulkFeedback({
+        type: 'error',
+        message: t('feeds.bulkForm.errors.empty', 'Informe ao menos uma URL para adicionar.'),
+      });
+      return;
+    }
+
+    const seen = new Set<string>();
+    const sanitized: string[] = [];
+    const localDuplicates: BulkSummary['duplicates'] = [];
+    const localInvalid: BulkSummary['invalid'] = [];
+
+    lines.forEach((candidate) => {
+      if (seen.has(candidate)) {
+        localDuplicates.push({ url: candidate, reason: 'DUPLICATE_IN_PAYLOAD', feedId: null });
+        return;
+      }
+
+      seen.add(candidate);
+
+      if (!isValidUrl(candidate)) {
+        localInvalid.push({ url: candidate, reason: 'INVALID_URL' });
+        return;
+      }
+
+      sanitized.push(candidate);
+    });
+
+    if (sanitized.length === 0) {
+      setBulkSummary({ created: [], duplicates: localDuplicates, invalid: localInvalid });
+      setBulkFeedback({
+        type: 'error',
+        message: t('feeds.bulkForm.errors.noValidEntries', 'Nenhuma URL valida para envio.'),
+      });
+      return;
+    }
+
+    bulkCreate.mutate(
+      { urls: sanitized },
+      {
+        onSuccess: (result) => {
+          const summary: BulkSummary = {
+            created: result.created,
+            duplicates: [...result.duplicates, ...localDuplicates],
+            invalid: [...result.invalid, ...localInvalid],
+          };
+
+          setBulkSummary(summary);
+          setBulkFeedback({
+            type: 'success',
+            message: t('feeds.bulkForm.success', {
+              count: result.created.length,
+            }),
+          });
+          setBulkInput('');
+          resetPagination();
+        },
+        onError: (error) => {
+          setBulkSummary({ created: [], duplicates: localDuplicates, invalid: localInvalid });
+          setBulkFeedback({ type: 'error', message: resolveErrorMessage(error) });
+        },
+      },
+    );
+  };
+
+  const handleStartEditing = (feed: Feed) => {
+    setEditFeedback(null);
+    setListFeedback(null);
+    setEditingFeed(feed);
+    setEditUrl(feed.url);
+    setEditTitle(feed.title ?? '');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingFeed(null);
+    setEditUrl('');
+    setEditTitle('');
+    setEditFeedback(null);
+  };
+
+  const handleEditSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!editingFeed) {
+      return;
+    }
+
+    setEditFeedback(null);
+    setListFeedback(null);
+
+    const trimmedUrl = editUrl.trim();
+    const trimmedTitle = editTitle.trim();
+
+    if (!trimmedUrl) {
+      setEditFeedback({
+        type: 'error',
+        message: t('feeds.list.edit.errors.urlRequired', 'Informe uma URL.'),
+      });
+      return;
+    }
+
+    if (!isValidUrl(trimmedUrl)) {
+      setEditFeedback({
+        type: 'error',
+        message: t('feeds.list.edit.errors.invalidUrl', 'Informe uma URL valida iniciando com http:// ou https://'),
+      });
+      return;
+    }
+
+    const payload: { id: number; url?: string; title?: string | null } = {
+      id: editingFeed.id,
+    };
+
+    if (trimmedUrl !== editingFeed.url) {
+      payload.url = trimmedUrl;
+    }
+
+    const originalTitle = editingFeed.title ?? '';
+    if (trimmedTitle !== originalTitle) {
+      payload.title = trimmedTitle;
+    }
+
+    updateFeedMutation.mutate(payload, {
+      onSuccess: () => {
+        setListFeedback({
+          type: 'success',
+          message: t('feeds.list.feedback.updated', 'Feed atualizado com sucesso.'),
+        });
+        handleCancelEdit();
+      },
+      onError: (error) => {
+        setEditFeedback({ type: 'error', message: resolveErrorMessage(error) });
+      },
+    });
+  };
+
+  const handleDelete = (feed: Feed) => {
+    setListFeedback(null);
+    setEditFeedback(null);
+
+    const confirmed = window.confirm(t('feeds.list.deleteConfirm', 'Remover este feed?'));
+    if (!confirmed) {
+      return;
+    }
+
+    deleteFeedMutation.mutate(feed.id, {
+      onSuccess: () => {
+        setListFeedback({
+          type: 'success',
+          message: t('feeds.list.feedback.removed', 'Feed removido com sucesso.'),
+        });
+        if (editingFeed?.id === feed.id) {
+          handleCancelEdit();
+        }
+        resetPagination();
+      },
+      onError: (error) => {
+        setListFeedback({ type: 'error', message: resolveErrorMessage(error) });
+      },
+    });
+  };
+
+  const renderBulkSummary = () => {
+    if (!bulkSummary) {
+      return null;
+    }
+
+    const { created, duplicates, invalid } = bulkSummary;
+
+    const createdContent =
+      created.length > 0 ? (
+        <ul className="space-y-2 text-sm text-muted-foreground">
+          {created.map((feed) => (
+            <li key={feed.id} className="rounded-md border border-border p-3">
+              <p className="text-sm font-medium text-foreground break-all">{feed.title ?? feed.url}</p>
+              <p className="mt-1 text-xs text-muted-foreground break-all">{feed.url}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('feeds.bulkForm.summary.feedId', { id: feed.id })}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t('feeds.bulkForm.summary.none', 'Nenhum item nesta categoria.')}</p>
+      );
+
+    const duplicateContent =
+      duplicates.length > 0 ? (
+        <ul className="space-y-2 text-sm text-muted-foreground">
+          {duplicates.map((entry) => (
+            <li
+              key={`${entry.url}-${entry.feedId ?? 'local'}`}
+              className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800"
+            >
+              <p className="text-sm font-medium break-all">{entry.url}</p>
+              <p className="mt-1 text-xs">
+                {getDuplicateReasonLabel(entry.reason)}
+                {entry.feedId ? ` • ${t('feeds.bulkForm.summary.feedId', { id: entry.feedId })}` : ''}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t('feeds.bulkForm.summary.none', 'Nenhum item nesta categoria.')}</p>
+      );
+
+    const invalidContent =
+      invalid.length > 0 ? (
+        <ul className="space-y-2 text-sm text-muted-foreground">
+          {invalid.map((entry) => (
+            <li key={`${entry.url}-${entry.reason}`} className="rounded-md border border-destructive/60 bg-destructive/10 p-3">
+              <p className="text-sm font-medium text-foreground break-all">{entry.url}</p>
+              <p className="mt-1 text-xs text-destructive">{getInvalidReasonLabel(entry.reason)}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t('feeds.bulkForm.summary.none', 'Nenhum item nesta categoria.')}</p>
+      );
+
+    return (
+      <div className="rounded-md border border-border p-4">
+        <h3 className="text-sm font-semibold text-foreground">{t('feeds.bulkForm.summary.title', 'Resumo da operacao')}</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-foreground">{t('feeds.bulkForm.summary.created', { count: created.length })}</h4>
+            {createdContent}
+          </div>
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-foreground">{t('feeds.bulkForm.summary.duplicates', { count: duplicates.length })}</h4>
+            {duplicateContent}
+          </div>
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-foreground">{t('feeds.bulkForm.summary.invalid', { count: invalid.length })}</h4>
+            {invalidContent}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTableContent = () => {
+    if (isLoading) {
+      return (
+        <div className="px-6 py-6 text-sm text-muted-foreground">
+          {t('feeds.list.loading', 'Carregando feeds...')}
+        </div>
+      );
+    }
+
+    if (isError) {
+      return (
+        <div className="px-6 py-6 text-sm text-destructive" role="alert">
+          {t('feeds.list.error', 'Nao foi possivel carregar os feeds. Tente novamente mais tarde.')}
+        </div>
+      );
+    }
+
+    if (feeds.length === 0) {
+      return (
+        <EmptyState
+          title={t('feeds.list.empty.title', 'Nenhum feed cadastrado ainda.')}
+          description={t('feeds.list.empty.description', 'Adicione seus feeds individuais ou em lote para comecar a gerar posts.')}
+          className="m-6"
+        />
+      );
+    }
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/50 text-left uppercase text-xs tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-6 py-3">{t('feeds.list.headers.feed', 'Feed')}</th>
+              <th className="px-6 py-3">{t('feeds.list.headers.lastFetchedAt', 'Ultima atualizacao')}</th>
+              <th className="px-6 py-3 text-right">{t('feeds.list.headers.actions', 'Acoes')}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {feeds.map((feed) =>
+              editingFeed?.id === feed.id ? (
+                <tr key={feed.id} className="bg-muted/40">
+                  <td className="px-6 py-4" colSpan={3}>
+                    <form className="space-y-4" onSubmit={handleEditSubmit} noValidate>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="text-sm">
+                          <span className="mb-1 block font-medium">{t('feeds.list.edit.url', 'URL')}</span>
+                          <input
+                            type="url"
+                            value={editUrl}
+                            onChange={(event) => setEditUrl(event.target.value)}
+                            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            placeholder="https://example.com/feed.xml"
+                            required
+                            disabled={isUpdating}
+                          />
+                        </label>
+                        <label className="text-sm">
+                          <span className="mb-1 block font-medium">{t('feeds.list.edit.title', 'Titulo')}</span>
+                          <input
+                            type="text"
+                            value={editTitle}
+                            onChange={(event) => setEditTitle(event.target.value)}
+                            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            placeholder={t('feeds.list.edit.titlePlaceholder', 'Opcional')}
+                            disabled={isUpdating}
+                          />
+                        </label>
+                      </div>
+                      {editFeedback ? (
+                        <p className={buildFeedbackClassName(editFeedback)} role={buildFeedbackRole(editFeedback)}>
+                          {editFeedback.message}
+                        </p>
+                      ) : null}
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={handleCancelEdit}
+                          disabled={isUpdating}
+                        >
+                          {t('feeds.list.edit.cancel', 'Cancelar')}
+                        </button>
+                        <button
+                          type="submit"
+                          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={isUpdating}
+                        >
+                          {isUpdating
+                            ? t('feeds.list.edit.saving', 'Salvando...')
+                            : t('feeds.list.edit.save', 'Salvar alteracoes')}
+                        </button>
+                      </div>
+                    </form>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={feed.id}>
+                  <td className="px-6 py-4 align-top">
+                    <div className="space-y-2">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-medium text-foreground">
+                          {feed.title ?? t('feeds.list.untitled', 'Sem titulo')}
+                        </span>
+                        <a
+                          href={feed.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="break-all text-xs text-primary underline-offset-2 hover:underline"
+                        >
+                          {feed.url}
+                        </a>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {t('feeds.list.feedId', { id: feed.id })}
+                      </p>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 align-top text-sm text-muted-foreground">
+                    {feed.lastFetchedAt
+                      ? formatDate(feed.lastFetchedAt, locale)
+                      : t('feeds.list.neverFetched', 'Ainda nao processado')}
+                  </td>
+                  <td className="px-6 py-4 align-top text-right text-sm">
+                    <div className="flex flex-col items-end gap-2 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => handleStartEditing(feed)}
+                        disabled={isUpdating || isDeleting}
+                      >
+                        {t('feeds.list.edit.trigger', 'Editar')}
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center rounded-md border border-destructive px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => handleDelete(feed)}
+                        disabled={isDeleting || isUpdating}
+                      >
+                        {isDeleting ? t('feeds.list.deleting', 'Removendo...') : t('feeds.list.delete', 'Excluir')}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const hasPreviousPage = previousCursors.length > 0;
+  const hasNextPage = nextCursor !== null;
+
+  const handlePreviousPage = () => {
+    if (!hasPreviousPage) {
+      return;
+    }
+
+    const nextPrev = previousCursors.slice(0, -1);
+    const previous = previousCursors[previousCursors.length - 1] ?? null;
+    setPreviousCursors(nextPrev);
+    setCursor(previous);
+  };
+
+  const handleNextPage = () => {
+    if (!hasNextPage || !nextCursor) {
+      return;
+    }
+
+    setPreviousCursors((prev) => [...prev, cursor]);
+    setCursor(nextCursor);
+  };
+
+  return (
+    <div className="space-y-8">
+      <header className="space-y-2">
+        <h1 className="text-3xl font-semibold text-foreground">{t('feeds.heading', 'Feeds RSS')}</h1>
+        <p className="text-sm text-muted-foreground">
+          {t('feeds.subtitle', 'Gerencie os feeds que alimentarao a geracao de posts.')} 
+        </p>
+      </header>
+
+      <section className="card space-y-4 px-6 py-6">
+        <h2 className="text-lg font-medium text-foreground">{t('feeds.form.title', 'Adicionar feed')}</h2>
+        <form className="grid gap-4 md:grid-cols-[2fr,1fr,auto]" onSubmit={handleCreateSubmit} noValidate>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium">{t('feeds.form.url', 'URL')}</span>
+            <input
+              type="url"
+              value={singleUrl}
+              onChange={(event) => setSingleUrl(event.target.value)}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              placeholder="https://example.com/feed.xml"
+              required
+              disabled={isCreating}
+            />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium">{t('feeds.form.titleLabel', 'Titulo (opcional)')}</span>
+            <input
+              type="text"
+              value={singleTitle}
+              onChange={(event) => setSingleTitle(event.target.value)}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              placeholder={t('feeds.form.titlePlaceholder', 'Ex.: Blog da empresa')}
+              disabled={isCreating}
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isCreating}
+            >
+              {isCreating ? t('feeds.form.adding', 'Adicionando...') : t('feeds.form.submit', 'Adicionar')}
+            </button>
+          </div>
+        </form>
+        {singleFeedback ? (
+          <p className={buildFeedbackClassName(singleFeedback)} role={buildFeedbackRole(singleFeedback)}>
+            {singleFeedback.message}
+          </p>
+        ) : null}
+      </section>
+
+      <section className="card space-y-4 px-6 py-6">
+        <h2 className="text-lg font-medium text-foreground">{t('feeds.bulkForm.title', 'Adicionar feeds em lote')}</h2>
+        <form className="space-y-4" onSubmit={handleBulkSubmit} noValidate>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium">{t('feeds.bulkForm.label', 'Uma URL por linha')}</span>
+            <textarea
+              value={bulkInput}
+              onChange={(event) => setBulkInput(event.target.value)}
+              rows={6}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              placeholder={t('feeds.bulkForm.placeholder', 'https://example.com/feed-1.xml\nhttps://example.com/feed-2.xml')}
+              disabled={isBulkCreating}
+            />
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              {t('feeds.bulkForm.hint', 'Linhas vazias sao ignoradas e duplicatas locais nao serao enviadas.')}
+            </p>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isBulkCreating}
+            >
+              {isBulkCreating ? t('feeds.bulkForm.adding', 'Processando...') : t('feeds.bulkForm.submit', 'Adicionar em lote')}
+            </button>
+          </div>
+        </form>
+        {bulkFeedback ? (
+          <p className={buildFeedbackClassName(bulkFeedback)} role={buildFeedbackRole(bulkFeedback)}>
+            {bulkFeedback.message}
+          </p>
+        ) : null}
+        {renderBulkSummary()}
+      </section>
+
+      <section className="card overflow-hidden">
+        <div className="flex flex-col gap-2 border-b border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-medium text-foreground">{t('feeds.list.title', 'Feeds do usuario')}</h2>
+            <p className="text-xs text-muted-foreground">
+              {t('feeds.list.caption', {
+                count: totalFeeds,
+                page: currentPage,
+              })}
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2 sm:items-start">
+            {isFetching ? (
+              <span className="text-xs text-muted-foreground">{t('feeds.list.syncing', 'Sincronizando...')}</span>
+            ) : null}
+            {listFeedback ? (
+              <p className={buildFeedbackClassName(listFeedback)} role={buildFeedbackRole(listFeedback)}>
+                {listFeedback.message}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        {renderTableContent()}
+        <div className="flex items-center justify-between border-t border-border px-6 py-4 text-sm text-muted-foreground">
+          <div>{t('feeds.list.pagination.page', { page: currentPage })}</div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={handlePreviousPage}
+              disabled={!hasPreviousPage || isLoading}
+            >
+              {t('feeds.list.pagination.previous', 'Anterior')}
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={handleNextPage}
+              disabled={!hasNextPage || isLoading}
+            >
+              {t('feeds.list.pagination.next', 'Proxima')}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default FeedsPage;
