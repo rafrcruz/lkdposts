@@ -2,6 +2,7 @@ const ApiError = require('../utils/api-error');
 const { prisma } = require('../lib/prisma');
 
 const MAX_PAGE_SIZE = 50;
+const MAX_BULK_FEED_URLS = 25;
 
 const sanitizeString = (value) => {
   if (typeof value !== 'string') {
@@ -136,6 +137,14 @@ const createFeedsInBulk = async ({ ownerKey, urls }) => {
     throw new ApiError({ statusCode: 400, code: 'INVALID_PAYLOAD', message: 'urls must be an array of strings' });
   }
 
+  if (urls.length > MAX_BULK_FEED_URLS) {
+    throw new ApiError({
+      statusCode: 413,
+      code: 'PAYLOAD_TOO_LARGE',
+      message: `A maximum of ${MAX_BULK_FEED_URLS} feeds can be created per request`,
+    });
+  }
+
   const seen = new Set();
   const candidates = [];
 
@@ -240,4 +249,8 @@ module.exports = {
   createFeedsInBulk,
   updateFeed,
   deleteFeed,
+  constants: {
+    MAX_PAGE_SIZE,
+    MAX_BULK_FEED_URLS,
+  },
 };

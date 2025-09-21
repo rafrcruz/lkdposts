@@ -6,8 +6,12 @@ const { prisma } = require('../lib/prisma');
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const WINDOW_DAYS = 7;
 const WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000;
-const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 5_000;
 const MAX_PAGE_SIZE = 50;
+const MAX_ARTICLE_TITLE_LENGTH = 200;
+const MAX_ARTICLE_CONTENT_LENGTH = 800;
+
+const refreshLocks = new Map();
 
 const POST_PLACEHOLDER_CONTENT = [
   'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
@@ -199,7 +203,7 @@ const buildContentSnippet = (item) => {
   for (const candidate of candidates) {
     const text = cleanText(extractText(candidate));
     if (text) {
-      return truncateText(text, 600);
+      return truncateText(text, MAX_ARTICLE_CONTENT_LENGTH);
     }
   }
 
@@ -212,18 +216,21 @@ const normalizeFeedItem = (rawItem) => {
     return null;
   }
 
-  const title = cleanText(extractText(rawItem.title));
-  const contentSnippet = buildContentSnippet(rawItem) || (title ? title : '');
+  const rawTitle = cleanText(extractText(rawItem.title));
+  const normalizedTitle = rawTitle ? truncateText(rawTitle, MAX_ARTICLE_TITLE_LENGTH) : '';
+  const normalizedSnippet = buildContentSnippet(rawItem);
+  const snippetFromTitle = normalizedTitle ? truncateText(normalizedTitle, MAX_ARTICLE_CONTENT_LENGTH) : '';
+  const mergedSnippet = normalizedSnippet || snippetFromTitle;
   const guid = sanitizeIdentifier(extractText(rawItem.guid));
   const link = extractLink(rawItem.link);
 
-  if (!title && !contentSnippet) {
+  if (!normalizedTitle && !mergedSnippet) {
     return null;
   }
 
   return {
-    title: title || 'Untitled',
-    contentSnippet: contentSnippet || 'No description available.',
+    title: normalizedTitle || 'Untitled',
+    contentSnippet: mergedSnippet || 'No description available.',
     publishedAt,
     guid,
     link,
@@ -352,7 +359,7 @@ const computeDedupeKey = (item) => {
   return `hash:${hash}`;
 };
 
-const refreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS }) => {
+const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS }) => {
   if (!ownerKey) {
     throw new Error('ownerKey is required');
   }
@@ -455,6 +462,32 @@ const refreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, timeoutMs
     now: currentTime,
     results,
   };
+};
+
+const refreshUserFeeds = async ({ ownerKey, ...rest }) => {
+  if (!ownerKey) {
+    throw new Error('ownerKey is required');
+  }
+
+  const lockKey = String(ownerKey);
+  const existing = refreshLocks.get(lockKey);
+  if (existing) {
+    return existing;
+  }
+
+  let activePromise;
+  activePromise = (async () => {
+    try {
+      return await performRefreshUserFeeds({ ownerKey, ...rest });
+    } finally {
+      if (refreshLocks.get(lockKey) === activePromise) {
+        refreshLocks.delete(lockKey);
+      }
+    }
+  })();
+
+  refreshLocks.set(lockKey, activePromise);
+  return activePromise;
 };
 
 const cleanupOldArticles = async ({ ownerKey, now = new Date() }) => {
@@ -604,5 +637,7 @@ module.exports = {
     WINDOW_MS,
     DEFAULT_FETCH_TIMEOUT_MS,
     MAX_PAGE_SIZE,
+    MAX_ARTICLE_TITLE_LENGTH,
+    MAX_ARTICLE_CONTENT_LENGTH,
   },
 };

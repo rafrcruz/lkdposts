@@ -111,6 +111,46 @@ describe('Posts API', () => {
       const updatedFeed = await prisma.feed.findUnique({ where: { id: feed.id } });
       expect(updatedFeed.lastFetchedAt).not.toBeNull();
     });
+
+    it('reuses a single refresh when the same user triggers concurrent requests', async () => {
+      const feed = await prisma.feed.create({
+        data: {
+          ownerKey: '1',
+          url: 'https://example.com/concurrent.xml',
+          lastFetchedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        },
+      });
+
+      const publishedAt = new Date(Date.now() - 2 * 60 * 1000);
+      const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Feed</title><item><title>Concurrent Story</title><description>Snippet</description><pubDate>${publishedAt.toUTCString()}</pubDate><guid>guid-concurrent</guid></item></channel></rss>`;
+
+      global.fetch = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => {
+              resolve({
+                ok: true,
+                status: 200,
+                text: async () => rss,
+              });
+            }, 20);
+          })
+      );
+
+      const requestA = withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh')).expect('Content-Type', /json/);
+      const requestB = withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh')).expect('Content-Type', /json/);
+
+      const promiseA = requestA.expect(200);
+      const promiseB = requestB.expect(200);
+
+      const [responseA, responseB] = await Promise.all([promiseA, promiseB]);
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(responseA.body.data).toEqual(responseB.body.data);
+      expect(responseA.body.data.feeds[0].articlesCreated).toBe(1);
+      const articles = await prisma.article.findMany();
+      expect(articles).toHaveLength(1);
+    });
   });
 
   describe('POST /api/v1/posts/cleanup', () => {
@@ -215,6 +255,42 @@ describe('Posts API', () => {
 
       expect(secondPage.body.data.items).toHaveLength(1);
       expect(secondPage.body.meta.nextCursor).toBeNull();
+    });
+
+    it('caps the requested limit to the maximum allowed page size', async () => {
+      const now = new Date();
+      const feed = await prisma.feed.create({
+        data: {
+          ownerKey: '1',
+          url: 'https://example.com/limit.xml',
+        },
+      });
+
+      const total = postsService.constants.MAX_PAGE_SIZE + 7;
+      for (let index = 0; index < total; index += 1) {
+        const article = await prisma.article.create({
+          data: {
+            feedId: feed.id,
+            title: `Article ${index}`,
+            contentSnippet: `Snippet ${index}`,
+            publishedAt: new Date(now.getTime() - index * 60 * 1000),
+            guid: `guid-${index}`,
+            link: null,
+            dedupeKey: `guid:guid-${index}`,
+          },
+        });
+        await prisma.post.create({ data: { articleId: article.id, content: `Content ${index}` } });
+      }
+
+      const response = await withAuth(
+        TOKENS.user1,
+        request(app).get('/api/v1/posts').query({ limit: postsService.constants.MAX_PAGE_SIZE + 99 })
+      )
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data.items).toHaveLength(postsService.constants.MAX_PAGE_SIZE);
+      expect(response.body.meta.limit).toBe(postsService.constants.MAX_PAGE_SIZE);
     });
   });
 });
