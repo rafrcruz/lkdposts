@@ -4,7 +4,7 @@
     "title": "lkdposts API",
     "version": "1.0.0",
     "description": "API responsável por disponibilizar funcionalidades de automação de posts.",
-    "x-generated-at": "2025-09-19T13:47:25.136Z",
+    "x-generated-at": "2025-09-21T23:48:19.877Z",
     "x-environment": "development"
   },
   "servers": [
@@ -23,14 +23,18 @@
             "example": true
           },
           "data": {
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "meta": {
             "type": "object",
             "properties": {
               "requestId": {
                 "type": "string",
-                "format": "uuid"
+                "format": "uuid",
+                "example": "00000000-0000-4000-8000-000000000000"
               }
             }
           }
@@ -55,7 +59,11 @@
                 "example": "Internal server error"
               },
               "details": {
-                "type": "object"
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "example": null
               }
             }
           },
@@ -64,7 +72,483 @@
             "properties": {
               "requestId": {
                 "type": "string",
-                "format": "uuid"
+                "format": "uuid",
+                "example": "00000000-0000-4000-8000-000000000000"
+              }
+            }
+          }
+        }
+      },
+      "Feed": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "example": "https://example.com/rss.xml"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "My RSS feed"
+          },
+          "lastFetchedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-20T12:34:56.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-20T12:34:56.000Z"
+          }
+        }
+      },
+      "FeedDuplicateEntry": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "example": "https://example.com/rss.xml"
+          },
+          "reason": {
+            "type": "string",
+            "example": "ALREADY_EXISTS",
+            "description": "Reason why the URL could not be created."
+          },
+          "feedId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 12,
+            "description": "Existing feed identifier when the duplicate already exists in the database."
+          }
+        }
+      },
+      "FeedInvalidEntry": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "example": "notaurl"
+          },
+          "reason": {
+            "type": "string",
+            "example": "INVALID_URL",
+            "description": "Validation reason for rejecting the URL."
+          }
+        }
+      },
+      "FeedBulkResult": {
+        "type": "object",
+        "properties": {
+          "created": {
+            "type": "array",
+            "description": "Feeds successfully created for the user.",
+            "items": {
+              "$ref": "#/components/schemas/Feed"
+            }
+          },
+          "duplicates": {
+            "type": "array",
+            "description": "URLs skipped because they already exist or were repeated in the payload.",
+            "items": {
+              "$ref": "#/components/schemas/FeedDuplicateEntry"
+            }
+          },
+          "invalid": {
+            "type": "array",
+            "description": "URLs rejected due to validation errors.",
+            "items": {
+              "$ref": "#/components/schemas/FeedInvalidEntry"
+            }
+          }
+        }
+      },
+      "FeedDeletionResult": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Feed removed"
+          }
+        }
+      },
+      "FeedRefreshSummary": {
+        "type": "object",
+        "properties": {
+          "feedId": {
+            "type": "integer",
+            "example": 42
+          },
+          "feedUrl": {
+            "type": "string",
+            "format": "uri",
+            "example": "https://news.example.com/rss"
+          },
+          "feedTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "News"
+          },
+          "skippedByCooldown": {
+            "type": "boolean",
+            "example": false
+          },
+          "cooldownSecondsRemaining": {
+            "type": "integer",
+            "example": 0
+          },
+          "itemsRead": {
+            "type": "integer",
+            "example": 25
+          },
+          "itemsWithinWindow": {
+            "type": "integer",
+            "example": 8
+          },
+          "articlesCreated": {
+            "type": "integer",
+            "example": 3
+          },
+          "duplicates": {
+            "type": "integer",
+            "example": 2
+          },
+          "invalidItems": {
+            "type": "integer",
+            "example": 1
+          },
+          "error": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "example": null,
+            "properties": {
+              "message": {
+                "type": "string",
+                "example": "Feed request timed out"
+              }
+            },
+            "description": "Error returned when the feed fetch failed. Null when the refresh completed successfully."
+          }
+        }
+      },
+      "FeedRefreshResponse": {
+        "type": "object",
+        "properties": {
+          "now": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-20T12:34:56.000Z"
+          },
+          "feeds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedRefreshSummary"
+            }
+          }
+        }
+      },
+      "PostsCleanupResult": {
+        "type": "object",
+        "properties": {
+          "removedArticles": {
+            "type": "integer",
+            "example": 12
+          },
+          "removedPosts": {
+            "type": "integer",
+            "example": 12
+          }
+        }
+      },
+      "PostFeedReference": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 7
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Tech Newsletter"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "example": "https://tech.example.com/rss"
+          }
+        }
+      },
+      "PostContent": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "example": "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2025-01-20T12:35:30.000Z"
+          }
+        }
+      },
+      "PostListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 99
+          },
+          "title": {
+            "type": "string",
+            "example": "Latest tech news"
+          },
+          "contentSnippet": {
+            "type": "string",
+            "example": "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-20T10:00:00.000Z"
+          },
+          "feed": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PostFeedReference"
+              }
+            ],
+            "example": {
+              "id": 7,
+              "title": "Tech Newsletter",
+              "url": "https://tech.example.com/rss"
+            }
+          },
+          "post": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PostContent"
+              }
+            ],
+            "example": {
+              "content": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+              "createdAt": "2025-01-20T12:36:00.000Z"
+            }
+          }
+        }
+      },
+      "PostListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PostListItem"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "SessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "lkd_session",
+        "description": "Sessão autenticada emitida após login com Google."
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Session token",
+        "description": "Token de sessão transmitido via cabeçalho Authorization."
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Requisição inválida (parâmetros ou payload incorretos).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "examples": {
+              "invalidInput": {
+                "summary": "Valor inválido informado",
+                "value": {
+                  "success": false,
+                  "error": {
+                    "code": "INVALID_INPUT",
+                    "message": "Invalid input data"
+                  },
+                  "meta": {
+                    "requestId": "00000000-0000-4000-8000-000000000000"
+                  }
+                }
+              },
+              "urlRequired": {
+                "summary": "URL obrigatória",
+                "value": {
+                  "success": false,
+                  "error": {
+                    "code": "URL_REQUIRED",
+                    "message": "URL is required"
+                  },
+                  "meta": {
+                    "requestId": "00000000-0000-4000-8000-000000000000"
+                  }
+                }
+              },
+              "invalidCursor": {
+                "summary": "Cursor de paginação inválido",
+                "value": {
+                  "success": false,
+                  "error": {
+                    "code": "INVALID_CURSOR",
+                    "message": "Invalid pagination cursor"
+                  },
+                  "meta": {
+                    "requestId": "00000000-0000-4000-8000-000000000000"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Autenticação requerida.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "success": false,
+              "error": {
+                "code": "UNAUTHENTICATED",
+                "message": "Authentication required"
+              },
+              "meta": {
+                "requestId": "00000000-0000-4000-8000-000000000000"
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Usuário autenticado sem permissão suficiente.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "success": false,
+              "error": {
+                "code": "FORBIDDEN",
+                "message": "Insufficient permissions"
+              },
+              "meta": {
+                "requestId": "00000000-0000-4000-8000-000000000000"
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Recurso não encontrado.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "success": false,
+              "error": {
+                "code": "FEED_NOT_FOUND",
+                "message": "Feed not found"
+              },
+              "meta": {
+                "requestId": "00000000-0000-4000-8000-000000000000"
+              }
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Estado atual do recurso impede a operação.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "success": false,
+              "error": {
+                "code": "FEED_ALREADY_EXISTS",
+                "message": "Feed already exists for this user"
+              },
+              "meta": {
+                "requestId": "00000000-0000-4000-8000-000000000000"
+              }
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "Carga enviada excede os limites da API.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "success": false,
+              "error": {
+                "code": "PAYLOAD_TOO_LARGE",
+                "message": "A maximum of 25 feeds can be created per request"
+              },
+              "meta": {
+                "requestId": "00000000-0000-4000-8000-000000000000"
               }
             }
           }
@@ -117,6 +601,545 @@
         }
       }
     },
+    "/api/v1/feeds": {
+      "get": {
+        "summary": "List RSS feeds owned by the authenticated user",
+        "description": "Retorna os feeds cadastrados pelo usuário autenticado usando envelope padronizado e paginação baseada em cursor.",
+        "tags": [
+          "Feeds"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Cursor retornado em chamadas anteriores para continuar a paginação."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "description": "Quantidade máxima de feeds retornados por página (padrão 20, limite 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of feeds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Feed"
+                              }
+                            }
+                          }
+                        },
+                        "meta": {
+                          "type": "object",
+                          "properties": {
+                            "requestId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "nextCursor": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "Cursor da próxima página ou null quando não há mais resultados."
+                            },
+                            "total": {
+                              "type": "integer",
+                              "description": "Total de feeds cadastrados para o usuário."
+                            },
+                            "limit": {
+                              "type": "integer",
+                              "description": "Limite efetivamente aplicado."
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "summary": "Lista paginada de feeds",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "items": [
+                          {
+                            "id": 1,
+                            "url": "https://example.com/rss.xml",
+                            "title": "Example RSS",
+                            "lastFetchedAt": "2025-01-20T12:00:00.000Z",
+                            "createdAt": "2025-01-10T09:30:00.000Z",
+                            "updatedAt": "2025-01-18T08:15:00.000Z"
+                          }
+                        ]
+                      },
+                      "meta": {
+                        "requestId": "11111111-2222-4333-8444-555555555555",
+                        "nextCursor": "2",
+                        "total": 3,
+                        "limit": 20
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new RSS feed for the authenticated user",
+        "description": "Registra um novo feed RSS associado ao usuário autenticado. URLs duplicadas são rejeitadas.",
+        "tags": [
+          "Feeds"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "title": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "examples": {
+                "minimal": {
+                  "summary": "Criação básica",
+                  "value": {
+                    "url": "https://example.com/rss.xml"
+                  }
+                },
+                "withTitle": {
+                  "summary": "Incluindo título opcional",
+                  "value": {
+                    "url": "https://example.com/rss.xml",
+                    "title": "Example RSS Feed"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Feed created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Feed"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "created": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "id": 4,
+                        "url": "https://example.com/rss.xml",
+                        "title": "Example RSS Feed",
+                        "lastFetchedAt": null,
+                        "createdAt": "2025-01-20T12:34:56.000Z",
+                        "updatedAt": "2025-01-20T12:34:56.000Z"
+                      },
+                      "meta": {
+                        "requestId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/feeds/bulk": {
+      "post": {
+        "summary": "Create multiple RSS feeds in a single request",
+        "description": "Recebe até 25 URLs por requisição, ignorando duplicadas e reportando entradas inválidas sem interromper o processamento.",
+        "tags": [
+          "Feeds"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "urls"
+                ],
+                "properties": {
+                  "urls": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "sample": {
+                  "value": {
+                    "urls": [
+                      "https://example.com/rss.xml",
+                      "https://news.example.com/feed"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Result of the bulk creation request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FeedBulkResult"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "processed": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "created": [
+                          {
+                            "id": 5,
+                            "url": "https://example.com/rss.xml",
+                            "title": null,
+                            "lastFetchedAt": null,
+                            "createdAt": "2025-01-20T12:34:56.000Z",
+                            "updatedAt": "2025-01-20T12:34:56.000Z"
+                          }
+                        ],
+                        "duplicates": [
+                          {
+                            "url": "https://example.com/rss.xml",
+                            "reason": "ALREADY_EXISTS",
+                            "feedId": 2
+                          },
+                          {
+                            "url": "https://example.com/rss.xml",
+                            "reason": "DUPLICATE_IN_PAYLOAD",
+                            "feedId": null
+                          }
+                        ],
+                        "invalid": [
+                          {
+                            "url": "notaurl",
+                            "reason": "INVALID_URL"
+                          },
+                          {
+                            "url": "",
+                            "reason": "URL_REQUIRED"
+                          }
+                        ]
+                      },
+                      "meta": {
+                        "requestId": "11111111-2222-4333-8444-555555555555"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          }
+        }
+      }
+    },
+    "/api/v1/feeds/{id}": {
+      "patch": {
+        "summary": "Update attributes of an existing feed",
+        "description": "Permite atualizar URL e título de um feed pertencente ao usuário autenticado.",
+        "tags": [
+          "Feeds"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "title": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "examples": {
+                "updateTitle": {
+                  "value": {
+                    "title": "Novo título"
+                  }
+                },
+                "updateUrl": {
+                  "value": {
+                    "url": "https://example.com/rss.xml"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feed updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Feed"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "updated": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "id": 2,
+                        "url": "https://example.com/rss.xml",
+                        "title": "Novo título",
+                        "lastFetchedAt": "2025-01-18T08:15:00.000Z",
+                        "createdAt": "2024-12-01T12:00:00.000Z",
+                        "updatedAt": "2025-01-20T12:40:00.000Z"
+                      },
+                      "meta": {
+                        "requestId": "99999999-8888-4777-8666-555555555555"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a feed owned by the authenticated user",
+        "description": "Exclui definitivamente o feed informado e os dados associados ao usuário autenticado.",
+        "tags": [
+          "Feeds"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Feed removed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FeedDeletionResult"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "removed": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "message": "Feed removed"
+                      },
+                      "meta": {
+                        "requestId": "22222222-3333-4444-8555-666666666666"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/v1/hello": {
       "get": {
         "summary": "Returns the hello message",
@@ -156,6 +1179,289 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/posts/refresh": {
+      "post": {
+        "summary": "Refresh articles and generate posts from configured feeds",
+        "description": "Consulta todos os feeds do usuário autenticado, aplica a janela de retenção configurada e cria posts placeholder para notícias recentes.",
+        "tags": [
+          "Posts"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Refresh executed for every feed owned by the user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FeedRefreshResponse"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "now": "2025-01-20T12:34:56.000Z",
+                        "feeds": [
+                          {
+                            "feedId": 1,
+                            "feedUrl": "https://example.com/rss.xml",
+                            "feedTitle": "Example RSS",
+                            "skippedByCooldown": false,
+                            "cooldownSecondsRemaining": 0,
+                            "itemsRead": 12,
+                            "itemsWithinWindow": 4,
+                            "articlesCreated": 2,
+                            "duplicates": 1,
+                            "invalidItems": 0,
+                            "error": null
+                          },
+                          {
+                            "feedId": 2,
+                            "feedUrl": "https://news.example.com/feed",
+                            "feedTitle": null,
+                            "skippedByCooldown": true,
+                            "cooldownSecondsRemaining": 1800,
+                            "itemsRead": 0,
+                            "itemsWithinWindow": 0,
+                            "articlesCreated": 0,
+                            "duplicates": 0,
+                            "invalidItems": 0,
+                            "error": {
+                              "message": "Feed request timed out"
+                            }
+                          }
+                        ]
+                      },
+                      "meta": {
+                        "requestId": "77777777-8888-4999-8aaa-bbbbbbbbbbbb"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/posts/cleanup": {
+      "post": {
+        "summary": "Delete old articles and posts outside the retention window",
+        "description": "Remove artigos e posts vinculados aos feeds do usuário autenticado que estejam fora da janela de 7 dias utilizada pelo sistema.",
+        "tags": [
+          "Posts"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cleanup executed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PostsCleanupResult"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "removedArticles": 6,
+                        "removedPosts": 6
+                      },
+                      "meta": {
+                        "requestId": "12345678-90ab-4cde-8fab-1234567890ab"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/posts": {
+      "get": {
+        "summary": "List generated posts derived from recent feed entries",
+        "description": "Retorna artigos normalizados com o conteúdo de post correspondente, aplicando ordenação decrescente por data e paginação por cursor.",
+        "tags": [
+          "Posts"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Cursor de paginação retornado em chamadas anteriores."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "description": "Quantidade de itens por página (padrão 20, máximo 50)."
+          },
+          {
+            "in": "query",
+            "name": "feedId",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Filtra os artigos pertencentes ao feed informado."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of recent posts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PostListResponse"
+                        },
+                        "meta": {
+                          "type": "object",
+                          "properties": {
+                            "requestId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "nextCursor": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "Cursor para a próxima página ou null ao final da lista."
+                            },
+                            "limit": {
+                              "type": "integer",
+                              "description": "Limite aplicado à consulta."
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "items": [
+                          {
+                            "id": 101,
+                            "title": "Nova parceria anunciada",
+                            "contentSnippet": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                            "publishedAt": "2025-01-20T09:00:00.000Z",
+                            "feed": {
+                              "id": 1,
+                              "title": "Example RSS",
+                              "url": "https://example.com/rss.xml"
+                            },
+                            "post": {
+                              "content": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                              "createdAt": "2025-01-20T12:35:00.000Z"
+                            }
+                          },
+                          {
+                            "id": 102,
+                            "title": "Tech Weekly 42",
+                            "contentSnippet": "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+                            "publishedAt": "2025-01-19T17:30:00.000Z",
+                            "feed": {
+                              "id": 2,
+                              "title": null,
+                              "url": "https://news.example.com/feed"
+                            },
+                            "post": null
+                          }
+                        ]
+                      },
+                      "meta": {
+                        "requestId": "55555555-6666-4777-8888-999999999999",
+                        "nextCursor": "MjAyNS0wMS0xOVQxNzozMDowMC4wMDBaOjEwMg==",
+                        "limit": 20
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }
