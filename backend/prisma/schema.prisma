@@ -41,3 +41,43 @@ model UserSession {
   ipAddress   String?     @db.VarChar(45)
 }
 
+model Feed {
+  id           Int       @id @default(autoincrement())
+  ownerKey     String    @db.VarChar(255)
+  url          String    @db.Text
+  title        String?   @db.Text
+  lastFetchedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  articles     Article[]
+
+  @@unique([ownerKey, url])
+}
+
+model Article {
+  id             Int       @id @default(autoincrement())
+  feedId         Int
+  feed           Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  title          String    @db.Text
+  contentSnippet String    @db.Text
+  publishedAt    DateTime
+  guid           String?   @db.Text
+  link           String?   @db.Text
+  dedupeKey      String    @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  post           Post?
+
+  @@unique([feedId, guid])
+  @@unique([feedId, link])
+  @@unique([feedId, dedupeKey])
+}
+
+model Post {
+  id        Int      @id @default(autoincrement())
+  articleId Int      @unique
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+}
+
