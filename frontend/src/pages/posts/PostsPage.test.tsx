@@ -235,6 +235,16 @@ describe('PostsPage', () => {
     expect(screen.getByText('Conteudo gerado 1')).toBeInTheDocument();
   });
 
+  it('shows loading skeleton on mount and replaces it with content afterwards', async () => {
+    renderPage();
+
+    expect(screen.getAllByTestId('loading-skeleton')).toHaveLength(3);
+
+    await screen.findByRole('heading', { name: 'Post 1' });
+
+    expect(screen.queryByTestId('loading-skeleton')).toBeNull();
+  });
+
   it('renders sections with POST open and NOTICIA closed by default and toggles correctly', async () => {
     const user = userEvent.setup();
 
@@ -265,6 +275,54 @@ describe('PostsPage', () => {
     });
 
     expect(screen.queryByText('Conteudo gerado 1')).toBeNull();
+  });
+
+  it('renders the refresh summary and allows dismissing it', async () => {
+    const user = userEvent.setup();
+
+    refreshMutateAsync = vi.fn(() =>
+      Promise.resolve<RefreshSummary>({
+        now: '2024-01-02T00:00:00.000Z',
+        feeds: [
+          {
+            feedId: 1,
+            feedTitle: 'Feed 1',
+            feedUrl: null,
+            skippedByCooldown: false,
+            cooldownSecondsRemaining: null,
+            itemsRead: 4,
+            itemsWithinWindow: 2,
+            articlesCreated: 1,
+            duplicates: 0,
+            invalidItems: 0,
+            error: null,
+          },
+        ],
+      }),
+    );
+    mockedUseRefreshPosts.mockReturnValue(createMutationResult(refreshMutateAsync));
+
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Post 1' });
+
+    expect(screen.getByText('Resumo da atualizacao')).toBeInTheDocument();
+    expect(screen.getByText('Feeds processados')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Feed 1' })).toBeInTheDocument();
+
+    const dismissButton = screen.getByRole('button', { name: 'Dispensar resumo' });
+    await user.click(dismissButton);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Resumo da atualizacao')).toBeNull();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Atualizar' }));
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('Resumo da atualizacao')).toBeInTheDocument();
+    });
   });
 
   it('supports pagination keeping the cursor state', async () => {
@@ -314,6 +372,38 @@ describe('PostsPage', () => {
     expect(screen.getByText('Pagina 1')).toBeInTheDocument();
   });
 
+  it('keeps posts visible when the refresh summary reports partial errors', async () => {
+    refreshMutateAsync = vi.fn(() =>
+      Promise.resolve<RefreshSummary>({
+        now: '2024-01-02T00:00:00.000Z',
+        feeds: [
+          {
+            feedId: 1,
+            feedTitle: 'Feed 1',
+            feedUrl: null,
+            skippedByCooldown: false,
+            cooldownSecondsRemaining: null,
+            itemsRead: 2,
+            itemsWithinWindow: 1,
+            articlesCreated: 0,
+            duplicates: 0,
+            invalidItems: 0,
+            error: 'falha no feed',
+          },
+        ],
+      }),
+    );
+    mockedUseRefreshPosts.mockReturnValue(createMutationResult(refreshMutateAsync));
+
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Post 1' });
+
+    expect(screen.getByText('Alguns feeds retornaram erros durante a atualizacao.')).toBeInTheDocument();
+    expect(screen.getByText('Erro: falha no feed')).toBeInTheDocument();
+    expect(screen.getByText('Post 1')).toBeInTheDocument();
+  });
+
   it('applies feed filter and refetches the list', async () => {
     const user = userEvent.setup();
 
@@ -357,6 +447,8 @@ describe('PostsPage', () => {
   it('repeats the sequence when clicking refresh', async () => {
     const user = userEvent.setup();
 
+    const firstPagePost = buildPost({ title: 'Primeiro post' });
+    const secondPagePost = buildPost({ id: 2, title: 'Segundo post', contentSnippet: 'Resumo pagina 2' });
     const refetchMock = vi.fn(() => Promise.resolve({ data: null }));
 
     mockedUsePostList.mockImplementation((params: PostListParams) => {
@@ -364,8 +456,18 @@ describe('PostsPage', () => {
         return createPostQueryResult({ refetch: refetchMock });
       }
 
+      if (params.cursor) {
+        return createPostQueryResult({
+          data: { items: [secondPagePost], meta: { nextCursor: null, limit: 10 } },
+          isSuccess: true,
+          isFetched: true,
+          status: 'success',
+          refetch: refetchMock,
+        });
+      }
+
       return createPostQueryResult({
-        data: { items: [buildPost()], meta: { nextCursor: null, limit: 10 } },
+        data: { items: [firstPagePost], meta: { nextCursor: 'cursor-1', limit: 10 } },
         isSuccess: true,
         isFetched: true,
         status: 'success',
@@ -375,14 +477,20 @@ describe('PostsPage', () => {
 
     renderPage();
 
-    await screen.findByText('Post 1');
+    await screen.findByText('Primeiro post');
+
+    await user.click(screen.getByRole('button', { name: 'Proxima' }));
+
+    await screen.findByText('Segundo post');
+    expect(screen.getByText('Pagina 2')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Atualizar' }));
 
     await waitFor(() => {
       expect(refreshMutateAsync).toHaveBeenCalledTimes(2);
       expect(cleanupMutateAsync).toHaveBeenCalledTimes(2);
-      expect(refetchMock).toHaveBeenCalled();
+      expect(screen.getByText('Pagina 1')).toBeInTheDocument();
+      expect(screen.getByText('Primeiro post')).toBeInTheDocument();
     });
   });
 
@@ -466,8 +574,11 @@ describe('PostsPage', () => {
 
   it('shows list error state with retry action when query fails', async () => {
     const refetch = vi.fn(() => Promise.resolve({ data: null }));
+    let latestParams: PostListParams | null = null;
 
     mockedUsePostList.mockImplementation((params: PostListParams) => {
+      latestParams = params;
+
       if (!params.enabled) {
         return createPostQueryResult();
       }
@@ -490,6 +601,55 @@ describe('PostsPage', () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
-    expect(refetch).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(2);
+      expect(cleanupMutateAsync).toHaveBeenCalledTimes(2);
+      expect(refetch).toHaveBeenCalled();
+      expect(latestParams?.feedId ?? null).toBeNull();
+    });
+  });
+
+  it('retries the sequence keeping the selected filter when clicking try again', async () => {
+    const user = userEvent.setup();
+    const refetch = vi.fn(() => Promise.resolve({ data: null }));
+    let latestParams: PostListParams | null = null;
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      latestParams = params;
+
+      if (!params.enabled) {
+        return createPostQueryResult({ refetch });
+      }
+
+      return createPostQueryResult({
+        isError: true,
+        isSuccess: false,
+        isFetched: true,
+        status: 'error',
+        error: new Error('falha listagem'),
+        data: undefined,
+        refetch,
+      });
+    });
+
+    renderPage();
+
+    await screen.findByText('Nao foi possivel carregar os posts. Tente novamente mais tarde.');
+
+    const select = screen.getByLabelText('Filtrar por feed');
+    await user.selectOptions(select, '2');
+
+    await waitFor(() => {
+      expect(latestParams?.feedId).toBe(2);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(2);
+      expect(cleanupMutateAsync).toHaveBeenCalledTimes(2);
+      expect(refetch).toHaveBeenCalled();
+      expect(latestParams?.feedId).toBe(2);
+    });
   });
 });

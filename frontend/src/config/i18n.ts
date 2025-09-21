@@ -179,6 +179,7 @@ const resources = {
         },
         errors: {
           generic: 'The operation failed. Try again.',
+          network: 'We could not connect. Check your network and try again.',
           refresh: 'Could not refresh your feeds.',
           cleanup: 'Could not clean old articles.',
           list: 'Could not load posts. Try again later.',
@@ -195,6 +196,7 @@ const resources = {
           executedAt: 'Executed at {{date}}',
           show: 'Show refresh summary',
           hide: 'Hide refresh summary',
+          dismiss: 'Dismiss summary',
           empty: 'No feed was processed during the latest refresh.',
           feedFallback: 'Feed {{id}}',
           skippedByCooldown: 'Skipped by cooldown window.',
@@ -205,6 +207,17 @@ const resources = {
           duplicates: 'Duplicates',
           invalidItems: 'Invalid entries',
           error: 'Error: {{message}}',
+          partialError: 'Some feeds returned errors during the refresh.',
+          metrics: {
+            feedsProcessed: 'Feeds processed',
+            feedsSkipped: 'Feeds skipped',
+            feedsWithErrors: 'Feeds with errors',
+          },
+          feedStatus: {
+            ok: 'Updated',
+            skipped: 'Skipped',
+            error: 'Error',
+          },
         },
         list: {
           metadata: {
@@ -447,6 +460,7 @@ const resources = {
         },
         errors: {
           generic: 'A operacao falhou. Tente novamente.',
+          network: 'Nao foi possivel conectar. Verifique sua conexao e tente novamente.',
           refresh: 'Nao foi possivel atualizar seus feeds.',
           cleanup: 'Nao foi possivel limpar artigos antigos.',
           list: 'Nao foi possivel carregar os posts. Tente novamente mais tarde.',
@@ -463,6 +477,7 @@ const resources = {
           executedAt: 'Executado em {{date}}',
           show: 'Mostrar resumo da atualizacao',
           hide: 'Ocultar resumo da atualizacao',
+          dismiss: 'Dispensar resumo',
           empty: 'Nenhum feed foi processado na ultima atualizacao.',
           feedFallback: 'Feed {{id}}',
           skippedByCooldown: 'Ignorado por estar em cooldown.',
@@ -473,6 +488,17 @@ const resources = {
           duplicates: 'Duplicatas',
           invalidItems: 'Entradas invalidas',
           error: 'Erro: {{message}}',
+          partialError: 'Alguns feeds retornaram erros durante a atualizacao.',
+          metrics: {
+            feedsProcessed: 'Feeds processados',
+            feedsSkipped: 'Feeds ignorados',
+            feedsWithErrors: 'Feeds com erros',
+          },
+          feedStatus: {
+            ok: 'Atualizado',
+            skipped: 'Ignorado',
+            error: 'Erro',
+          },
         },
         list: {
           metadata: {
