@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import { ENV } from '@/config/env';
 import { z, type ZodType, type ZodTypeDef } from 'zod';
 
@@ -125,13 +125,17 @@ apiHttpClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (axios.isAxiosError(error) && error.response) {
-      const { status, statusText, data } = error.response;
+      const response: AxiosResponse<unknown> = error.response;
+      const { status, statusText, data } = response;
       const fallback = statusText || DEFAULT_ERROR_MESSAGE;
       const message = extractErrorMessage(data, fallback);
       return Promise.reject(createHttpError(message, status, data));
     }
 
-    return Promise.reject(error);
+    const fallbackMessage = error instanceof Error ? error.message : DEFAULT_ERROR_MESSAGE;
+    const fallbackError = error instanceof Error ? error : new Error(fallbackMessage);
+
+    return Promise.reject(fallbackError);
   },
 );
 
