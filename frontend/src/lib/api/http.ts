@@ -42,6 +42,7 @@ export const onUnauthorized = (handler: UnauthorizedHandler) => {
 const envelopeSchema = z.object({
   success: z.boolean(),
   data: z.unknown().optional(),
+  meta: z.unknown().optional(),
   error: z
     .object({
       code: z.string().optional(),
@@ -88,11 +89,18 @@ const parseJsonPayload = <TResponse>(
       throw createHttpError(envelope.data.error?.message ?? DEFAULT_ERROR_MESSAGE, status, envelope.data.error);
     }
 
-    const data = envelope.data.data as TResponse;
-    return schema ? schema.parse(data) : data;
+    if (schema) {
+      return schema.parse(envelope.data.data);
+    }
+
+    return envelope.data.data as TResponse;
   }
 
-  return schema ? schema.parse(payload) : (payload as TResponse);
+  if (schema) {
+    return schema.parse(payload);
+  }
+
+  return payload as TResponse;
 };
 
 const buildUrl = (path: string, baseUrl: string) => {
@@ -119,6 +127,10 @@ type RequestOptions<TBody> = {
 
 type JsonRequestOptions<TBody, TResponse> = RequestOptions<TBody> & {
   schema?: ZodType<TResponse, ZodTypeDef, unknown>;
+};
+
+type JsonRequestWithMetaOptions<TBody, TResponse, TMeta> = JsonRequestOptions<TBody, TResponse> & {
+  metaSchema?: ZodType<TMeta, ZodTypeDef, unknown>;
 };
 
 apiHttpClient.interceptors.response.use(
@@ -196,4 +208,75 @@ export function deleteJson<TResponse>(path: string, schema?: ZodType<TResponse, 
 
 export function putJson<TResponse, TBody = unknown>(path: string, body: TBody, schema?: ZodType<TResponse, ZodTypeDef, unknown>) {
   return requestJson<TResponse, TBody>(path, { method: 'PUT', body, schema });
+}
+
+async function requestJsonWithMeta<TResponse, TBody = unknown, TMeta = Record<string, unknown>>(
+  path: string,
+  options: JsonRequestWithMetaOptions<TBody, TResponse, TMeta> = {},
+) {
+  const { method = 'GET', body, schema, headers = {}, metaSchema } = options;
+
+  if (!schema) {
+    throw new Error('requestJsonWithMeta requires a schema to parse the response payload');
+  }
+
+  if (!metaSchema) {
+    throw new Error('requestJsonWithMeta requires a metaSchema to parse the response metadata');
+  }
+  const url = buildUrl(path, ENV.API_URL);
+
+  const requestInit: RequestInit = {
+    method,
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      ...headers,
+    },
+  };
+
+  if (body !== undefined) {
+    requestInit.body = JSON.stringify(body);
+    requestInit.headers = {
+      'Content-Type': 'application/json',
+      ...requestInit.headers,
+    } as HeadersInit;
+  }
+
+  const response = await fetch(url, requestInit);
+  const contentType = response.headers.get('content-type') ?? '';
+  const isJson = contentType.includes('application/json');
+  const payload: unknown = isJson ? await response.json() : await response.text();
+
+  if (!response.ok) {
+    const fallback = response.statusText || DEFAULT_ERROR_MESSAGE;
+    const message = isJson ? extractErrorMessage(payload, fallback) : fallback;
+    throw createHttpError(message, response.status, payload);
+  }
+
+  if (!isJson) {
+    throw new Error('Expected JSON response with metadata payload');
+  }
+
+  const envelope = envelopeSchema.safeParse(payload);
+
+  if (!envelope.success) {
+    throw new Error('Invalid response envelope for metadata request');
+  }
+
+  if (!envelope.data.success) {
+    throw createHttpError(envelope.data.error?.message ?? DEFAULT_ERROR_MESSAGE, response.status, envelope.data.error);
+  }
+
+  return {
+    data: schema.parse(envelope.data.data),
+    meta: metaSchema.parse(envelope.data.meta),
+  };
+}
+
+export function getJsonWithMeta<TResponse, TMeta = Record<string, unknown>>(
+  path: string,
+  schema?: ZodType<TResponse, ZodTypeDef, unknown>,
+  metaSchema?: ZodType<TMeta, ZodTypeDef, unknown>,
+) {
+  return requestJsonWithMeta<TResponse, undefined, TMeta>(path, { method: 'GET', schema, metaSchema });
 }

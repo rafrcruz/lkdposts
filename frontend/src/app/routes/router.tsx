@@ -1,4 +1,4 @@
-﻿import { Suspense, lazy, type ReactNode } from 'react';
+import { Suspense, lazy, type ReactNode } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
 
 import { MainLayout } from '../layout/MainLayout';
@@ -8,6 +8,7 @@ import { RequireAuth } from '@/features/auth/components/RequireAuth';
 
 const HomePage = lazy(() => import('@/pages/home/HomePage'));
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'));
+const FeedsPage = lazy(() => import('@/pages/feeds/FeedsPage'));
 const AllowlistPage = lazy(() => import('@/pages/allowlist/AllowlistPage'));
 const NotFoundPage = lazy(() => import('@/pages/not-found/NotFoundPage'));
 
@@ -27,6 +28,14 @@ export const router = createBrowserRouter([
         element: withSuspense(
           <RequireAuth>
             <DashboardPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'feeds',
+        element: withSuspense(
+          <RequireAuth>
+            <FeedsPage />
           </RequireAuth>
         ),
       },
