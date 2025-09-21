@@ -94,6 +94,27 @@ describe('Feeds API', () => {
       );
       expect(secondPage.body.meta.nextCursor).toBeNull();
     });
+
+    it('caps the requested limit to the maximum allowed value', async () => {
+      const maxLimit = feedService.constants.MAX_PAGE_SIZE;
+      const totalFeeds = maxLimit + 5;
+
+      for (let index = 0; index < totalFeeds; index += 1) {
+        await feedService.createFeed({
+          ownerKey: '1',
+          url: `https://example.com/feed-${index}.xml`,
+          title: `Feed ${index}`,
+        });
+      }
+
+      const response = await withAuth(TOKENS.user1, request(app).get('/api/v1/feeds'))
+        .query({ limit: maxLimit + 20 })
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data.items).toHaveLength(maxLimit);
+      expect(response.body.meta.limit).toBe(maxLimit);
+    });
   });
 
   describe('POST /api/v1/feeds', () => {
@@ -172,6 +193,19 @@ describe('Feeds API', () => {
           expect.objectContaining({ url: 'not-a-url', reason: 'INVALID_URL' }),
         ])
       );
+    });
+
+    it('rejects payloads that exceed the bulk creation limit', async () => {
+      const urls = Array.from({ length: feedService.constants.MAX_BULK_FEED_URLS + 1 }, (_, index) =>
+        `https://bulk-limit.example.com/${index}`
+      );
+
+      const response = await withAuth(TOKENS.user1, request(app).post('/api/v1/feeds/bulk'))
+        .send({ urls })
+        .expect('Content-Type', /json/)
+        .expect(413);
+
+      expect(response.body.error.code).toBe('PAYLOAD_TOO_LARGE');
     });
   });
 

@@ -1,4 +1,11 @@
-const { refreshUserFeeds, cleanupOldArticles, listRecentArticles, InvalidCursorError, POST_PLACEHOLDER_CONTENT } = require('../src/services/posts.service');
+const {
+  refreshUserFeeds,
+  cleanupOldArticles,
+  listRecentArticles,
+  InvalidCursorError,
+  POST_PLACEHOLDER_CONTENT,
+  constants: postsConstants,
+} = require('../src/services/posts.service');
 const { prisma } = require('../src/lib/prisma');
 
 const toRssDate = (date) => new Date(date).toUTCString();
@@ -226,6 +233,121 @@ describe('posts.service', () => {
 
       const articles = await prisma.article.findMany();
       expect(articles).toHaveLength(0);
+    });
+
+    it('caps stored title and snippet length to configured limits', async () => {
+      const now = new Date('2025-03-05T08:00:00Z');
+      const feed = await createFeed({ lastFetchedAt: new Date('2025-02-01T00:00:00Z') });
+      const longTitle = 'T'.repeat(postsConstants.MAX_ARTICLE_TITLE_LENGTH + 200);
+      const longDescription = 'D'.repeat(postsConstants.MAX_ARTICLE_CONTENT_LENGTH + 500);
+      const rss = buildRss([
+        makeRssItem({
+          title: longTitle,
+          guid: 'truncate-guid',
+          description: longDescription,
+          publishedAt: now,
+        }),
+      ]);
+
+      const fetcher = createFetchMock(new Map([[feed.url, rss]]));
+      await refreshUserFeeds({ ownerKey: '1', now, fetcher });
+
+      const [article] = await prisma.article.findMany();
+      expect(article).toBeDefined();
+      expect(article.title.length).toBeLessThanOrEqual(postsConstants.MAX_ARTICLE_TITLE_LENGTH);
+      expect(article.contentSnippet.length).toBeLessThanOrEqual(postsConstants.MAX_ARTICLE_CONTENT_LENGTH);
+    });
+
+    it('processes items missing guid, link and title by deriving a fallback dedupe key', async () => {
+      const now = new Date('2025-03-05T09:00:00Z');
+      const feed = await createFeed({ lastFetchedAt: new Date('2025-02-01T00:00:00Z') });
+      const rss = buildRss([
+        makeRssItem({
+          title: '   ',
+          description: 'Useful summary of the article',
+          publishedAt: now,
+        }),
+      ]);
+
+      const fetcher = createFetchMock(new Map([[feed.url, rss]]));
+      const firstRun = await refreshUserFeeds({ ownerKey: '1', now, fetcher });
+      const secondRun = await refreshUserFeeds({ ownerKey: '1', now, fetcher });
+
+      expect(firstRun.results[0].articlesCreated).toBe(1);
+      expect(secondRun.results[0].articlesCreated).toBe(0);
+
+      const [article] = await prisma.article.findMany();
+      expect(article).toBeDefined();
+      expect(article.title).toBe('Untitled');
+      expect(article.contentSnippet).toBe('Useful summary of the article');
+    });
+
+    it('handles malformed XML without aborting the refresh routine', async () => {
+      const now = new Date('2025-03-05T10:00:00Z');
+      const feed = await createFeed({ lastFetchedAt: new Date('2025-02-01T00:00:00Z') });
+      const fetcher = createFetchMock(new Map([[feed.url, '<']]));
+
+      const result = await refreshUserFeeds({ ownerKey: '1', now, fetcher });
+
+      expect(result.results[0].error).toEqual({ message: 'Failed to parse feed XML' });
+      const articles = await prisma.article.findMany();
+      expect(articles).toHaveLength(0);
+    });
+
+    it('aborts slow fetches using the configured timeout', async () => {
+      const now = new Date('2025-03-05T11:00:00Z');
+      const feed = await createFeed({ lastFetchedAt: new Date('2025-02-01T00:00:00Z') });
+
+      const fetcher = jest.fn((url, { signal }) => {
+        return new Promise((resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            const error = new Error('Aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        });
+      });
+
+      const result = await refreshUserFeeds({ ownerKey: '1', now, fetcher, timeoutMs: 10 });
+
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(result.results[0].error).toEqual({ message: 'Feed request timed out' });
+    });
+
+    it('reuses in-flight refreshes for the same owner to avoid duplicate work', async () => {
+      const now = new Date('2025-03-05T12:00:00Z');
+      const feed = await createFeed({ lastFetchedAt: new Date('2025-02-01T00:00:00Z') });
+      const rss = buildRss([
+        makeRssItem({ title: 'Concurrent', guid: 'concurrent-guid', publishedAt: now }),
+      ]);
+
+      let resolveFetch;
+      const fetcher = jest.fn(() =>
+        new Promise((resolve) => {
+          resolveFetch = () =>
+            resolve({
+              ok: true,
+              status: 200,
+              text: async () => rss,
+            });
+        })
+      );
+
+      const firstPromise = refreshUserFeeds({ ownerKey: '1', now, fetcher });
+      const secondPromise = refreshUserFeeds({ ownerKey: '1', now, fetcher });
+
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(typeof resolveFetch).toBe('function');
+
+      resolveFetch();
+
+      const [firstResult, secondResult] = await Promise.all([firstPromise, secondPromise]);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(firstResult).toBe(secondResult);
+      expect(firstResult.results[0].articlesCreated).toBe(1);
+
+      const articles = await prisma.article.findMany();
+      expect(articles).toHaveLength(1);
     });
   });
 
