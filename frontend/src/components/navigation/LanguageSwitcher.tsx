@@ -1,19 +1,41 @@
-﻿import { ChangeEvent } from 'react';
+import { ChangeEvent, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const SUPPORTED_LOCALES = [
-  { value: 'pt-BR', label: '\u{1F1E7}\u{1F1F7} Portugu\u00EAs' },
+  { value: 'pt-BR', label: '\u{1F1E7}\u{1F1F7} Português' },
   { value: 'en', label: '\u{1F1FA}\u{1F1F8} English' },
 ];
+
+const LANGUAGE_STORAGE_KEY = 'lkdposts-language';
 
 export const LanguageSwitcher = () => {
   const { i18n } = useTranslation();
 
   const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    i18n.changeLanguage(event.target.value).catch((err) => {
+    const nextLanguage = event.target.value;
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
+    }
+
+    i18n.changeLanguage(nextLanguage).catch((err) => {
       console.error('Failed to change language', err);
     });
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+
+    if (storedLanguage && storedLanguage !== i18n.language) {
+      i18n.changeLanguage(storedLanguage).catch((err) => {
+        console.error('Failed to load stored language', err);
+      });
+    }
+  }, [i18n]);
 
   return (
     <label className="flex items-center gap-2 text-sm font-medium text-muted-foreground">

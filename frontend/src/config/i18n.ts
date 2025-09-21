@@ -198,6 +198,7 @@ i18n
     detection: {
       order: ['querystring', 'localStorage', 'navigator'],
       caches: ['localStorage'],
+      lookupLocalStorage: 'lkdposts-language',
     },
   })
   .catch((error) => {
