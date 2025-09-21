@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/consistent-type-definitions, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/consistent-type-definitions */
 /// <reference types="vite/client" />
 
 declare global {

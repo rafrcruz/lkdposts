@@ -58,8 +58,8 @@ export const GoogleLoginButton: React.FC = () => {
 
       google.accounts.id.initialize({
         client_id: ENV.GOOGLE_CLIENT_ID,
-        callback: async (response: CredentialResponse) => {
-          await handleCredential(response);
+        callback: (response: CredentialResponse) => {
+          void handleCredential(response);
         },
         ux_mode: 'popup',
       });
