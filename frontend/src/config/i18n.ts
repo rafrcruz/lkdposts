@@ -576,7 +576,7 @@ i18n
     resources,
     fallbackLng: ENV.FALLBACK_LOCALE,
     lng: ENV.DEFAULT_LOCALE,
-    compatibilityJSON: 'v3',
+    compatibilityJSON: 'v4',
     interpolation: {
       escapeValue: false,
     },

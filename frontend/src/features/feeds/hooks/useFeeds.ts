@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   FEEDS_QUERY_KEY,
@@ -26,7 +26,7 @@ export const useFeedList = ({ cursor, limit }: FeedListParams) => {
     queryKey: [...FEEDS_QUERY_KEY, { cursor: cursor ?? null, limit }],
     queryFn: () => fetchFeeds({ cursor: cursor ?? undefined, limit }),
     enabled: isAuthenticated,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 };
 

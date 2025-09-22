@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 
 import { cleanupPosts, fetchPosts, refreshPosts, POSTS_QUERY_KEY, type PostListResponse } from '../api/posts';
 import type { CleanupResult, RefreshSummary } from '../types/post';
@@ -20,7 +20,7 @@ export const usePostList = ({ cursor, limit, feedId, enabled = true }: PostListP
     queryKey: [...POSTS_QUERY_KEY, { cursor: cursor ?? null, limit, feedId: feedId ?? null }],
     queryFn: () => fetchPosts({ cursor: cursor ?? undefined, limit, feedId: feedId ?? undefined }),
     enabled: isAuthenticated && enabled,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 };
 

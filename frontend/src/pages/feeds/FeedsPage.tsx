@@ -9,8 +9,6 @@ import type {
   FeedInvalidReason,
   FeedListMeta,
 } from '@/features/feeds/types/feed';
-import type { FeedListResponse } from '@/features/feeds/api/feeds';
-import type { UseQueryResult } from '@tanstack/react-query';
 import { HttpError } from '@/lib/api/http';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { formatDate, useLocale } from '@/utils/formatters';
@@ -108,7 +106,7 @@ const FeedsPage = () => {
 
   const [listFeedback, setListFeedback] = useState<FeedbackMessage | null>(null);
 
-  const feedList: UseQueryResult<FeedListResponse, HttpError> = useFeedList({ cursor, limit: PAGE_SIZE });
+  const feedList = useFeedList({ cursor, limit: PAGE_SIZE });
   const createFeed = useCreateFeed();
   const bulkCreate = useBulkCreateFeeds();
   const updateFeedMutation = useUpdateFeed();
