@@ -41,15 +41,15 @@ const isFeedListQueryKey = (queryKey: unknown): queryKey is FeedListQueryKey => 
     return false;
   }
 
-  const params = queryKey[FEEDS_QUERY_KEY.length];
+  const paramsCandidate: unknown = queryKey[FEEDS_QUERY_KEY.length];
 
-  if (typeof params !== 'object' || params === null) {
+  if (typeof paramsCandidate !== 'object' || paramsCandidate === null) {
     return false;
   }
 
-  const candidate = params as Record<string, unknown>;
-  const hasCursor = Object.prototype.hasOwnProperty.call(candidate, 'cursor');
-  const hasLimit = Object.prototype.hasOwnProperty.call(candidate, 'limit');
+  const candidate = paramsCandidate as Record<string, unknown>;
+  const hasCursor = Object.hasOwn(candidate, 'cursor');
+  const hasLimit = Object.hasOwn(candidate, 'limit');
 
   if (!hasCursor || !hasLimit) {
     return false;
@@ -71,9 +71,9 @@ const updateFeedListCache = (queryClient: QueryClient, feeds: Feed[]) => {
 
   const queries = queryClient.getQueriesData<FeedListResponse>({ queryKey: FEEDS_QUERY_KEY });
 
-  queries.forEach(([queryKey, current]) => {
+  for (const [queryKey, current] of queries) {
     if (!current || !isFeedListQueryKey(queryKey)) {
-      return;
+      continue;
     }
 
     const [, params] = queryKey;
@@ -84,7 +84,7 @@ const updateFeedListCache = (queryClient: QueryClient, feeds: Feed[]) => {
     const newFeeds = feeds.filter((feed) => !existingIds.has(feed.id));
 
     if (newFeeds.length === 0) {
-      return;
+      continue;
     }
 
     const nextItems = isFirstPage ? [...newFeeds, ...current.items].slice(0, limit) : current.items;
@@ -98,7 +98,7 @@ const updateFeedListCache = (queryClient: QueryClient, feeds: Feed[]) => {
       items: nextItems,
       meta: nextMeta,
     });
-  });
+  }
 };
 
 type FeedListParams = {

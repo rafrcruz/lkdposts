@@ -14,9 +14,8 @@ export const LanguageSwitcher = () => {
   const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const nextLanguage = event.target.value;
 
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
-    }
+    const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+    browserWindow?.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
 
     i18n.changeLanguage(nextLanguage).catch((err) => {
       console.error('Failed to change language', err);
@@ -24,11 +23,12 @@ export const LanguageSwitcher = () => {
   };
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+    if (!browserWindow) {
       return;
     }
 
-    const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    const storedLanguage = browserWindow.localStorage.getItem(LANGUAGE_STORAGE_KEY);
 
     if (storedLanguage && storedLanguage !== i18n.language) {
       i18n.changeLanguage(storedLanguage).catch((err) => {

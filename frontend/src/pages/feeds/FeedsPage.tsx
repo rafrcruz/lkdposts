@@ -240,21 +240,21 @@ const FeedsPage = () => {
     const localDuplicates: BulkSummary['duplicates'] = [];
     const localInvalid: BulkSummary['invalid'] = [];
 
-    lines.forEach((candidate) => {
-      if (seen.has(candidate)) {
-        localDuplicates.push({ url: candidate, reason: 'DUPLICATE_IN_PAYLOAD', feedId: null });
-        return;
+      for (const candidate of lines) {
+        if (seen.has(candidate)) {
+          localDuplicates.push({ url: candidate, reason: 'DUPLICATE_IN_PAYLOAD', feedId: null });
+          continue;
+        }
+
+        seen.add(candidate);
+
+        if (!isValidUrl(candidate)) {
+          localInvalid.push({ url: candidate, reason: 'INVALID_URL' });
+          continue;
+        }
+
+        sanitized.push(candidate);
       }
-
-      seen.add(candidate);
-
-      if (!isValidUrl(candidate)) {
-        localInvalid.push({ url: candidate, reason: 'INVALID_URL' });
-        return;
-      }
-
-      sanitized.push(candidate);
-    });
 
     if (sanitized.length === 0) {
       setBulkSummary({ created: [], duplicates: localDuplicates, invalid: localInvalid });
@@ -368,7 +368,8 @@ const FeedsPage = () => {
     setListFeedback(null);
     setEditFeedback(null);
 
-    const confirmed = window.confirm(t('feeds.list.deleteConfirm', 'Remover este feed?'));
+    const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+    const confirmed = browserWindow?.confirm(t('feeds.list.deleteConfirm', 'Remover este feed?')) ?? false;
     if (!confirmed) {
       return;
     }

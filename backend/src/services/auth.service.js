@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const { OAuth2Client } = require('google-auth-library');
 const config = require('../config');
 const sessionRepository = require('../repositories/session.repository');

@@ -7,6 +7,26 @@ type CredentialResponse = {
   credential?: string;
 };
 
+type GoogleIdentityApi = {
+  accounts?: {
+    id?: {
+      initialize: (configuration: {
+        client_id: string;
+        callback: (response: CredentialResponse) => void;
+        ux_mode?: 'popup' | 'redirect';
+      }) => void;
+      renderButton: (container: HTMLElement, options: Record<string, unknown>) => void;
+      cancel?: () => void;
+    };
+  };
+};
+
+type GlobalWithGoogle = typeof globalThis & { google?: GoogleIdentityApi };
+
+const getGoogleIdentityApi = (): GoogleIdentityApi | undefined => {
+  return (globalThis as GlobalWithGoogle).google;
+};
+
 export const GoogleLoginButton: React.FC = () => {
   const { loginWithGoogle, isAuthenticating, authError, clearAuthError } = useAuth();
   const buttonContainerRef = useRef<HTMLDivElement | null>(null);
@@ -34,6 +54,13 @@ export const GoogleLoginButton: React.FC = () => {
     [clearAuthError, loginWithGoogle]
   );
 
+  const onGoogleCredential = useCallback(
+    (response: CredentialResponse) => {
+      void handleCredential(response);
+    },
+    [handleCredential],
+  );
+
   useEffect(() => {
     if (!buttonContainerRef.current) {
       return;
@@ -47,34 +74,31 @@ export const GoogleLoginButton: React.FC = () => {
     let cancelled = false;
 
     const initialiseGoogle = () => {
-      const google = window.google;
+      const google = getGoogleIdentityApi();
 
       if (!google?.accounts?.id) {
         if (!cancelled) {
-          window.setTimeout(initialiseGoogle, 200);
+          globalThis.setTimeout(initialiseGoogle, 200);
         }
         return;
       }
 
       google.accounts.id.initialize({
         client_id: ENV.GOOGLE_CLIENT_ID,
-        callback: (response: CredentialResponse) => {
-          handleCredential(response).catch(() => {
-            // handled inside handleCredential
-          });
-        },
+        callback: onGoogleCredential,
         ux_mode: 'popup',
       });
 
       if (buttonContainerRef.current) {
         buttonContainerRef.current.innerHTML = '';
-        google.accounts.id.renderButton(buttonContainerRef.current, {
+        const buttonOptions: Record<string, unknown> = {
           type: 'standard',
           theme: 'outline',
           size: 'large',
           text: 'signin_with',
           width: 280,
-        });
+        };
+        google.accounts.id.renderButton(buttonContainerRef.current, buttonOptions);
       }
     };
 
@@ -82,9 +106,9 @@ export const GoogleLoginButton: React.FC = () => {
 
     return () => {
       cancelled = true;
-      window.google?.accounts?.id?.cancel?.();
+      getGoogleIdentityApi()?.accounts?.id?.cancel?.();
     };
-  }, [handleCredential]);
+  }, [onGoogleCredential]);
 
   useEffect(() => {
     if (authError) {

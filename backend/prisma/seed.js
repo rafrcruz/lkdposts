@@ -18,13 +18,16 @@ async function main() {
   }
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (error) => {
+const run = async () => {
+  try {
+    await main();
+  } catch (error) {
     console.error('Failed to seed database:', error);
+    process.exitCode = 1;
+  } finally {
     await prisma.$disconnect();
-    process.exit(1);
-  });
+  }
+};
+
+void run();
 

@@ -12,17 +12,16 @@ export const TopNav = () => {
   const { t } = useTranslation();
   const { status, user, logout, isAuthenticating } = useAuth();
 
-  const links: Array<{ to: string; label: string }> = [];
-
-  if (status === 'authenticated') {
-    links.push({ to: '/posts', label: t('navigation.posts', 'Posts') });
-    links.push({ to: '/feeds', label: t('navigation.feeds', 'Feeds') });
-    if (user?.role === 'admin') {
-      links.push({ to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') });
-    }
-  } else {
-    links.push({ to: '/', label: t('navigation.home') });
-  }
+  const links: Array<{ to: string; label: string }> =
+    status === 'authenticated'
+      ? [
+          { to: '/posts', label: t('navigation.posts', 'Posts') },
+          { to: '/feeds', label: t('navigation.feeds', 'Feeds') },
+          ...(user?.role === 'admin'
+            ? [{ to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') }]
+            : []),
+        ]
+      : [{ to: '/', label: t('navigation.home') }];
 
   const handleLogout = () => {
     logout().catch((error) => {

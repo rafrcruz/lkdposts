@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-const path = require('path');
-const fs = require('fs');
-const { spawn } = require('child_process');
+const path = require('node:path');
+const fs = require('node:fs');
+const { spawn } = require('node:child_process');
 const { Client } = require('pg');
 const dotenv = require('dotenv');
 
@@ -11,12 +11,12 @@ if (nodeEnv && nodeEnv.trim() !== '') {
   envFiles.push(`.env.${nodeEnv}`);
 }
 
-envFiles.forEach((relativePath) => {
+for (const relativePath of envFiles) {
   const absolutePath = path.resolve(__dirname, '..', relativePath);
   if (fs.existsSync(absolutePath)) {
     dotenv.config({ path: absolutePath, override: false });
   }
-});
+}
 
 dotenv.config({ override: false });
 
@@ -143,7 +143,7 @@ const runMigrate = async (directUrl) => {
   }
 };
 
-(async () => {
+const main = async () => {
   try {
     const rawDirect = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL;
     if (!rawDirect) {
@@ -158,6 +158,8 @@ const runMigrate = async (directUrl) => {
     await runMigrate(directUrl);
   } catch (error) {
     console.error('Migration deploy failed', error);
-    process.exit(1);
+    process.exitCode = 1;
   }
-})();
+};
+
+void main();

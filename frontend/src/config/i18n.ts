@@ -529,26 +529,31 @@ const resources = {
   },
 };
 
-i18n
-  .use(LanguageDetector)
-  .use(initReactI18next)
-  .init({
-    resources,
-    fallbackLng: ENV.FALLBACK_LOCALE,
-    lng: ENV.DEFAULT_LOCALE,
-    compatibilityJSON: 'v4',
-    interpolation: {
-      escapeValue: false,
-    },
-    detection: {
-      order: ['querystring', 'localStorage', 'navigator'],
-      caches: ['localStorage'],
-      lookupLocalStorage: 'lkdposts-language',
-    },
-  })
-  .catch((error) => {
+const initialiseI18n = async () => {
+  try {
+    await i18n
+      .use(LanguageDetector)
+      .use(initReactI18next)
+      .init({
+        resources,
+        fallbackLng: ENV.FALLBACK_LOCALE,
+        lng: ENV.DEFAULT_LOCALE,
+        compatibilityJSON: 'v4',
+        interpolation: {
+          escapeValue: false,
+        },
+        detection: {
+          order: ['querystring', 'localStorage', 'navigator'],
+          caches: ['localStorage'],
+          lookupLocalStorage: 'lkdposts-language',
+        },
+      });
+  } catch (error) {
     console.error('Failed to initialise i18n', error);
-  });
+  }
+};
+
+void initialiseI18n();
 
 export default i18n;
 

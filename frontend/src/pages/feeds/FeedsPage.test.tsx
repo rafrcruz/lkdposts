@@ -191,7 +191,11 @@ beforeEach(() => {
     createMutationResult<{ message: string }, number>(deleteMutate, { isPending: false }),
   );
 
-  confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+  if (!browserWindow) {
+    throw new Error('window is not available for confirm spy');
+  }
+  confirmSpy = vi.spyOn(browserWindow, 'confirm').mockReturnValue(true);
 });
 
 afterEach(() => {
