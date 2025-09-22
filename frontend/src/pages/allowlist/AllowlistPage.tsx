@@ -186,8 +186,8 @@ export const AllowlistPage = () => {
 
       <section className="card space-y-4 px-6 py-6">
         <h2 className="text-lg font-medium text-foreground">{t('allowlist.form.title', 'Adicionar email')}</h2>
-        <form className="flex flex-col gap-4 sm:flex-row" onSubmit={handleSubmit}>
-          <label className="flex-1 text-sm">
+        <form className="grid gap-4 sm:grid-cols-[2fr,1fr,auto]" onSubmit={handleSubmit}>
+          <label className="text-sm">
             <span className="mb-1 block font-medium">{t('allowlist.form.email', 'Email')}</span>
             <input
               type="email"
@@ -215,13 +215,15 @@ export const AllowlistPage = () => {
             </select>
           </label>
 
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isBusy}
-          >
-            {t('allowlist.form.submit', 'Adicionar')}
-          </button>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isBusy}
+            >
+              {t('allowlist.form.submit', 'Adicionar')}
+            </button>
+          </div>
         </form>
         {feedback ? (
           <p className="text-sm text-destructive" role="alert">
