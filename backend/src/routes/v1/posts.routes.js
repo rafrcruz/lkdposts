@@ -1,6 +1,8 @@
 const express = require('express');
 
 const postsController = require('../../controllers/posts.controller');
+const { validateRequest } = require('../../middlewares/validate-request');
+const { listPostsQuerySchema } = require('../../schemas/posts.schema');
 
 const router = express.Router();
 
@@ -189,6 +191,6 @@ router.post('/posts/cleanup', postsController.cleanup);
  *       '401':
  *         $ref: '#/components/responses/Unauthorized'
  */
-router.get('/posts', postsController.list);
+router.get('/posts', validateRequest({ query: listPostsQuerySchema }), postsController.list);
 
 module.exports = router;

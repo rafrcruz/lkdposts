@@ -1,7 +1,7 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 const config = require('../config');
-const { prisma } = require('../lib/prisma');
+const sessionRepository = require('../repositories/session.repository');
 const ApiError = require('../utils/api-error');
 const {
   ensureSuperAdmin,
@@ -61,19 +61,14 @@ const createSessionForUser = async ({ userId, userAgent, ipAddress }) => {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
 
-  const session = await prisma.userSession.create({
-    data: {
-      tokenHash,
-      userId,
-      createdAt: now,
-      expiresAt,
-      lastUsedAt: now,
-      userAgent: userAgent ? userAgent.slice(0, 255) : null,
-      ipAddress: ipAddress ? ipAddress.slice(0, 45) : null,
-    },
-    include: {
-      user: true,
-    },
+  const session = await sessionRepository.create({
+    tokenHash,
+    userId,
+    createdAt: now,
+    expiresAt,
+    lastUsedAt: now,
+    userAgent: userAgent ? userAgent.slice(0, 255) : null,
+    ipAddress: ipAddress ? ipAddress.slice(0, 45) : null,
   });
 
   return { token: sessionToken, session };
@@ -86,15 +81,7 @@ const revokeSessionByToken = async (token) => {
 
   const tokenHash = hashToken(token);
 
-  await prisma.userSession.updateMany({
-    where: {
-      tokenHash,
-      revokedAt: null,
-    },
-    data: {
-      revokedAt: new Date(),
-    },
-  });
+  await sessionRepository.revokeByTokenHash(tokenHash);
 };
 
 const findActiveSessionByToken = async (token) => {
@@ -104,10 +91,7 @@ const findActiveSessionByToken = async (token) => {
 
   const tokenHash = hashToken(token);
 
-  const session = await prisma.userSession.findUnique({
-    where: { tokenHash },
-    include: { user: true },
-  });
+  const session = await sessionRepository.findByTokenHash(tokenHash);
 
   if (!session) {
     return null;
@@ -118,10 +102,7 @@ const findActiveSessionByToken = async (token) => {
   }
 
   if (session.expiresAt.getTime() <= Date.now()) {
-    await prisma.userSession.update({
-      where: { id: session.id },
-      data: { revokedAt: new Date() },
-    });
+    await sessionRepository.updateById(session.id, { revokedAt: new Date() });
     return null;
   }
 
@@ -149,11 +130,7 @@ const touchSession = async (session, metadata = {}) => {
     data.ipAddress = metadata.ipAddress.slice(0, 45);
   }
 
-  const updatedSession = await prisma.userSession.update({
-    where: { id: session.id },
-    data,
-    include: { user: true },
-  });
+  const updatedSession = await sessionRepository.updateById(session.id, data);
 
   return {
     session: updatedSession,
@@ -177,7 +154,8 @@ const authenticateWithGoogle = async ({ idToken, userAgent, ipAddress }) => {
   if (!allowedUser) {
     throw new ApiError({
       statusCode: 403,
-      code: 'ALLOWLIST_DENIED',      message: 'Seu email nao esta autorizado para acessar este aplicativo.',
+      code: 'ALLOWLIST_DENIED',
+      message: 'Seu email nao esta autorizado para acessar este aplicativo.',
       details: { email: googleProfile.email },
     });
   }
@@ -198,28 +176,24 @@ const authenticateWithGoogle = async ({ idToken, userAgent, ipAddress }) => {
   };
 };
 
-const validateSessionToken = async ({ token, userAgent, ipAddress }, options = {}) => {
-  const { touch = true } = options;
-  const existingSession = await findActiveSessionByToken(token);
+const validateSessionToken = async ({ token, userAgent, ipAddress }, { touch = true } = {}) => {
+  const session = await findActiveSessionByToken(token);
 
-  if (!existingSession) {
+  if (!session) {
     return null;
   }
 
   if (!touch) {
-    return {
-      session: existingSession,
-      renewed: false,
-    };
+    return { session, renewed: false };
   }
 
-  return touchSession(existingSession, { userAgent, ipAddress });
+  return touchSession(session, { userAgent, ipAddress });
 };
 
 module.exports = {
-  authenticateWithGoogle,
   initializeAuth,
-  validateSessionToken,
+  authenticateWithGoogle,
   revokeSessionByToken,
-  verifyGoogleIdToken,
+  validateSessionToken,
+  createSessionForUser,
 };

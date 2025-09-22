@@ -31,7 +31,8 @@ if (ENV.SENTRY_DSN) {
     dsn: ENV.SENTRY_DSN,
     environment: environmentMode,
     release: releaseVersion,
-    tracesSampleRate: 0,
+    tracesSampleRate: ENV.SENTRY_TRACES_SAMPLE_RATE,
+    profilesSampleRate: ENV.SENTRY_PROFILES_SAMPLE_RATE,
     replaysSessionSampleRate: 0,
     autoSessionTracking: true,
   });

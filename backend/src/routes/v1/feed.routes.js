@@ -1,5 +1,14 @@
 const express = require('express');
 const feedController = require('../../controllers/feed.controller');
+const { validateRequest } = require('../../middlewares/validate-request');
+const {
+  listFeedsQuerySchema,
+  createFeedBodySchema,
+  bulkCreateFeedBodySchema,
+  updateFeedParamsSchema,
+  updateFeedBodySchema,
+  deleteFeedParamsSchema,
+} = require('../../schemas/feed.schema');
 
 const router = express.Router();
 
@@ -81,73 +90,9 @@ const router = express.Router();
  *         $ref: '#/components/responses/BadRequest'
  *       '401':
  *         $ref: '#/components/responses/Unauthorized'
- *   post:
- *     summary: Create a new RSS feed for the authenticated user
- *     description: Registra um novo feed RSS associado ao usuário autenticado. URLs duplicadas são rejeitadas.
- *     tags:
- *       - Feeds
- *     security:
- *       - SessionCookie: []
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - url
- *             properties:
- *               url:
- *                 type: string
- *                 format: uri
- *               title:
- *                 type: string
- *                 nullable: true
- *           examples:
- *             minimal:
- *               summary: Criação básica
- *               value:
- *                 url: https://example.com/rss.xml
- *             withTitle:
- *               summary: Incluindo título opcional
- *               value:
- *                 url: https://example.com/rss.xml
- *                 title: Example RSS Feed
- *     responses:
- *       '201':
- *         description: Feed created successfully
- *         content:
- *           application/json:
- *             schema:
- *               allOf:
- *                 - $ref: '#/components/schemas/Envelope'
- *                 - type: object
- *                   properties:
- *                     data:
- *                       $ref: '#/components/schemas/Feed'
- *             examples:
- *               created:
- *                 value:
- *                   success: true
- *                   data:
- *                     id: 4
- *                     url: https://example.com/rss.xml
- *                     title: Example RSS Feed
- *                     lastFetchedAt: null
- *                     createdAt: '2025-01-20T12:34:56.000Z'
- *                     updatedAt: '2025-01-20T12:34:56.000Z'
- *                   meta:
- *                     requestId: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
- *       '400':
- *         $ref: '#/components/responses/BadRequest'
- *       '401':
- *         $ref: '#/components/responses/Unauthorized'
- *       '409':
- *         $ref: '#/components/responses/Conflict'
-*/
-router.get('/feeds', feedController.list);
-router.post('/feeds', feedController.create);
+ */
+router.get('/feeds', validateRequest({ query: listFeedsQuerySchema }), feedController.list);
+router.post('/feeds', validateRequest({ body: createFeedBodySchema }), feedController.create);
 
 /**
  * @openapi
@@ -225,7 +170,7 @@ router.post('/feeds', feedController.create);
  *       '413':
  *         $ref: '#/components/responses/PayloadTooLarge'
  */
-router.post('/feeds/bulk', feedController.bulkCreate);
+router.post('/feeds/bulk', validateRequest({ body: bulkCreateFeedBodySchema }), feedController.bulkCreate);
 
 /**
  * @openapi
@@ -338,7 +283,11 @@ router.post('/feeds/bulk', feedController.bulkCreate);
  *       '404':
  *         $ref: '#/components/responses/NotFound'
  */
-router.patch('/feeds/:id', feedController.update);
-router.delete('/feeds/:id', feedController.remove);
+router.patch(
+  '/feeds/:id',
+  validateRequest({ params: updateFeedParamsSchema, body: updateFeedBodySchema }),
+  feedController.update
+);
+router.delete('/feeds/:id', validateRequest({ params: deleteFeedParamsSchema }), feedController.remove);
 
 module.exports = router;

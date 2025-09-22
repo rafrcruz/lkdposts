@@ -10,6 +10,26 @@ O lkdposts permite que cada usuário cadastre seus próprios feeds RSS, colete n
 - **Frontend**: React (Vite) com Tailwind CSS, TanStack Query e i18next para internacionalização.
 - **Deploy**: Aplicação hospedada na Vercel, utilizando funções serverless para o backend e banco PostgreSQL gerenciado no Neon.
 
+### Estrutura do código
+
+```
+backend/src
+├── config        # carga e validação de variáveis de ambiente
+├── controllers   # controladores finos que orquestram respostas HTTP
+├── lib           # integrações com serviços externos (Prisma, Sentry)
+├── middlewares   # middlewares compartilhados (auth, rate limit, response envelope, validações)
+├── repositories  # camada de persistência isolando consultas Prisma
+├── routes        # definição das rotas agrupadas por versão
+├── schemas       # contratos Zod reutilizados por rotas e serviços
+├── services      # regras de negócio e integração entre repositórios
+├── startup       # bootstrap para ambientes serverless
+└── utils         # utilitários puros (cache TTL, métricas, helpers)
+
+frontend/src segue convenções equivalentes, com `config/`, `features/`, `lib/`, `pages/` e `utils/`.
+```
+
+Camadas de acesso (`controllers` → `services` → `repositories`) evitam SQL acoplado às rotas e permitem testes isolados.
+
 ## Pré-requisitos
 - Node.js 20.19.0 LTS (compatível com `>=18.20.0`).
 - npm 10 ou superior.
@@ -44,11 +64,15 @@ O lkdposts permite que cada usuário cadastre seus próprios feeds RSS, colete n
 | `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX` | `60000` / `100` | Janela e quantidade máxima de requisições por IP. |
 | `ENABLE_METRICS` | `true` | Habilita endpoint `/metrics` (Prometheus). |
 | `CACHE_MAX_AGE_SECONDS` | `60` | Tempo padrão de cache HTTP para respostas públicas. |
+| `CACHE_FEED_FETCH_TTL_SECONDS` | `120` | TTL (segundos) do cache em memória usado ao buscar RSS em produção. Use `0` para desabilitar. |
+| `CACHE_FEED_FETCH_MAX_ENTRIES` | `16` | Quantidade máxima de feeds mantidos no cache em memória. |
 | `SWAGGER_UI_ENABLED` | `true` | Exibe Swagger UI em `/docs`.
 | `DEBUG_AUTH` | `false` | Ativa logs extras de autenticação. |
 | `SESSION_TTL_SECONDS` | `3600` | Duração da sessão autenticada em segundos. |
 | `SESSION_RENEW_THRESHOLD_SECONDS` | `900` | Janela para renovação antecipada da sessão. |
 | `SENTRY_DSN_BACKEND` | vazio | DSN do Sentry para o backend. |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | Taxa de amostragem de transações enviada ao Sentry (0–1). |
+| `SENTRY_PROFILES_SAMPLE_RATE` | `0` | Taxa de amostragem de profiles do Sentry (0–1). |
 | `PRISMA_URL` | vazio | URL alternativa com pool (ex.: Neon connection pooling). |
 
 ### Frontend
@@ -64,6 +88,8 @@ O lkdposts permite que cada usuário cadastre seus próprios feeds RSS, colete n
 | `VITE_DEFAULT_LOCALE` | Opcional | Locale padrão da UI (`pt-BR` por padrão). |
 | `VITE_FALLBACK_LOCALE` | Opcional | Locale de fallback (`en`). |
 | `VITE_SENTRY_DSN_FRONTEND` | Opcional | DSN do Sentry para monitoramento do frontend. |
+| `VITE_SENTRY_TRACES_SAMPLE_RATE` | Opcional | Taxa de amostragem de transações (padrão `0.05`). |
+| `VITE_SENTRY_PROFILES_SAMPLE_RATE` | Opcional | Taxa de amostragem de profiles (padrão `0`). |
 
 ## Rodando localmente
 Abra dois terminais e execute:
@@ -100,5 +126,12 @@ Tests adicionais (lint, type-check) podem ser executados com `npm run lint --pre
 ## APIs e documentação
 - Swagger UI: `http://localhost:3001/docs`
 - Especificação OpenAPI 3.1 gerada automaticamente em `backend/docs/openapi.json` (`npm run docs:generate --prefix backend`).
+
+## Notas adicionais
+- As rotas validam parâmetros e payloads via Zod, retornando o envelope padrão de erro com código `INVALID_INPUT` em caso de inconsistências.
+- Listagens (`feeds`, `posts`) aplicam paginação com limites seguros e definem `Cache-Control: private` por padrão.
+- Fetch de feeds RSS utiliza cache em memória com TTL configurável para reduzir custos em ambientes serverless.
+- Sentry utiliza amostragem configurável para respeitar a cota do plano gratuito (backend e frontend).
+- Consulte `CHANGELOG.md` e `NOTAS_DE_MIGRACAO.md` para detalhes de evolução e eventuais ajustes necessários após atualizar o projeto.
 
 Com o README e a especificação OpenAPI atualizados, um novo desenvolvedor consegue provisionar o banco no Neon, configurar credenciais Google, rodar a aplicação localmente e publicar na Vercel sem passos adicionais.

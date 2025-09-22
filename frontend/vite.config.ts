@@ -17,6 +17,16 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     sourcemap: mode !== 'production',
+    minify: 'esbuild',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          vendor: ['@tanstack/react-query', 'react-router-dom'],
+        },
+      },
+    },
+    treeshake: true,
   },
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.0.0'),

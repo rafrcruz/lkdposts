@@ -1,8 +1,6 @@
 const ApiError = require('../utils/api-error');
-const { prisma } = require('../lib/prisma');
-
-const MAX_PAGE_SIZE = 50;
-const MAX_BULK_FEED_URLS = 25;
+const feedRepository = require('../repositories/feed.repository');
+const { FEED_MAX_PAGE_SIZE, FEED_MAX_BULK_URLS } = require('../constants/feed');
 
 const sanitizeString = (value) => {
   if (typeof value !== 'string') {
@@ -15,6 +13,10 @@ const sanitizeString = (value) => {
 const normalizeTitle = (title) => {
   if (title === undefined) {
     return undefined;
+  }
+
+  if (title === null) {
+    return null;
   }
 
   const sanitized = sanitizeString(title);
@@ -45,7 +47,7 @@ const ensureValidUrl = (input, { required = true } = {}) => {
 };
 
 const filterOwnerFeed = async (id, ownerKey) => {
-  const feed = await prisma.feed.findUnique({ where: { id } });
+  const feed = await feedRepository.findById(id);
 
   if (!feed || feed.ownerKey !== ownerKey) {
     throw new ApiError({ statusCode: 404, code: 'FEED_NOT_FOUND', message: 'Feed not found' });
@@ -55,24 +57,18 @@ const filterOwnerFeed = async (id, ownerKey) => {
 };
 
 const listFeeds = async ({ ownerKey, cursor, limit }) => {
-  const safeLimit = Math.min(Math.max(limit ?? 20, 1), MAX_PAGE_SIZE);
+  const safeLimit = Math.min(Math.max(limit ?? 20, 1), FEED_MAX_PAGE_SIZE);
 
-  const query = {
-    where: { ownerKey },
-    orderBy: { id: 'asc' },
+  const feeds = await feedRepository.findPageByOwner({
+    ownerKey,
+    cursorId: cursor ?? undefined,
     take: safeLimit + 1,
-  };
+  });
 
-  if (cursor) {
-    query.cursor = { id: cursor };
-    query.skip = 1;
-  }
-
-  const feeds = await prisma.feed.findMany(query);
   const hasMore = feeds.length > safeLimit;
   const items = hasMore ? feeds.slice(0, safeLimit) : feeds;
   const nextCursor = hasMore ? items[items.length - 1].id : null;
-  const total = await prisma.feed.count({ where: { ownerKey } });
+  const total = await feedRepository.countByOwner(ownerKey);
 
   return {
     items,
@@ -86,22 +82,16 @@ const createFeed = async ({ ownerKey, url, title }) => {
   const normalizedUrl = ensureValidUrl(url);
   const normalizedTitle = normalizeTitle(title);
 
-  const existing = await prisma.feed.findUnique({
-    where: {
-      ownerKey_url: { ownerKey, url: normalizedUrl },
-    },
-  });
+  const existing = await feedRepository.findByOwnerAndUrl({ ownerKey, url: normalizedUrl });
 
   if (existing) {
     throw new ApiError({ statusCode: 409, code: 'FEED_ALREADY_EXISTS', message: 'Feed already exists for this user' });
   }
 
-  const created = await prisma.feed.create({
-    data: {
-      ownerKey,
-      url: normalizedUrl,
-      title: normalizedTitle ?? undefined,
-    },
+  const created = await feedRepository.create({
+    ownerKey,
+    url: normalizedUrl,
+    title: normalizedTitle ?? undefined,
   });
 
   return created;
@@ -137,11 +127,11 @@ const createFeedsInBulk = async ({ ownerKey, urls }) => {
     throw new ApiError({ statusCode: 400, code: 'INVALID_PAYLOAD', message: 'urls must be an array of strings' });
   }
 
-  if (urls.length > MAX_BULK_FEED_URLS) {
+  if (urls.length > FEED_MAX_BULK_URLS) {
     throw new ApiError({
       statusCode: 413,
       code: 'PAYLOAD_TOO_LARGE',
-      message: `A maximum of ${MAX_BULK_FEED_URLS} feeds can be created per request`,
+      message: `A maximum of ${FEED_MAX_BULK_URLS} feeds can be created per request`,
     });
   }
 
@@ -169,12 +159,7 @@ const createFeedsInBulk = async ({ ownerKey, urls }) => {
     return result;
   }
 
-  const existingFeeds = await prisma.feed.findMany({
-    where: {
-      ownerKey,
-      url: { in: candidates },
-    },
-  });
+  const existingFeeds = await feedRepository.findManyByOwnerAndUrls({ ownerKey, urls: candidates });
 
   const existingByUrl = new Map();
   existingFeeds.forEach((feed) => {
@@ -185,11 +170,9 @@ const createFeedsInBulk = async ({ ownerKey, urls }) => {
   const urlsToCreate = candidates.filter((url) => !existingByUrl.has(url));
 
   for (const url of urlsToCreate) {
-    const created = await prisma.feed.create({
-      data: {
-        ownerKey,
-        url,
-      },
+    const created = await feedRepository.create({
+      ownerKey,
+      url,
     });
 
     result.created.push(created);
@@ -207,11 +190,7 @@ const updateFeed = async ({ ownerKey, feedId, url, title }) => {
     const normalizedUrl = ensureValidUrl(url);
 
     if (normalizedUrl !== existing.url) {
-      const duplicate = await prisma.feed.findUnique({
-        where: {
-          ownerKey_url: { ownerKey, url: normalizedUrl },
-        },
-      });
+      const duplicate = await feedRepository.findByOwnerAndUrl({ ownerKey, url: normalizedUrl });
 
       if (duplicate && duplicate.id !== feedId) {
         throw new ApiError({ statusCode: 409, code: 'FEED_ALREADY_EXISTS', message: 'Feed already exists for this user' });
@@ -229,10 +208,7 @@ const updateFeed = async ({ ownerKey, feedId, url, title }) => {
     return existing;
   }
 
-  const updated = await prisma.feed.update({
-    where: { id: feedId },
-    data,
-  });
+  const updated = await feedRepository.updateById(feedId, data);
 
   return updated;
 };
@@ -240,7 +216,7 @@ const updateFeed = async ({ ownerKey, feedId, url, title }) => {
 const deleteFeed = async ({ ownerKey, feedId }) => {
   await filterOwnerFeed(feedId, ownerKey);
 
-  await prisma.feed.delete({ where: { id: feedId } });
+  await feedRepository.deleteById(feedId);
 };
 
 module.exports = {
@@ -250,7 +226,7 @@ module.exports = {
   updateFeed,
   deleteFeed,
   constants: {
-    MAX_PAGE_SIZE,
-    MAX_BULK_FEED_URLS,
+    MAX_PAGE_SIZE: FEED_MAX_PAGE_SIZE,
+    MAX_BULK_FEED_URLS: FEED_MAX_BULK_URLS,
   },
 };
