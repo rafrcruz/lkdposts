@@ -35,7 +35,7 @@ const buildFeedsPath = ({ cursor, limit }: FetchFeedsParams = {}) => {
   }
 
   const query = searchParams.toString();
-  return `/api/v1/feeds${query ? `?${query}` : ''}`;
+  return query ? `/api/v1/feeds?${query}` : '/api/v1/feeds';
 };
 
 export const fetchFeeds = async (params: FetchFeedsParams = {}): Promise<FeedListResponse> => {

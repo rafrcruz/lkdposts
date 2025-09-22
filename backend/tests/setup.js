@@ -56,12 +56,44 @@ jest.mock('../src/lib/prisma', () => {
     return new Date(value);
   };
 
-  const matchDateCondition = (actual, condition) => {
-    if (!(actual instanceof Date)) {
-      actual = new Date(actual);
+  const normalizeActualDate = (value) => {
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
     }
 
-    if (Number.isNaN(actual.getTime())) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const evaluateDateRange = (date, condition) => {
+    const timestamp = date.getTime();
+
+    if (condition.lt !== undefined && timestamp >= toDate(condition.lt).getTime()) {
+      return false;
+    }
+
+    if (condition.lte !== undefined && timestamp > toDate(condition.lte).getTime()) {
+      return false;
+    }
+
+    if (condition.gt !== undefined && timestamp <= toDate(condition.gt).getTime()) {
+      return false;
+    }
+
+    if (condition.gte !== undefined && timestamp < toDate(condition.gte).getTime()) {
+      return false;
+    }
+
+    if (condition.equals !== undefined) {
+      return matchDateCondition(date, condition.equals);
+    }
+
+    return true;
+  };
+
+  const matchDateCondition = (actual, condition) => {
+    const date = normalizeActualDate(actual);
+    if (!date) {
       return false;
     }
 
@@ -71,28 +103,14 @@ jest.mock('../src/lib/prisma', () => {
 
     if (condition instanceof Date || typeof condition === 'string' || typeof condition === 'number') {
       const target = toDate(condition);
-      return actual.getTime() === target.getTime();
+      return date.getTime() === target.getTime();
     }
 
     if (typeof condition === 'object') {
-      if (condition.lt !== undefined && !(actual.getTime() < toDate(condition.lt).getTime())) {
-        return false;
-      }
-      if (condition.lte !== undefined && !(actual.getTime() <= toDate(condition.lte).getTime())) {
-        return false;
-      }
-      if (condition.gt !== undefined && !(actual.getTime() > toDate(condition.gt).getTime())) {
-        return false;
-      }
-      if (condition.gte !== undefined && !(actual.getTime() >= toDate(condition.gte).getTime())) {
-        return false;
-      }
-      if (condition.equals !== undefined && !matchDateCondition(actual, condition.equals)) {
-        return false;
-      }
+      return evaluateDateRange(date, condition);
     }
 
-    return true;
+    return date.getTime() === toDate(condition).getTime();
   };
 
   const matchFeedWhere = (feed, where = {}) => {
@@ -145,8 +163,40 @@ jest.mock('../src/lib/prisma', () => {
 
   const filterAllowedUsers = (where = {}) => allowedUsers.filter((user) => matchAllowedUserWhere(user, where));
 
+  const matchesNullableField = (actual, expected) => {
+    if (expected === undefined) {
+      return true;
+    }
+
+    if (expected === null) {
+      return actual === null;
+    }
+
+    return actual === expected;
+  };
+
+  const matchesAllConditions = (article, conditions) => {
+    if (!Array.isArray(conditions) || conditions.length === 0) {
+      return true;
+    }
+
+    return conditions.every((condition) => matchArticleWhere(article, condition));
+  };
+
+  const matchesAnyCondition = (article, conditions) => {
+    if (!Array.isArray(conditions)) {
+      return true;
+    }
+
+    if (conditions.length === 0) {
+      return false;
+    }
+
+    return conditions.some((condition) => matchArticleWhere(article, condition));
+  };
+
   const matchArticleWhere = (article, where = {}) => {
-    if (where == null) {
+    if (!where) {
       return true;
     }
 
@@ -162,44 +212,31 @@ jest.mock('../src/lib/prisma', () => {
       return false;
     }
 
-    if (where.guid !== undefined) {
-      if (where.guid === null) {
-        if (article.guid !== null) {
-          return false;
-        }
-      } else if (article.guid !== where.guid) {
-        return false;
-      }
+    if (!matchesNullableField(article.guid, where.guid)) {
+      return false;
     }
 
-    if (where.link !== undefined) {
-      if (where.link === null) {
-        if (article.link !== null) {
-          return false;
-        }
-      } else if (article.link !== where.link) {
-        return false;
-      }
+    if (!matchesNullableField(article.link, where.link)) {
+      return false;
     }
 
     if (where.publishedAt !== undefined && !matchDateCondition(article.publishedAt, where.publishedAt)) {
       return false;
     }
 
-    if (where.feed && !matchFeedWhere(feeds.find((feed) => feed.id === article.feedId) ?? {}, where.feed)) {
+    if (where.feed) {
+      const feed = feeds.find((entry) => entry.id === article.feedId) ?? {};
+      if (!matchFeedWhere(feed, where.feed)) {
+        return false;
+      }
+    }
+
+    if (!matchesAllConditions(article, where.AND)) {
       return false;
     }
 
-    if (Array.isArray(where.AND)) {
-      if (!where.AND.every((condition) => matchArticleWhere(article, condition))) {
-        return false;
-      }
-    }
-
-    if (Array.isArray(where.OR)) {
-      if (!where.OR.some((condition) => matchArticleWhere(article, condition))) {
-        return false;
-      }
+    if (!matchesAnyCondition(article, where.OR)) {
+      return false;
     }
 
     return true;
@@ -286,6 +323,18 @@ jest.mock('../src/lib/prisma', () => {
     return result;
   };
 
+  const pickRelatedEntity = (entity, includeConfig) => {
+    if (!entity) {
+      return null;
+    }
+
+    if (includeConfig && typeof includeConfig === 'object' && includeConfig.select) {
+      return selectFields(entity, includeConfig.select);
+    }
+
+    return clone(entity);
+  };
+
   const includeRelations = (article, include) => {
     if (!include) {
       return clone(article);
@@ -294,29 +343,13 @@ jest.mock('../src/lib/prisma', () => {
     const result = clone(article);
 
     if (include.post) {
-      const post = posts.find((entry) => entry.articleId === article.id) || null;
-      if (post) {
-        if (include.post.select) {
-          result.post = selectFields(post, include.post.select);
-        } else {
-          result.post = clone(post);
-        }
-      } else {
-        result.post = null;
-      }
+      const relatedPost = posts.find((entry) => entry.articleId === article.id) || null;
+      result.post = pickRelatedEntity(relatedPost, include.post);
     }
 
     if (include.feed) {
-      const feed = feeds.find((entry) => entry.id === article.feedId) || null;
-      if (feed) {
-        if (include.feed.select) {
-          result.feed = selectFields(feed, include.feed.select);
-        } else {
-          result.feed = clone(feed);
-        }
-      } else {
-        result.feed = null;
-      }
+      const relatedFeed = feeds.find((entry) => entry.id === article.feedId) || null;
+      result.feed = pickRelatedEntity(relatedFeed, include.feed);
     }
 
     return result;

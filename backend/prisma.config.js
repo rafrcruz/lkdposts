@@ -12,11 +12,11 @@ if (nodeEnv && nodeEnv.trim() !== '') {
 envFiles.forEach((relativePath) => {
   const absolutePath = path.resolve(__dirname, relativePath);
   if (fs.existsSync(absolutePath)) {
-    dotenv.config({ path: absolutePath, override: process.env.PRISMA_FORCE_DIRECT === '1' ? false : true });
+    dotenv.config({ path: absolutePath, override: process.env.PRISMA_FORCE_DIRECT !== '1' });
   }
 });
 
-dotenv.config({ override: process.env.PRISMA_FORCE_DIRECT === '1' ? false : true });
+dotenv.config({ override: process.env.PRISMA_FORCE_DIRECT !== '1' });
 
 if (process.env.PRISMA_FORCE_DIRECT === '1') {
   delete process.env.PRISMA_URL;

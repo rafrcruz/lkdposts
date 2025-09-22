@@ -40,7 +40,7 @@ const buildPostsPath = ({ cursor, limit, feedId }: FetchPostsParams = {}) => {
   }
 
   const query = searchParams.toString();
-  return `/api/v1/posts${query ? `?${query}` : ''}`;
+  return query ? `/api/v1/posts?${query}` : '/api/v1/posts';
 };
 
 export const fetchPosts = async (params: FetchPostsParams = {}): Promise<PostListResponse> => {

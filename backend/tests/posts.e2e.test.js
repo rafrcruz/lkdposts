@@ -35,6 +35,31 @@ const sessionForUser = (userId, email) => ({
 
 const withAuth = (token, req) => req.set('Origin', ORIGIN).set('Authorization', `Bearer ${token}`);
 
+const createFetchResponse = (body, { ok = true, status } = {}) => ({
+  ok,
+  status: status ?? (ok ? 200 : 500),
+  text: jest.fn().mockResolvedValue(body),
+});
+
+const createFetchMock = (body) => jest.fn().mockResolvedValue(createFetchResponse(body));
+
+function delay(ms) {
+  return new Promise(function executor(resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+const createDelayedFetchMock = (body, delayMs = 20) => {
+  const response = createFetchResponse(body);
+
+  async function delayedFetch() {
+    await delay(delayMs);
+    return response;
+  }
+
+  return jest.fn(delayedFetch);
+};
+
 describe('Posts API', () => {
   let originalFetch;
 
@@ -78,11 +103,7 @@ describe('Posts API', () => {
       const publishedAt = new Date(Date.now() - 60 * 1000);
       const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Feed</title><item><title>Story</title><description>Snippet</description><pubDate>${publishedAt.toUTCString()}</pubDate><guid>guid-1</guid></item></channel></rss>`;
 
-      global.fetch = jest.fn(async () => ({
-        ok: true,
-        status: 200,
-        text: async () => rss,
-      }));
+      global.fetch = createFetchMock(rss);
 
       const response = await withAuth(
         TOKENS.user1,
@@ -113,7 +134,7 @@ describe('Posts API', () => {
     });
 
     it('reuses a single refresh when the same user triggers concurrent requests', async () => {
-      const feed = await prisma.feed.create({
+      await prisma.feed.create({
         data: {
           ownerKey: '1',
           url: 'https://example.com/concurrent.xml',
@@ -124,18 +145,7 @@ describe('Posts API', () => {
       const publishedAt = new Date(Date.now() - 2 * 60 * 1000);
       const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Feed</title><item><title>Concurrent Story</title><description>Snippet</description><pubDate>${publishedAt.toUTCString()}</pubDate><guid>guid-concurrent</guid></item></channel></rss>`;
 
-      global.fetch = jest.fn(
-        () =>
-          new Promise((resolve) => {
-            setTimeout(() => {
-              resolve({
-                ok: true,
-                status: 200,
-                text: async () => rss,
-              });
-            }, 20);
-          })
-      );
+      global.fetch = createDelayedFetchMock(rss);
 
       const requestA = withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh')).expect('Content-Type', /json/);
       const requestB = withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh')).expect('Content-Type', /json/);
@@ -207,7 +217,7 @@ describe('Posts API', () => {
   describe('GET /api/v1/posts', () => {
     it('lists recent posts with pagination metadata and includes post content', async () => {
       const now = new Date();
-      const feed = await prisma.feed.create({
+      await prisma.feed.create({
         data: {
           ownerKey: '1',
           url: 'https://example.com/list.xml',
@@ -221,11 +231,7 @@ describe('Posts API', () => {
         })
         .join('')}</channel></rss>`;
 
-      global.fetch = jest.fn(async () => ({
-        ok: true,
-        status: 200,
-        text: async () => rss,
-      }));
+      global.fetch = createFetchMock(rss);
 
       await postsService.refreshUserFeeds({ ownerKey: '1', now, fetcher: global.fetch });
 

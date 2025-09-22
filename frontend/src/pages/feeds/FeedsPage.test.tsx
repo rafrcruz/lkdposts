@@ -55,11 +55,10 @@ type BulkVariables = { urls: string[] };
 type BulkOptions = Parameters<UseMutationResult<unknown, HttpError, BulkVariables>['mutate']>[1];
 type UpdateVariables = { id: number; url?: string; title?: string | null };
 type UpdateOptions = Parameters<UseMutationResult<Feed, HttpError, UpdateVariables>['mutate']>[1];
-type DeleteVariables = number;
-type DeleteOptions = Parameters<UseMutationResult<{ message: string }, HttpError, DeleteVariables>['mutate']>[1];
+type DeleteOptions = Parameters<UseMutationResult<{ message: string }, HttpError, number>['mutate']>[1];
 
 const buildFeed = (override: Partial<Feed> = {}): Feed => {
-  const hasTitleOverride = Object.prototype.hasOwnProperty.call(override, 'title');
+  const hasTitleOverride = Object.hasOwn(override, 'title');
 
   return {
     id: override.id ?? 1,
@@ -158,7 +157,7 @@ const renderPage = () =>
 let createMutate: Mock<(variables: CreateVariables, options?: CreateOptions) => void>;
 let bulkMutate: Mock<(variables: BulkVariables, options?: BulkOptions) => void>;
 let updateMutate: Mock<(variables: UpdateVariables, options?: UpdateOptions) => void>;
-let deleteMutate: Mock<(variables: DeleteVariables, options?: DeleteOptions) => void>;
+let deleteMutate: Mock<(variables: number, options?: DeleteOptions) => void>;
 let confirmSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
@@ -174,7 +173,7 @@ beforeEach(() => {
   createMutate = vi.fn<(variables: CreateVariables, options?: CreateOptions) => void>();
   bulkMutate = vi.fn<(variables: BulkVariables, options?: BulkOptions) => void>();
   updateMutate = vi.fn<(variables: UpdateVariables, options?: UpdateOptions) => void>();
-  deleteMutate = vi.fn<(variables: DeleteVariables, options?: DeleteOptions) => void>();
+  deleteMutate = vi.fn<(variables: number, options?: DeleteOptions) => void>();
 
   mockedUseCreateFeed.mockReturnValue(
     createMutationResult<Feed, CreateVariables>(createMutate, { isPending: false }),
@@ -189,7 +188,7 @@ beforeEach(() => {
   );
 
   mockedUseDeleteFeed.mockReturnValue(
-    createMutationResult<{ message: string }, DeleteVariables>(deleteMutate, { isPending: false }),
+    createMutationResult<{ message: string }, number>(deleteMutate, { isPending: false }),
   );
 
   confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);

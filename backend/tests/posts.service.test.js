@@ -29,8 +29,14 @@ const makeRssItem = ({
   return `<item>${parts.join('')}</item>`;
 };
 
+const buildFetchResponse = (body, { ok = true, status } = {}) => ({
+  ok,
+  status: status ?? (ok ? 200 : 500),
+  text: jest.fn().mockResolvedValue(body),
+});
+
 const createFetchMock = (responsesByUrl) =>
-  jest.fn(async (url) => {
+  jest.fn(async function fetchMock(url) {
     if (!responsesByUrl.has(url)) {
       throw new Error(`Unexpected URL requested: ${url}`);
     }
@@ -49,12 +55,44 @@ const createFetchMock = (responsesByUrl) =>
     const status = entry?.status ?? (ok ? 200 : 500);
     const body = entry?.body ?? entry;
 
-    return {
-      ok,
-      status,
-      text: async () => body,
+    return buildFetchResponse(body, { ok, status });
+  });
+
+const createAbortableFetchMock = () =>
+  jest.fn(function abortableFetch(url, { signal }) {
+    return new Promise(function executor(resolve, reject) {
+      function handleAbort() {
+        const error = new Error('Aborted');
+        error.name = 'AbortError';
+        reject(error);
+      }
+
+      signal.addEventListener('abort', handleAbort, { once: true });
+    });
+  });
+
+const createDeferredFetchMock = (body) => {
+  const response = buildFetchResponse(body);
+  let release;
+
+  const fetchPromise = new Promise(function executor(resolve) {
+    release = function complete() {
+      resolve(response);
     };
   });
+
+  const fetcher = jest.fn(function deferredFetch() {
+    return fetchPromise;
+  });
+
+  return { fetcher, release };
+};
+
+function waitForImmediate() {
+  return new Promise(function executor(resolve) {
+    setImmediate(resolve);
+  });
+}
 
 const createFeed = async ({ ownerKey = '1', url = 'https://example.com/feed.xml', lastFetchedAt = null }) =>
   prisma.feed.create({ data: { ownerKey, url, lastFetchedAt } });
@@ -296,17 +334,9 @@ describe('posts.service', () => {
 
     it('aborts slow fetches using the configured timeout', async () => {
       const now = new Date('2025-03-05T11:00:00Z');
-      const feed = await createFeed({ lastFetchedAt: new Date('2025-02-01T00:00:00Z') });
+      await createFeed({ lastFetchedAt: new Date('2025-02-01T00:00:00Z') });
 
-      const fetcher = jest.fn((url, { signal }) => {
-        return new Promise((resolve, reject) => {
-          signal.addEventListener('abort', () => {
-            const error = new Error('Aborted');
-            error.name = 'AbortError';
-            reject(error);
-          });
-        });
-      });
+      const fetcher = createAbortableFetchMock();
 
       const result = await refreshUserFeeds({ ownerKey: '1', now, fetcher, timeoutMs: 10 });
 
@@ -316,30 +346,20 @@ describe('posts.service', () => {
 
     it('reuses in-flight refreshes for the same owner to avoid duplicate work', async () => {
       const now = new Date('2025-03-05T12:00:00Z');
-      const feed = await createFeed({ lastFetchedAt: new Date('2025-02-01T00:00:00Z') });
+      await createFeed({ lastFetchedAt: new Date('2025-02-01T00:00:00Z') });
       const rss = buildRss([
         makeRssItem({ title: 'Concurrent', guid: 'concurrent-guid', publishedAt: now }),
       ]);
 
-      let resolveFetch;
-      const fetcher = jest.fn(() =>
-        new Promise((resolve) => {
-          resolveFetch = () =>
-            resolve({
-              ok: true,
-              status: 200,
-              text: async () => rss,
-            });
-        })
-      );
+      const { fetcher, release } = createDeferredFetchMock(rss);
 
       const firstPromise = refreshUserFeeds({ ownerKey: '1', now, fetcher });
       const secondPromise = refreshUserFeeds({ ownerKey: '1', now, fetcher });
 
-      await new Promise((resolve) => setImmediate(resolve));
-      expect(typeof resolveFetch).toBe('function');
+      await waitForImmediate();
+      expect(typeof release).toBe('function');
 
-      resolveFetch();
+      release();
 
       const [firstResult, secondResult] = await Promise.all([firstPromise, secondPromise]);
       expect(fetcher).toHaveBeenCalledTimes(1);

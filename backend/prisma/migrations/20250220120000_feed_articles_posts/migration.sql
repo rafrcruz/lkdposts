@@ -1,7 +1,7 @@
 -- CreateTable
 CREATE TABLE "public"."Feed" (
     "id" SERIAL NOT NULL,
-    "ownerKey" VARCHAR(255) NOT NULL,
+    "ownerKey" TEXT NOT NULL,
     "url" TEXT NOT NULL,
     "title" TEXT,
     "lastFetchedAt" TIMESTAMP(3),

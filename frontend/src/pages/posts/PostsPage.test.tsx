@@ -34,7 +34,7 @@ const buildPost = (override: Partial<PostListItem> = {}): PostListItem => ({
   contentSnippet: override.contentSnippet ?? 'Resumo da noticia 1',
   publishedAt: override.publishedAt ?? '2024-01-01T00:00:00.000Z',
   feed:
-    Object.prototype.hasOwnProperty.call(override, 'feed')
+    Object.hasOwn(override, 'feed')
       ? (override.feed as PostListItem['feed'])
       : {
           id: 1,
@@ -42,7 +42,7 @@ const buildPost = (override: Partial<PostListItem> = {}): PostListItem => ({
           url: 'https://example.com/feed.xml',
         },
   post:
-    Object.prototype.hasOwnProperty.call(override, 'post')
+    Object.hasOwn(override, 'post')
       ? (override.post as PostListItem['post'])
       : {
           content: 'Conteudo gerado 1',
@@ -53,7 +53,7 @@ const buildPost = (override: Partial<PostListItem> = {}): PostListItem => ({
 const buildFeed = (override: Partial<Feed> = {}): Feed => ({
   id: override.id ?? 1,
   url: override.url ?? 'https://example.com/feed.xml',
-  title: Object.prototype.hasOwnProperty.call(override, 'title') ? override.title ?? null : 'Feed 1',
+  title: Object.hasOwn(override, 'title') ? override.title ?? null : 'Feed 1',
   lastFetchedAt: override.lastFetchedAt ?? null,
   createdAt: override.createdAt ?? '2024-01-01T00:00:00.000Z',
   updatedAt: override.updatedAt ?? '2024-01-01T00:00:00.000Z',

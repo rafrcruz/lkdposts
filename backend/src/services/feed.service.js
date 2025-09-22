@@ -40,7 +40,7 @@ const ensureValidUrl = (input, { required = true } = {}) => {
       throw new Error('Unsupported protocol');
     }
   } catch (error) {
-    throw new ApiError({ statusCode: 400, code: 'INVALID_URL', message: 'Invalid URL provided' });
+    throw new ApiError({ statusCode: 400, code: 'INVALID_URL', message: 'Invalid URL provided', cause: error });
   }
 
   return sanitized;

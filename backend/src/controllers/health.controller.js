@@ -1,6 +1,6 @@
 const config = require('../config');
 
-const buildHealthPayload = () => ({
+const buildOperationalStatus = () => ({
   status: 'ok',
   uptime: process.uptime(),
   environment: config.env,
@@ -8,30 +8,22 @@ const buildHealthPayload = () => ({
   release: config.release,
 });
 
-const buildLiveness = () => ({
-  status: 'ok',
-  uptime: process.uptime(),
-  environment: config.env,
-  timestamp: new Date().toISOString(),
-  release: config.release,
-});
-
-const buildReadiness = () => ({
+const buildReadinessPayload = () => ({
   status: 'ok',
   timestamp: new Date().toISOString(),
   release: config.release,
 });
 
 const getHealth = (req, res) => {
-  return res.success(buildHealthPayload());
+  return res.success(buildOperationalStatus());
 };
 
 const getLiveness = (req, res) => {
-  return res.success(buildLiveness());
+  return res.success(buildOperationalStatus());
 };
 
 const getReadiness = (req, res) => {
-  return res.success(buildReadiness());
+  return res.success(buildReadinessPayload());
 };
 
 module.exports = {

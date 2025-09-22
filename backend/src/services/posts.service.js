@@ -37,8 +37,8 @@ const POST_PLACEHOLDER_CONTENT = [
 ].join('\n');
 
 class InvalidCursorError extends Error {
-  constructor(message = 'Invalid pagination cursor') {
-    super(message);
+  constructor(message = 'Invalid pagination cursor', options = {}) {
+    super(message, options);
     this.name = 'InvalidCursorError';
     this.code = 'INVALID_CURSOR';
   }
@@ -80,6 +80,30 @@ const ensureArray = (value) => {
   return Array.isArray(value) ? value : [value];
 };
 
+const TEXT_VALUE_KEYS = ['#text', '_text', 'text', 'value'];
+
+const extractTextFromArray = (values) => {
+  for (const entry of values) {
+    const text = extractText(entry);
+    if (text) {
+      return text;
+    }
+  }
+  return '';
+};
+
+const extractTextFromObject = (value) => {
+  for (const key of TEXT_VALUE_KEYS) {
+    if (Object.hasOwn(value, key)) {
+      const text = extractText(value[key]);
+      if (text) {
+        return text;
+      }
+    }
+  }
+  return '';
+};
+
 const extractText = (value) => {
   if (value == null) {
     return '';
@@ -90,28 +114,11 @@ const extractText = (value) => {
   }
 
   if (Array.isArray(value)) {
-    for (const entry of value) {
-      const text = extractText(entry);
-      if (text) {
-        return text;
-      }
-    }
-    return '';
+    return extractTextFromArray(value);
   }
 
   if (typeof value === 'object') {
-    if (Object.prototype.hasOwnProperty.call(value, '#text')) {
-      return extractText(value['#text']);
-    }
-    if (Object.prototype.hasOwnProperty.call(value, '_text')) {
-      return extractText(value._text);
-    }
-    if (Object.prototype.hasOwnProperty.call(value, 'text')) {
-      return extractText(value.text);
-    }
-    if (Object.prototype.hasOwnProperty.call(value, 'value')) {
-      return extractText(value.value);
-    }
+    return extractTextFromObject(value);
   }
 
   return String(value);
@@ -198,7 +205,7 @@ const extractLink = (rawLink) => {
       }
     }
 
-    if (Object.prototype.hasOwnProperty.call(rawLink, '#text')) {
+    if (Object.hasOwn(rawLink, '#text')) {
       return extractLink(rawLink['#text']);
     }
   }
@@ -251,25 +258,28 @@ const normalizeFeedItem = (rawItem) => {
   };
 };
 
+const flattenRssChannelItems = (channels) => {
+  const items = [];
+  for (const channel of ensureArray(channels)) {
+    items.push(...ensureArray(channel.item));
+  }
+  return items;
+};
+
 const extractItemsFromParsedFeed = (parsed) => {
   if (!parsed || typeof parsed !== 'object') {
     return [];
   }
 
-  if (parsed.feed && parsed.feed.entry) {
+  if (parsed.feed?.entry) {
     return ensureArray(parsed.feed.entry);
   }
 
-  if (parsed.rss && parsed.rss.channel) {
-    const channels = ensureArray(parsed.rss.channel);
-    const items = [];
-    channels.forEach((channel) => {
-      ensureArray(channel.item).forEach((item) => items.push(item));
-    });
-    return items;
+  if (parsed.rss?.channel) {
+    return flattenRssChannelItems(parsed.rss.channel);
   }
 
-  if (parsed.channel && parsed.channel.item) {
+  if (parsed.channel?.item) {
     return ensureArray(parsed.channel.item);
   }
 
@@ -396,16 +406,144 @@ const fetchFeedWithCache = async (url, fetcher, timeoutMs, useCache = true) => {
   }
 };
 
+const getFetchImplementation = (fetcher) => {
+  const impl = fetcher || globalThis.fetch;
+  if (typeof impl !== 'function') {
+    throw new Error('No fetch implementation available');
+  }
+  return impl;
+};
+
+const createFeedSummary = (feed) => ({
+  feedId: feed.id,
+  feedUrl: feed.url,
+  feedTitle: feed.title ?? null,
+  skippedByCooldown: false,
+  cooldownSecondsRemaining: 0,
+  itemsRead: 0,
+  itemsWithinWindow: 0,
+  articlesCreated: 0,
+  duplicates: 0,
+  invalidItems: 0,
+  error: null,
+});
+
+const calculateCooldownState = (feed, currentTime) => {
+  if (!feed.lastFetchedAt) {
+    return { active: false, secondsRemaining: 0 };
+  }
+
+  const lastFetchedAt = new Date(feed.lastFetchedAt);
+  const lastFetchedTime = lastFetchedAt.getTime();
+  const elapsedMs = currentTime.getTime() - lastFetchedTime;
+
+  if (Number.isNaN(lastFetchedTime) || elapsedMs >= COOLDOWN_MS) {
+    return { active: false, secondsRemaining: 0 };
+  }
+
+  const remainingMs = COOLDOWN_MS - elapsedMs;
+  return {
+    active: true,
+    secondsRemaining: Math.ceil(remainingMs / 1000),
+  };
+};
+
+const collectCandidatesWithinWindow = (items, windowStart, currentTime) => {
+  const candidates = [];
+  const windowStartMs = windowStart.getTime();
+  const currentTimeMs = currentTime.getTime();
+
+  for (const item of items) {
+    const publishedMs = item.publishedAt.getTime();
+    if (publishedMs < windowStartMs || publishedMs > currentTimeMs) {
+      continue;
+    }
+
+    candidates.push({ ...item, dedupeKey: computeDedupeKey(item) });
+  }
+
+  return candidates;
+};
+
+const persistCandidates = async ({ feed, candidates }) => {
+  if (candidates.length === 0) {
+    return { created: 0, duplicates: 0 };
+  }
+
+  const dedupeKeys = candidates.map((candidate) => candidate.dedupeKey);
+  const existing = await articleRepository.findExistingDedupeKeys({ feedId: feed.id, dedupeKeys });
+  const existingKeys = new Set(existing.map((entry) => entry.dedupeKey));
+
+  let created = 0;
+  let duplicates = 0;
+
+  for (const candidate of candidates) {
+    if (existingKeys.has(candidate.dedupeKey)) {
+      duplicates += 1;
+      continue;
+    }
+
+    const article = await articleRepository.create({
+      feedId: feed.id,
+      title: candidate.title,
+      contentSnippet: candidate.contentSnippet,
+      publishedAt: candidate.publishedAt,
+      guid: candidate.guid ?? null,
+      link: candidate.link ?? null,
+      dedupeKey: candidate.dedupeKey,
+    });
+
+    await postRepository.create({
+      articleId: article.id,
+      content: POST_PLACEHOLDER_CONTENT,
+    });
+
+    existingKeys.add(candidate.dedupeKey);
+    created += 1;
+  }
+
+  return { created, duplicates };
+};
+
+const refreshSingleFeed = async ({ feed, fetchImpl, timeoutMs, useCache, currentTime, windowStart }) => {
+  const summary = createFeedSummary(feed);
+  const cooldown = calculateCooldownState(feed, currentTime);
+
+  if (cooldown.active) {
+    summary.skippedByCooldown = true;
+    summary.cooldownSecondsRemaining = cooldown.secondsRemaining;
+    return summary;
+  }
+
+  try {
+    const { rawCount, items, invalidItems } = await fetchFeedWithCache(feed.url, fetchImpl, timeoutMs, useCache);
+    summary.itemsRead = rawCount;
+    summary.invalidItems = invalidItems;
+
+    const candidates = collectCandidatesWithinWindow(items, windowStart, currentTime);
+    summary.itemsWithinWindow = candidates.length;
+
+    if (candidates.length > 0) {
+      const { created, duplicates } = await persistCandidates({ feed, candidates });
+      summary.articlesCreated = created;
+      summary.duplicates = duplicates;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    summary.error = { message };
+    console.error('Failed to refresh feed', { feedId: feed.id, error });
+  }
+
+  await feedRepository.updateById(feed.id, { lastFetchedAt: currentTime });
+  return summary;
+};
+
 const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS }) => {
   if (!ownerKey) {
     throw new Error('ownerKey is required');
   }
 
-  const fetchImpl = fetcher || globalThis.fetch;
-  if (typeof fetchImpl !== 'function') {
-    throw new Error('No fetch implementation available');
-  }
-
+  const fetchImpl = getFetchImplementation(fetcher);
   const useCache = !fetcher;
   const currentTime = ensureDate(now);
   const windowStart = new Date(currentTime.getTime() - WINDOW_MS);
@@ -414,85 +552,8 @@ const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, ti
   const results = [];
 
   for (const feed of feeds) {
-    const feedSummary = {
-      feedId: feed.id,
-      feedUrl: feed.url,
-      feedTitle: feed.title ?? null,
-      skippedByCooldown: false,
-      cooldownSecondsRemaining: 0,
-      itemsRead: 0,
-      itemsWithinWindow: 0,
-      articlesCreated: 0,
-      duplicates: 0,
-      invalidItems: 0,
-      error: null,
-    };
-
-    const lastFetchedAt = feed.lastFetchedAt ? new Date(feed.lastFetchedAt) : null;
-    if (lastFetchedAt && currentTime.getTime() - lastFetchedAt.getTime() < COOLDOWN_MS) {
-      const remainingMs = COOLDOWN_MS - (currentTime.getTime() - lastFetchedAt.getTime());
-      feedSummary.skippedByCooldown = true;
-      feedSummary.cooldownSecondsRemaining = Math.ceil(remainingMs / 1000);
-      results.push(feedSummary);
-      continue;
-    }
-
-    try {
-      const { rawCount, items, invalidItems } = await fetchFeedWithCache(feed.url, fetchImpl, timeoutMs, useCache);
-      feedSummary.itemsRead = rawCount;
-      feedSummary.invalidItems = invalidItems;
-
-      const candidates = [];
-      for (const item of items) {
-        if (item.publishedAt.getTime() < windowStart.getTime()) {
-          continue;
-        }
-
-        if (item.publishedAt.getTime() > currentTime.getTime()) {
-          continue;
-        }
-
-        candidates.push({ ...item, dedupeKey: computeDedupeKey(item) });
-      }
-
-      feedSummary.itemsWithinWindow = candidates.length;
-
-      if (candidates.length > 0) {
-        const dedupeKeys = candidates.map((candidate) => candidate.dedupeKey);
-        const existing = await articleRepository.findExistingDedupeKeys({ feedId: feed.id, dedupeKeys });
-        const existingKeys = new Set(existing.map((entry) => entry.dedupeKey));
-
-        for (const candidate of candidates) {
-          if (existingKeys.has(candidate.dedupeKey)) {
-            feedSummary.duplicates += 1;
-            continue;
-          }
-
-          const article = await articleRepository.create({
-            feedId: feed.id,
-            title: candidate.title,
-            contentSnippet: candidate.contentSnippet,
-            publishedAt: candidate.publishedAt,
-            guid: candidate.guid ?? null,
-            link: candidate.link ?? null,
-            dedupeKey: candidate.dedupeKey,
-          });
-
-          await postRepository.create({
-            articleId: article.id,
-            content: POST_PLACEHOLDER_CONTENT,
-          });
-
-          existingKeys.add(candidate.dedupeKey);
-          feedSummary.articlesCreated += 1;
-        }
-      }
-    } catch (error) {
-      feedSummary.error = { message: error.message };
-    }
-
-    await feedRepository.updateById(feed.id, { lastFetchedAt: currentTime });
-    results.push(feedSummary);
+    const summary = await refreshSingleFeed({ feed, fetchImpl, timeoutMs, useCache, currentTime, windowStart });
+    results.push(summary);
   }
 
   return {
@@ -574,7 +635,7 @@ const decodeCursor = (cursor) => {
 
     return { publishedAt, id };
   } catch (error) {
-    throw new InvalidCursorError();
+    throw new InvalidCursorError(undefined, { cause: error });
   }
 };
 

@@ -43,8 +43,9 @@ const toDirectConnectionString = (connectionString) => {
     url.hostname = url.hostname.replace('-pooler.', '.');
   }
 
-  const rebuilt = `${protocolPrefix}${url.username}${url.password ? `:${url.password}` : ''}@${url.hostname}${url.port ? `:${url.port}` : ''}${url.pathname}${url.search}`;
-  return rebuilt;
+  const authSegment = url.password ? `${url.username}:${url.password}` : url.username;
+  const hostSegment = url.port ? `${url.hostname}:${url.port}` : url.hostname;
+  return `${protocolPrefix}${authSegment}@${hostSegment}${url.pathname}${url.search}`;
 };
 
 const parseConnectionString = (connectionString) => {
@@ -87,7 +88,11 @@ const warmupDatabase = async (connectionString) => {
     console.error('database warmup failed', error);
     throw error;
   } finally {
-    await client.end().catch(() => {});
+    try {
+      await client.end();
+    } catch (closeError) {
+      console.warn('failed to close database connection cleanly', closeError);
+    }
   }
 };
 

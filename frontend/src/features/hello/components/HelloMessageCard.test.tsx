@@ -60,7 +60,7 @@ describe('HelloMessageCard', () => {
 
   const buildAuthValue = (override: Partial<AuthContextValue> = {}): AuthContextValue => {
     const defaultUser = { email: 'user@example.com', role: 'user', expiresAt: new Date().toISOString() };
-    const hasUserOverride = Object.prototype.hasOwnProperty.call(override, 'user');
+    const hasUserOverride = Object.hasOwn(override, 'user');
     const resolvedUser = (hasUserOverride ? override.user : defaultUser) as AuthContextValue['user'];
     const resolvedSession: AuthSession = resolvedUser
       ? { authenticated: true, user: resolvedUser }

@@ -135,6 +135,32 @@ const PostsPage = () => {
   const { mutateAsync: refreshPostsAsync } = useRefreshPosts();
   const { mutateAsync: cleanupPostsAsync } = useCleanupPosts();
 
+  const handleRefreshSettled = useCallback(
+    (result: PromiseSettledResult<RefreshSummary>) => {
+      if (result.status === 'fulfilled') {
+        setRefreshSummary(result.value);
+        return;
+      }
+
+      setRefreshSummary(null);
+      setRefreshError(resolveOperationErrorMessage(result.reason, t));
+    },
+    [t],
+  );
+
+  const handleCleanupSettled = useCallback(
+    (result: PromiseSettledResult<CleanupResult>) => {
+      if (result.status === 'fulfilled') {
+        setCleanupResult(result.value);
+        return;
+      }
+
+      setCleanupResult(null);
+      setCleanupError(resolveOperationErrorMessage(result.reason, t));
+    },
+    [t],
+  );
+
   const syncPosts = useCallback(
     async ({ resetPagination = false }: RefreshOptions = {}) => {
       setRefreshError(null);
@@ -147,41 +173,40 @@ const PostsPage = () => {
 
       const wasExecutedBefore = hasExecutedSequence;
 
-      const [refreshResult, cleanupResultEntry] = await Promise.allSettled([
-        refreshPostsAsync(),
-        cleanupPostsAsync(),
-      ]);
+      try {
+        const [refreshResult, cleanupResultEntry] = await Promise.allSettled([
+          refreshPostsAsync(),
+          cleanupPostsAsync(),
+        ]);
 
-      if (refreshResult.status === 'fulfilled') {
-        setRefreshSummary(refreshResult.value);
-      } else {
-        setRefreshSummary(null);
-        setRefreshError(resolveOperationErrorMessage(refreshResult.reason, t));
+        handleRefreshSettled(refreshResult);
+        handleCleanupSettled(cleanupResultEntry);
+
+        if (resetPagination) {
+          setCursor(null);
+          setPreviousCursors([]);
+        }
+
+        setHasExecutedSequence(true);
+
+        const shouldRefetchList =
+          wasExecutedBefore &&
+          (!resetPagination || (previousCursorValue === null && hadPreviousCursors === 0));
+
+        return { shouldRefetchList };
+      } finally {
+        setIsSyncing(false);
       }
-
-      if (cleanupResultEntry.status === 'fulfilled') {
-        setCleanupResult(cleanupResultEntry.value);
-      } else {
-        setCleanupResult(null);
-        setCleanupError(resolveOperationErrorMessage(cleanupResultEntry.reason, t));
-      }
-
-      if (resetPagination) {
-        setCursor(null);
-        setPreviousCursors([]);
-      }
-
-      setHasExecutedSequence(true);
-
-      setIsSyncing(false);
-
-      const shouldRefetchList =
-        wasExecutedBefore &&
-        (!resetPagination || (previousCursorValue === null && hadPreviousCursors === 0));
-
-      return { shouldRefetchList };
     },
-    [cleanupPostsAsync, cursor, hasExecutedSequence, previousCursors.length, refreshPostsAsync, t],
+    [
+      cleanupPostsAsync,
+      cursor,
+      handleCleanupSettled,
+      handleRefreshSettled,
+      hasExecutedSequence,
+      previousCursors.length,
+      refreshPostsAsync,
+    ],
   );
 
   useEffect(() => {
@@ -189,7 +214,9 @@ const PostsPage = () => {
       return;
     }
 
-    void syncPosts();
+    syncPosts().catch(() => {
+      // state updates inside syncPosts handle errors
+    });
   }, [hasExecutedSequence, syncPosts]);
 
   useEffect(() => {
@@ -203,17 +230,21 @@ const PostsPage = () => {
       return;
     }
 
-    void syncPosts({ resetPagination }).then(({ shouldRefetchList }) => {
-      if (!shouldRefetchList) {
-        return;
-      }
+    syncPosts({ resetPagination })
+      .then(({ shouldRefetchList }) => {
+        if (!shouldRefetchList) {
+          return;
+        }
 
-      postListQuery
-        .refetch()
-        .catch(() => {
-          // error handled by query state
-        });
-    });
+        postListQuery
+          .refetch()
+          .catch(() => {
+            // error handled by query state
+          });
+      })
+      .catch(() => {
+        // state updates inside syncPosts handle errors
+      });
   };
 
   useEffect(() => {
@@ -238,7 +269,7 @@ const PostsPage = () => {
           hasChanges = true;
         } else {
           for (const id of currentIds) {
-            if (!Object.prototype.hasOwnProperty.call(next, id)) {
+            if (!Object.hasOwn(next, id)) {
               hasChanges = true;
               break;
             }
@@ -679,16 +710,19 @@ const PostsPage = () => {
           ) : (
             <ul className="space-y-4">
               {summaryFeeds.map((summary) => {
-                const statusLabel = summary.error
-                  ? t('posts.summary.feedStatus.error', 'Error')
-                  : summary.skippedByCooldown
-                    ? t('posts.summary.feedStatus.skipped', 'Skipped')
-                    : t('posts.summary.feedStatus.ok', 'Updated');
-                const statusClassName = summary.error
-                  ? 'border-danger/40 bg-danger/10 text-danger'
-                  : summary.skippedByCooldown
-                    ? 'border-warning/40 bg-warning/10 text-warning'
-                    : 'border-primary/40 bg-primary/10 text-primary';
+                let statusLabel: string;
+                let statusClassName: string;
+
+                if (summary.error) {
+                  statusLabel = t('posts.summary.feedStatus.error', 'Error');
+                  statusClassName = 'border-danger/40 bg-danger/10 text-danger';
+                } else if (summary.skippedByCooldown) {
+                  statusLabel = t('posts.summary.feedStatus.skipped', 'Skipped');
+                  statusClassName = 'border-warning/40 bg-warning/10 text-warning';
+                } else {
+                  statusLabel = t('posts.summary.feedStatus.ok', 'Updated');
+                  statusClassName = 'border-primary/40 bg-primary/10 text-primary';
+                }
                 const metrics = [
                   {
                     key: 'itemsRead',
