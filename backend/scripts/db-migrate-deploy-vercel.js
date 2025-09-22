@@ -20,6 +20,20 @@ envFiles.forEach((relativePath) => {
 
 dotenv.config({ override: false });
 
+const isTruthy = (value) => {
+  if (!value) return false;
+  const normalized = String(value).toLowerCase();
+  return ['1', 'true', 'yes'].includes(normalized);
+};
+
+const isRunningOnVercel = () => isTruthy(process.env.VERCEL) || Boolean(process.env.VERCEL_ENV) || Boolean(process.env.VERCEL_URL);
+
+if (!isRunningOnVercel() && !isTruthy(process.env.FORCE_DB_MIGRATE)) {
+  console.info('Skipping Prisma migrate deploy because this script is not running inside a Vercel build.');
+  console.info('Set FORCE_DB_MIGRATE=1 to force execution.');
+  process.exit(0);
+}
+
 const toDirectConnectionString = (connectionString) => {
   const protocolPrefix = connectionString.startsWith('postgresql://') ? 'postgresql://' : 'postgres://';
   const adjusted = connectionString.replace('postgresql://', 'postgres://');
