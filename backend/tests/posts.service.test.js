@@ -120,6 +120,7 @@ describe('posts.service', () => {
           articlesCreated: 0,
         })
       );
+      expect(result.results[0].cooldownSecondsRemaining).toBe(1800);
 
       const updatedFeed = await prisma.feed.findUnique({ where: { id: feed.id } });
       expect(updatedFeed.lastFetchedAt).toEqual(recent);
@@ -173,6 +174,43 @@ describe('posts.service', () => {
       const storedArticles = await prisma.article.findMany();
       expect(storedArticles).toHaveLength(1);
       expect(storedArticles[0].title).toBe('Recent');
+    });
+
+    it('reports summary indicators for read, windowed, duplicate and invalid items', async () => {
+      const now = new Date('2025-03-09T10:00:00Z');
+      const feed = await createFeed({ lastFetchedAt: new Date('2025-02-20T00:00:00Z') });
+
+      const uniqueItem = makeRssItem({ title: 'Fresh', guid: 'fresh-guid', publishedAt: now });
+      const duplicateOriginal = makeRssItem({
+        title: 'Primary duplicate',
+        guid: 'dup-guid',
+        publishedAt: new Date(now.getTime() - 60 * 1000),
+      });
+      const duplicateCopy = makeRssItem({
+        title: 'Secondary duplicate',
+        guid: 'dup-guid',
+        publishedAt: new Date(now.getTime() - 30 * 1000),
+      });
+      const oldDate = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
+      const outsideWindow = makeRssItem({ title: 'Too Old', guid: 'old-guid', publishedAt: oldDate });
+      const invalidItem = '<item><title>Invalid</title></item>';
+
+      const rss = buildRss([uniqueItem, duplicateOriginal, duplicateCopy, outsideWindow, invalidItem]);
+      const fetcher = createFetchMock(new Map([[feed.url, rss]]));
+
+      const result = await refreshUserFeeds({ ownerKey: '1', now, fetcher });
+      const summary = result.results[0];
+
+      expect(summary.itemsRead).toBe(5);
+      expect(summary.itemsWithinWindow).toBe(3);
+      expect(summary.articlesCreated).toBe(2);
+      expect(summary.duplicates).toBe(1);
+      expect(summary.invalidItems).toBe(1);
+
+      const articles = await prisma.article.findMany({ where: { feedId: feed.id } });
+      expect(articles).toHaveLength(2);
+      expect(articles.some((article) => article.guid === 'fresh-guid')).toBe(true);
+      expect(articles.some((article) => article.guid === 'dup-guid')).toBe(true);
     });
 
     it('is idempotent for items that provide guid values', async () => {
