@@ -79,6 +79,41 @@ const buildSummaryTitle = (summary: RefreshFeedSummary, t: ReturnType<typeof use
   return t('posts.summary.feedFallback', `Feed ${summary.feedId}`, { id: summary.feedId });
 };
 
+const formatCooldownTime = ({
+  secondsRemaining,
+  locale,
+  t,
+}: {
+  secondsRemaining: number;
+  locale: string;
+  t: TranslateFunction;
+}) => {
+  const normalizedSeconds = Math.max(0, Math.round(secondsRemaining));
+  const minutes = Math.floor(normalizedSeconds / 60);
+  const seconds = normalizedSeconds % 60;
+
+  if (minutes > 0 && seconds > 0) {
+    return t(
+      'posts.summary.cooldownTime.minutesSeconds',
+      '{{minutes}} min {{seconds}} s',
+      {
+        minutes: formatNumber(minutes, locale),
+        seconds: formatNumber(seconds, locale),
+      },
+    );
+  }
+
+  if (minutes > 0) {
+    return t('posts.summary.cooldownTime.minutes', '{{minutes}} min', {
+      minutes: formatNumber(minutes, locale),
+    });
+  }
+
+  return t('posts.summary.cooldownTime.seconds', '{{seconds}} s', {
+    seconds: formatNumber(seconds, locale),
+  });
+};
+
 const NETWORK_ERROR_KEYWORDS = ['network', 'timeout', 'failed to fetch', 'load failed'];
 
 const createDefaultSectionState = (): SectionState => ({ post: true, article: false });
@@ -409,7 +444,7 @@ const PostsPage = () => {
     },
     {
       key: 'itemsWithinWindow',
-      label: t('posts.summary.itemsWithinWindow', 'Items within window'),
+      label: t('posts.summary.itemsWithinWindow', 'Items within < 7d'),
       value: formatNumber(summaryAggregates?.itemsWithinWindow ?? 0, locale),
     },
     {
@@ -593,7 +628,7 @@ const PostsPage = () => {
                   },
                   {
                     key: 'itemsWithinWindow',
-                    label: t('posts.summary.itemsWithinWindow', 'Items within window'),
+                    label: t('posts.summary.itemsWithinWindow', 'Items within < 7d'),
                     value: formatNumber(summary.itemsWithinWindow, locale),
                   },
                   {
@@ -623,8 +658,12 @@ const PostsPage = () => {
                     {t('posts.summary.skippedByCooldown', 'Skipped by cooldown window.')}
                     {summary.cooldownSecondsRemaining === null || summary.cooldownSecondsRemaining === undefined
                       ? ''
-                      : ` ${t('posts.summary.cooldownRemaining', 'Cooldown remaining: {{seconds}}s', {
-                          seconds: formatNumber(summary.cooldownSecondsRemaining, locale),
+                      : ` ${t('posts.summary.cooldownRemaining', 'Cooldown remaining: {{time}}.', {
+                          time: formatCooldownTime({
+                            secondsRemaining: summary.cooldownSecondsRemaining,
+                            locale,
+                            t,
+                          }),
                         })}`}
                   </p>
                 ) : null}
