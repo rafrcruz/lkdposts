@@ -1,4 +1,4 @@
-const { randomUUID } = require('crypto');
+const { randomUUID } = require('node:crypto');
 
 const attachRequestId = (req, res, next) => {
   const incomingId = req.headers['x-request-id'];

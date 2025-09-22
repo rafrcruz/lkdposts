@@ -191,7 +191,7 @@ beforeEach(() => {
     createMutationResult<{ message: string }, number>(deleteMutate, { isPending: false }),
   );
 
-  const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+  const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
   if (!browserWindow) {
     throw new Error('window is not available for confirm spy');
   }

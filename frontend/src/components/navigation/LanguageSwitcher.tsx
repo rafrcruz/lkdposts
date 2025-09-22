@@ -14,7 +14,7 @@ export const LanguageSwitcher = () => {
   const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const nextLanguage = event.target.value;
 
-    const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+    const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
     browserWindow?.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
 
     i18n.changeLanguage(nextLanguage).catch((err) => {
@@ -23,7 +23,7 @@ export const LanguageSwitcher = () => {
   };
 
   useEffect(() => {
-    const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+    const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
     if (!browserWindow) {
       return;
     }

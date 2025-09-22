@@ -1,5 +1,5 @@
-const path = require('path');
-const fs = require('fs');
+const path = require('node:path');
+const fs = require('node:fs');
 const dotenv = require('dotenv');
 const { defineConfig } = require('prisma/config');
 
@@ -9,12 +9,12 @@ if (nodeEnv && nodeEnv.trim() !== '') {
   envFiles.push(`.env.${nodeEnv}`);
 }
 
-envFiles.forEach((relativePath) => {
+for (const relativePath of envFiles) {
   const absolutePath = path.resolve(__dirname, relativePath);
   if (fs.existsSync(absolutePath)) {
     dotenv.config({ path: absolutePath, override: process.env.PRISMA_FORCE_DIRECT !== '1' });
   }
-});
+}
 
 dotenv.config({ override: process.env.PRISMA_FORCE_DIRECT !== '1' });
 

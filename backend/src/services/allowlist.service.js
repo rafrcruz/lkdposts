@@ -39,7 +39,7 @@ const listAllowedUsers = async ({ cursor, limit } = {}) => {
 
   const hasMore = entries.length > safeLimit;
   const items = hasMore ? entries.slice(0, safeLimit) : entries;
-  const nextCursor = hasMore ? items[items.length - 1].id : null;
+  const nextCursor = hasMore ? (items.at(-1)?.id ?? null) : null;
   const total = await allowlistRepository.countAll();
 
   return {

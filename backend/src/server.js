@@ -1,4 +1,4 @@
-const http = require('http');
+const http = require('node:http');
 
 const app = require('./app');
 const config = require('./config');
@@ -51,7 +51,7 @@ const gracefulShutdown = (signal) => {
     ]).finally(() => {
       process.exit(1);
     });
-  }, 10_000).unref();
+  }, 10000).unref();
 };
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

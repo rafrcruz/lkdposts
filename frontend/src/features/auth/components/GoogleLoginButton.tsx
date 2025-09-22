@@ -56,7 +56,9 @@ export const GoogleLoginButton: React.FC = () => {
 
   const onGoogleCredential = useCallback(
     (response: CredentialResponse) => {
-      void handleCredential(response);
+      handleCredential(response).catch((error) => {
+        console.error('Failed to process Google credential response.', error);
+      });
     },
     [handleCredential],
   );

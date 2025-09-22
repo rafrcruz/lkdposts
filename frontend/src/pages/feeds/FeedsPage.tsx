@@ -368,7 +368,7 @@ const FeedsPage = () => {
     setListFeedback(null);
     setEditFeedback(null);
 
-    const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+    const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
     const confirmed = browserWindow?.confirm(t('feeds.list.deleteConfirm', 'Remover este feed?')) ?? false;
     if (!confirmed) {
       return;
@@ -630,7 +630,7 @@ const FeedsPage = () => {
     }
 
     const nextPrev = previousCursors.slice(0, -1);
-    const previous = previousCursors[previousCursors.length - 1] ?? null;
+    const previous = previousCursors.at(-1) ?? null;
     setPreviousCursors(nextPrev);
     setCursor(previous);
   };

@@ -1,5 +1,5 @@
 const { XMLParser } = require('fast-xml-parser');
-const { createHash } = require('crypto');
+const { createHash } = require('node:crypto');
 
 const feedRepository = require('../repositories/feed.repository');
 const articleRepository = require('../repositories/article.repository');
@@ -10,7 +10,7 @@ const config = require('../config');
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const WINDOW_DAYS = 7;
 const WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000;
-const DEFAULT_FETCH_TIMEOUT_MS = 5_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 5000;
 const MAX_PAGE_SIZE = 50;
 const MAX_ARTICLE_TITLE_LENGTH = 200;
 const MAX_ARTICLE_CONTENT_LENGTH = 800;
@@ -46,7 +46,7 @@ class InvalidCursorError extends Error {
 
 const normalizeDate = (value) => {
   if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) {
+    if (Number.isNaN(value.valueOf())) {
       return null;
     }
     return value;
@@ -54,12 +54,12 @@ const normalizeDate = (value) => {
 
   if (typeof value === 'number') {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
+    return Number.isNaN(date.valueOf()) ? null : date;
   }
 
   if (typeof value === 'string') {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
+    return Number.isNaN(date.valueOf()) ? null : date;
   }
 
   return null;
@@ -68,7 +68,7 @@ const normalizeDate = (value) => {
 const ensureDate = (value) => {
   const date = normalizeDate(value ?? new Date());
   if (!date) {
-    throw new Error('Invalid date value provided');
+    throw new TypeError('Invalid date value provided');
   }
   return date;
 };
@@ -129,10 +129,10 @@ const stripHtml = (value) => {
     return '';
   }
 
-  return value.replace(/<[^>]+>/g, ' ');
+  return value.replaceAll(/<[^>]+>/g, ' ');
 };
 
-const cleanText = (value) => stripHtml(value).replace(/\s+/g, ' ').trim();
+const cleanText = (value) => stripHtml(value).replaceAll(/\s+/g, ' ').trim();
 
 const truncateText = (value, maxLength) => {
   if (typeof value !== 'string') {
@@ -346,7 +346,7 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
 
     const body = await response.text();
     if (typeof body !== 'string') {
-      throw new Error('Feed response was not text');
+      throw new TypeError('Feed response was not text');
     }
 
     let parsed;
@@ -360,16 +360,16 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
     const items = [];
     let invalidItems = 0;
 
-    rawItems.forEach((raw) => {
+    for (const raw of rawItems) {
       const normalized = normalizeFeedItem(raw);
       if (normalized) {
         items.push(normalized);
       } else {
         invalidItems += 1;
       }
-    });
+    }
 
-    items.sort((a, b) => a.publishedAt.getTime() - b.publishedAt.getTime());
+    items.sort((a, b) => a.publishedAt.valueOf() - b.publishedAt.valueOf());
 
     return {
       rawCount: rawItems.length,
@@ -427,7 +427,7 @@ const fetchFeedWithCache = async (url, fetcher, timeoutMs, useCache = true) => {
 const getFetchImplementation = (fetcher) => {
   const impl = fetcher || globalThis.fetch;
   if (typeof impl !== 'function') {
-    throw new Error('No fetch implementation available');
+    throw new TypeError('No fetch implementation available');
   }
   return impl;
 };
@@ -452,8 +452,8 @@ const calculateCooldownState = (feed, currentTime) => {
   }
 
   const lastFetchedAt = new Date(feed.lastFetchedAt);
-  const lastFetchedTime = lastFetchedAt.getTime();
-  const elapsedMs = currentTime.getTime() - lastFetchedTime;
+  const lastFetchedTime = lastFetchedAt.valueOf();
+  const elapsedMs = currentTime.valueOf() - lastFetchedTime;
 
   if (Number.isNaN(lastFetchedTime) || elapsedMs >= COOLDOWN_MS) {
     return { active: false, secondsRemaining: 0 };
@@ -468,11 +468,11 @@ const calculateCooldownState = (feed, currentTime) => {
 
 const collectCandidatesWithinWindow = (items, windowStart, currentTime) => {
   const candidates = [];
-  const windowStartMs = windowStart.getTime();
-  const currentTimeMs = currentTime.getTime();
+  const windowStartMs = windowStart.valueOf();
+  const currentTimeMs = currentTime.valueOf();
 
   for (const item of items) {
-    const publishedMs = item.publishedAt.getTime();
+    const publishedMs = item.publishedAt.valueOf();
     if (publishedMs < windowStartMs || publishedMs > currentTimeMs) {
       continue;
     }
@@ -558,13 +558,13 @@ const refreshSingleFeed = async ({ feed, fetchImpl, timeoutMs, useCache, current
 
 const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS }) => {
   if (!ownerKey) {
-    throw new Error('ownerKey is required');
+    throw new TypeError('ownerKey is required');
   }
 
   const fetchImpl = getFetchImplementation(fetcher);
   const useCache = !fetcher;
   const currentTime = ensureDate(now);
-  const windowStart = new Date(currentTime.getTime() - WINDOW_MS);
+  const windowStart = new Date(currentTime.valueOf() - WINDOW_MS);
 
   const feeds = await feedRepository.findAllByOwner(ownerKey);
   const results = [];
@@ -582,7 +582,7 @@ const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, ti
 
 const refreshUserFeeds = async ({ ownerKey, ...rest }) => {
   if (!ownerKey) {
-    throw new Error('ownerKey is required');
+    throw new TypeError('ownerKey is required');
   }
 
   const lockKey = String(ownerKey);
@@ -608,11 +608,11 @@ const refreshUserFeeds = async ({ ownerKey, ...rest }) => {
 
 const cleanupOldArticles = async ({ ownerKey, now = new Date() }) => {
   if (!ownerKey) {
-    throw new Error('ownerKey is required');
+    throw new TypeError('ownerKey is required');
   }
 
   const currentTime = ensureDate(now);
-  const threshold = new Date(currentTime.getTime() - WINDOW_MS);
+  const threshold = new Date(currentTime.valueOf() - WINDOW_MS);
 
   const articlesToRemove = await articleRepository.findIdsForCleanup({ ownerKey, olderThan: threshold });
 
@@ -641,14 +641,14 @@ const decodeCursor = (cursor) => {
     const decoded = Buffer.from(cursor, 'base64').toString('utf8');
     const [isoString, idPart] = decoded.split('::');
     if (!isoString || !idPart) {
-      throw new Error('Invalid cursor payload');
+      throw new TypeError('Invalid cursor payload');
     }
 
     const publishedAt = new Date(isoString);
     const id = Number.parseInt(idPart, 10);
 
-    if (Number.isNaN(publishedAt.getTime()) || !Number.isInteger(id) || id <= 0) {
-      throw new Error('Invalid cursor payload');
+    if (Number.isNaN(publishedAt.valueOf()) || !Number.isInteger(id) || id <= 0) {
+      throw new TypeError('Invalid cursor payload');
     }
 
     return { publishedAt, id };
@@ -659,11 +659,11 @@ const decodeCursor = (cursor) => {
 
 const listRecentArticles = async ({ ownerKey, cursor, limit, feedId, now = new Date() }) => {
   if (!ownerKey) {
-    throw new Error('ownerKey is required');
+    throw new TypeError('ownerKey is required');
   }
 
   const currentTime = ensureDate(now);
-  const windowStart = new Date(currentTime.getTime() - WINDOW_MS);
+  const windowStart = new Date(currentTime.valueOf() - WINDOW_MS);
 
   const safeLimit = Math.min(Math.max(limit ?? 20, 1), MAX_PAGE_SIZE);
 
@@ -694,7 +694,8 @@ const listRecentArticles = async ({ ownerKey, cursor, limit, feedId, now = new D
 
   const hasMore = articles.length > safeLimit;
   const items = hasMore ? articles.slice(0, safeLimit) : articles;
-  const nextCursor = hasMore ? encodeCursor(items[items.length - 1]) : null;
+  const lastItem = hasMore ? items.at(-1) ?? null : null;
+  const nextCursor = lastItem ? encodeCursor(lastItem) : null;
 
   return {
     items: items.map((article) => ({

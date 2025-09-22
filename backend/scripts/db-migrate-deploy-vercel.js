@@ -63,11 +63,11 @@ const parseConnectionString = (connectionString) => {
       connectionTimeoutMillis: 15000,
     };
 
-    url.searchParams.forEach((value, key) => {
+    for (const [key, value] of url.searchParams) {
       if (key === 'sslmode' && value === 'require') {
         config.ssl = { rejectUnauthorized: false };
       }
-    });
+    }
 
     return config;
   } catch (error) {

@@ -67,7 +67,7 @@ const listFeeds = async ({ ownerKey, cursor, limit }) => {
 
   const hasMore = feeds.length > safeLimit;
   const items = hasMore ? feeds.slice(0, safeLimit) : feeds;
-  const nextCursor = hasMore ? items[items.length - 1].id : null;
+  const nextCursor = hasMore ? (items.at(-1)?.id ?? null) : null;
   const total = await feedRepository.countByOwner(ownerKey);
 
   return {
@@ -138,22 +138,22 @@ const createFeedsInBulk = async ({ ownerKey, urls }) => {
   const seen = new Set();
   const candidates = [];
 
-  urls.forEach((candidate) => {
+  for (const candidate of urls) {
     const analysis = analyzeUrlCandidate(candidate);
 
     if (!analysis.ok) {
       result.invalid.push({ url: analysis.url, reason: analysis.reason });
-      return;
+      continue;
     }
 
     if (seen.has(analysis.url)) {
       result.duplicates.push({ url: analysis.url, reason: 'DUPLICATE_IN_PAYLOAD', feedId: null });
-      return;
+      continue;
     }
 
     seen.add(analysis.url);
     candidates.push(analysis.url);
-  });
+  }
 
   if (candidates.length === 0) {
     return result;
@@ -162,10 +162,10 @@ const createFeedsInBulk = async ({ ownerKey, urls }) => {
   const existingFeeds = await feedRepository.findManyByOwnerAndUrls({ ownerKey, urls: candidates });
 
   const existingByUrl = new Map();
-  existingFeeds.forEach((feed) => {
+  for (const feed of existingFeeds) {
     existingByUrl.set(feed.url, feed);
     result.duplicates.push({ url: feed.url, reason: 'ALREADY_EXISTS', feedId: feed.id });
-  });
+  }
 
   const urlsToCreate = candidates.filter((url) => !existingByUrl.has(url));
 
