@@ -1,26 +1,23 @@
 const { Prisma } = require('@prisma/client');
 const config = require('../config');
-const { prisma } = require('../lib/prisma');
+const allowlistRepository = require('../repositories/allowlist.repository');
 const { ROLES } = require('../constants/roles');
+const { ALLOWLIST_MAX_PAGE_SIZE } = require('../constants/allowlist');
 const ApiError = require('../utils/api-error');
 
 const normalizeEmail = (email) => String(email ?? '').trim().toLowerCase();
 
 const ensureSuperAdmin = async () => {
-  const email = config.auth.superAdminEmail;
+  const email = normalizeEmail(config.auth.superAdminEmail);
 
   if (!email) {
     console.warn('SUPERADMIN_EMAIL is not defined; skipping super admin ensure step.');
     return;
   }
 
-  await prisma.allowedUser.upsert({
-    where: { email },
-    update: { role: ROLES.ADMIN },
-    create: {
-      email,
-      role: ROLES.ADMIN,
-    },
+  await allowlistRepository.upsertSuperAdmin({
+    email,
+    role: ROLES.ADMIN,
   });
 };
 
@@ -29,13 +26,28 @@ const findAllowedUserByEmail = async (email) => {
     return null;
   }
 
-  return prisma.allowedUser.findUnique({ where: { email: normalizeEmail(email) } });
+  return allowlistRepository.findByEmail(normalizeEmail(email));
 };
 
-const listAllowedUsers = async () => {
-  return prisma.allowedUser.findMany({
-    orderBy: { email: 'asc' },
+const listAllowedUsers = async ({ cursor, limit } = {}) => {
+  const safeLimit = Math.min(Math.max(limit ?? 20, 1), ALLOWLIST_MAX_PAGE_SIZE);
+
+  const entries = await allowlistRepository.findPage({
+    cursorId: cursor ?? undefined,
+    take: safeLimit + 1,
   });
+
+  const hasMore = entries.length > safeLimit;
+  const items = hasMore ? entries.slice(0, safeLimit) : entries;
+  const nextCursor = hasMore ? items[items.length - 1].id : null;
+  const total = await allowlistRepository.countAll();
+
+  return {
+    items,
+    nextCursor,
+    total,
+    limit: safeLimit,
+  };
 };
 
 const createAllowedUser = async ({ email, role }) => {
@@ -50,12 +62,7 @@ const createAllowedUser = async ({ email, role }) => {
   }
 
   try {
-    return await prisma.allowedUser.create({
-      data: {
-        email: normalizedEmail,
-        role,
-      },
-    });
+    return await allowlistRepository.create({ email: normalizedEmail, role });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       throw new ApiError({ statusCode: 409, code: 'ALLOWLIST_DUPLICATE', message: 'Email already exists in allowlist' });
@@ -69,36 +76,31 @@ const updateAllowedUserRole = async ({ id, role }) => {
     throw new ApiError({ statusCode: 400, code: 'INVALID_ROLE', message: 'Invalid role provided' });
   }
 
-  const user = await prisma.allowedUser.findUnique({ where: { id } });
+  const user = await allowlistRepository.findById(id);
 
   if (!user) {
     throw new ApiError({ statusCode: 404, code: 'ALLOWLIST_NOT_FOUND', message: 'Allowed user not found' });
   }
 
-  if (user.email === config.auth.superAdminEmail && role !== ROLES.ADMIN) {
+  if (user.email === normalizeEmail(config.auth.superAdminEmail) && role !== ROLES.ADMIN) {
     throw new ApiError({ statusCode: 400, code: 'SUPERADMIN_IMMUTABLE', message: 'Cannot change super admin role' });
   }
 
-  return prisma.allowedUser.update({
-    where: { id },
-    data: {
-      role,
-    },
-  });
+  return allowlistRepository.updateRoleById({ id, role });
 };
 
 const removeAllowedUser = async (id) => {
-  const user = await prisma.allowedUser.findUnique({ where: { id } });
+  const user = await allowlistRepository.findById(id);
 
   if (!user) {
     throw new ApiError({ statusCode: 404, code: 'ALLOWLIST_NOT_FOUND', message: 'Allowed user not found' });
   }
 
-  if (user.email === config.auth.superAdminEmail) {
+  if (user.email === normalizeEmail(config.auth.superAdminEmail)) {
     throw new ApiError({ statusCode: 400, code: 'SUPERADMIN_IMMUTABLE', message: 'Cannot remove the super admin account' });
   }
 
-  await prisma.allowedUser.delete({ where: { id } });
+  await allowlistRepository.deleteById(id);
 };
 
 module.exports = {

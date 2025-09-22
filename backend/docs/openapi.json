@@ -4,7 +4,7 @@
     "title": "lkdposts API",
     "version": "1.0.0",
     "description": "API responsável por disponibilizar funcionalidades de automação de posts.",
-    "x-generated-at": "2025-09-21T23:48:19.877Z",
+    "x-generated-at": "2025-09-22T00:36:05.136Z",
     "x-environment": "development"
   },
   "servers": [
@@ -105,6 +105,42 @@
             ],
             "format": "date-time",
             "example": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-20T12:34:56.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-20T12:34:56.000Z"
+          }
+        }
+      },
+      "AllowedUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "admin@example.com"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "user"
+            ],
+            "example": "admin"
+          },
+          "immutable": {
+            "type": "boolean",
+            "example": true
           },
           "createdAt": {
             "type": "string",
@@ -601,6 +637,95 @@
         }
       }
     },
+    "/api/v1/allowlist": {
+      "get": {
+        "summary": "List allowed users with pagination",
+        "tags": [
+          "Allowlist"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Cursor retornado em respostas anteriores para continuar a paginação."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "description": "Quantidade de registros por página (padrão 20, máximo 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada de usuários autorizados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/AllowedUser"
+                              }
+                            }
+                          }
+                        },
+                        "meta": {
+                          "type": "object",
+                          "properties": {
+                            "nextCursor": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "total": {
+                              "type": "integer"
+                            },
+                            "limit": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/feeds": {
       "get": {
         "summary": "List RSS feeds owned by the authenticated user",
@@ -722,110 +847,6 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
-          }
-        }
-      },
-      "post": {
-        "summary": "Create a new RSS feed for the authenticated user",
-        "description": "Registra um novo feed RSS associado ao usuário autenticado. URLs duplicadas são rejeitadas.",
-        "tags": [
-          "Feeds"
-        ],
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "url"
-                ],
-                "properties": {
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  "title": {
-                    "type": "string",
-                    "nullable": true
-                  }
-                }
-              },
-              "examples": {
-                "minimal": {
-                  "summary": "Criação básica",
-                  "value": {
-                    "url": "https://example.com/rss.xml"
-                  }
-                },
-                "withTitle": {
-                  "summary": "Incluindo título opcional",
-                  "value": {
-                    "url": "https://example.com/rss.xml",
-                    "title": "Example RSS Feed"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Feed created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/Envelope"
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "$ref": "#/components/schemas/Feed"
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "created": {
-                    "value": {
-                      "success": true,
-                      "data": {
-                        "id": 4,
-                        "url": "https://example.com/rss.xml",
-                        "title": "Example RSS Feed",
-                        "lastFetchedAt": null,
-                        "createdAt": "2025-01-20T12:34:56.000Z",
-                        "updatedAt": "2025-01-20T12:34:56.000Z"
-                      },
-                      "meta": {
-                        "requestId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
           }
         }
       }

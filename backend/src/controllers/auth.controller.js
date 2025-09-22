@@ -1,4 +1,4 @@
-﻿const config = require('../config');
+const config = require('../config');
 const asyncHandler = require('../utils/async-handler');
 const ApiError = require('../utils/api-error');
 const {
@@ -16,7 +16,7 @@ const createDebugNotFoundError = () =>
   new ApiError({ statusCode: 404, code: 'NOT_FOUND', message: 'Resource not found' });
 
 const loginWithGoogle = asyncHandler(async (req, res) => {
-  const { idToken } = req.body ?? {};
+  const { idToken } = req.validated?.body ?? {};
 
   const { token, session } = await authenticateWithGoogle({
     idToken,

@@ -1,6 +1,9 @@
 const path = require('path');
 const swaggerJsdoc = require('swagger-jsdoc');
 const config = require('../config');
+const { ROLES } = require('../constants/roles');
+
+const allowedRoles = Object.values(ROLES);
 
 const definition = {
   openapi: '3.1.0',
@@ -69,6 +72,21 @@ const definition = {
             format: 'date-time',
             example: null,
           },
+          createdAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
+          updatedAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
+        },
+      },
+      AllowedUser: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          email: { type: 'string', format: 'email', example: 'admin@example.com' },
+          role: {
+            type: 'string',
+            enum: allowedRoles,
+            example: allowedRoles[0],
+          },
+          immutable: { type: 'boolean', example: true },
           createdAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
           updatedAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
         },

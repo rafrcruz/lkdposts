@@ -42,6 +42,8 @@ const config = {
   },
   cache: {
     maxAgeSeconds: env.CACHE_MAX_AGE_SECONDS,
+    feedFetchTtlMs: env.CACHE_FEED_FETCH_TTL_SECONDS * 1000,
+    feedFetchMaxEntries: env.CACHE_FEED_FETCH_MAX_ENTRIES,
   },
   observability: {
     metricsEnabled: env.ENABLE_METRICS,
@@ -63,8 +65,8 @@ const config = {
   },
   sentry: {
     dsn: env.SENTRY_DSN_BACKEND || null,
-    tracesSampleRate: 0,
-    profilesSampleRate: 0,
+    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    profilesSampleRate: env.SENTRY_PROFILES_SAMPLE_RATE,
   },
 };
 

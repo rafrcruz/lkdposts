@@ -6,10 +6,12 @@ jest.mock('../src/lib/prisma', () => {
   const feeds = [];
   const articles = [];
   const posts = [];
+  const allowedUsers = [];
 
   let feedIdCounter = 1;
   let articleIdCounter = 1;
   let postIdCounter = 1;
+  let allowedUserIdCounter = 1;
 
   const clone = (entity) => {
     if (entity == null) {
@@ -120,6 +122,28 @@ jest.mock('../src/lib/prisma', () => {
   };
 
   const filterFeeds = (where = {}) => feeds.filter((feed) => matchFeedWhere(feed, where));
+
+  const matchAllowedUserWhere = (user, where = {}) => {
+    if (where == null) {
+      return true;
+    }
+
+    if (!matchesScalar(user.id, where.id)) {
+      return false;
+    }
+
+    if (where.email !== undefined && user.email !== where.email) {
+      return false;
+    }
+
+    if (where.role !== undefined && user.role !== where.role) {
+      return false;
+    }
+
+    return true;
+  };
+
+  const filterAllowedUsers = (where = {}) => allowedUsers.filter((user) => matchAllowedUserWhere(user, where));
 
   const matchArticleWhere = (article, where = {}) => {
     if (where == null) {
@@ -404,6 +428,120 @@ jest.mock('../src/lib/prisma', () => {
         return clone(removed);
       },
     },
+    allowedUser: {
+      upsert: async ({ where, update, create }) => {
+        const index = allowedUsers.findIndex((user) => user.email === where.email);
+
+        if (index === -1) {
+          const now = new Date();
+          const record = {
+            id: allowedUserIdCounter++,
+            email: create.email,
+            role: create.role,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          allowedUsers.push(record);
+          return clone(record);
+        }
+
+        const now = new Date();
+        allowedUsers[index] = {
+          ...allowedUsers[index],
+          ...update,
+          updatedAt: now,
+        };
+
+        return clone(allowedUsers[index]);
+      },
+      findUnique: async ({ where }) => {
+        let found = null;
+
+        if (where.id != null) {
+          found = allowedUsers.find((user) => user.id === where.id) || null;
+        } else if (where.email != null) {
+          found = allowedUsers.find((user) => user.email === where.email) || null;
+        }
+
+        return found ? clone(found) : null;
+      },
+      findMany: async ({ where = {}, orderBy, take, skip, cursor } = {}) => {
+        let result = filterAllowedUsers(where);
+
+        if (orderBy) {
+          result = result.slice().sort(orderByComparator(orderBy));
+        }
+
+        if (cursor?.id != null) {
+          const index = result.findIndex((user) => user.id === cursor.id);
+          if (index === -1) {
+            result = [];
+          } else {
+            const skipCount = typeof skip === 'number' ? skip : 0;
+            result = result.slice(index + skipCount);
+          }
+        }
+
+        if (typeof take === 'number') {
+          result = take >= 0 ? result.slice(0, take) : [];
+        }
+
+        return result.map(clone);
+      },
+      count: async ({ where = {} } = {}) => filterAllowedUsers(where).length,
+      create: async ({ data }) => {
+        const now = new Date();
+        const record = {
+          id: allowedUserIdCounter++,
+          email: data.email,
+          role: data.role,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        allowedUsers.push(record);
+        return clone(record);
+      },
+      update: async ({ where, data }) => {
+        const index = allowedUsers.findIndex((user) => user.id === where.id);
+
+        if (index === -1) {
+          throw new Error('Allowed user not found');
+        }
+
+        const now = new Date();
+        allowedUsers[index] = {
+          ...allowedUsers[index],
+          ...data,
+          updatedAt: now,
+        };
+
+        return clone(allowedUsers[index]);
+      },
+      delete: async ({ where }) => {
+        const index = allowedUsers.findIndex((user) => user.id === where.id);
+
+        if (index === -1) {
+          throw new Error('Allowed user not found');
+        }
+
+        const [removed] = allowedUsers.splice(index, 1);
+        return clone(removed);
+      },
+      deleteMany: async ({ where = {} }) => {
+        const matching = filterAllowedUsers(where);
+        const ids = new Set(matching.map((user) => user.id));
+
+        for (let i = allowedUsers.length - 1; i >= 0; i -= 1) {
+          if (ids.has(allowedUsers[i].id)) {
+            allowedUsers.splice(i, 1);
+          }
+        }
+
+        return { count: matching.length };
+      },
+    },
     article: {
       findMany: async ({ where = {}, orderBy, take, skip, cursor, include, select } = {}) => {
         let result = filterArticles(where);
@@ -555,9 +693,11 @@ jest.mock('../src/lib/prisma', () => {
       feeds.splice(0, feeds.length);
       articles.splice(0, articles.length);
       posts.splice(0, posts.length);
+      allowedUsers.splice(0, allowedUsers.length);
       feedIdCounter = 1;
       articleIdCounter = 1;
       postIdCounter = 1;
+      allowedUserIdCounter = 1;
     },
   };
 

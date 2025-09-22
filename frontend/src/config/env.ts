@@ -24,6 +24,30 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((value) => value?.trim() ?? ''),
+  VITE_SENTRY_TRACES_SAMPLE_RATE: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() ?? '')
+    .transform((value) => {
+      if (!value) {
+        return 0;
+      }
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    })
+    .pipe(z.number().min(0).max(1)),
+  VITE_SENTRY_PROFILES_SAMPLE_RATE: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() ?? '')
+    .transform((value) => {
+      if (!value) {
+        return 0;
+      }
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    })
+    .pipe(z.number().min(0).max(1)),
 });
 
 const parsed = envSchema.safeParse(import.meta.env);
@@ -39,4 +63,6 @@ export const ENV = {
   FALLBACK_LOCALE: parsed.data.VITE_FALLBACK_LOCALE,
   GOOGLE_CLIENT_ID: parsed.data.VITE_GOOGLE_CLIENT_ID,
   SENTRY_DSN: parsed.data.VITE_SENTRY_DSN_FRONTEND,
+  SENTRY_TRACES_SAMPLE_RATE: parsed.data.VITE_SENTRY_TRACES_SAMPLE_RATE,
+  SENTRY_PROFILES_SAMPLE_RATE: parsed.data.VITE_SENTRY_PROFILES_SAMPLE_RATE,
 } as const;

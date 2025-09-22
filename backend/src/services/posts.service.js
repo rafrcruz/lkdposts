@@ -1,7 +1,11 @@
 const { XMLParser } = require('fast-xml-parser');
 const { createHash } = require('crypto');
 
-const { prisma } = require('../lib/prisma');
+const feedRepository = require('../repositories/feed.repository');
+const articleRepository = require('../repositories/article.repository');
+const postRepository = require('../repositories/post.repository');
+const { createTtlCache } = require('../utils/ttl-cache');
+const config = require('../config');
 
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const WINDOW_DAYS = 7;
@@ -12,6 +16,16 @@ const MAX_ARTICLE_TITLE_LENGTH = 200;
 const MAX_ARTICLE_CONTENT_LENGTH = 800;
 
 const refreshLocks = new Map();
+
+const shouldCacheFeeds =
+  config.cache.feedFetchTtlMs > 0 && Number.isInteger(config.cache.feedFetchMaxEntries) && config.cache.feedFetchMaxEntries > 0;
+
+const feedFetchCache = shouldCacheFeeds
+  ? createTtlCache({
+      ttlMs: config.cache.feedFetchTtlMs,
+      maxEntries: config.cache.feedFetchMaxEntries,
+    })
+  : null;
 
 const POST_PLACEHOLDER_CONTENT = [
   'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
@@ -359,6 +373,29 @@ const computeDedupeKey = (item) => {
   return `hash:${hash}`;
 };
 
+const fetchFeedWithCache = async (url, fetcher, timeoutMs, useCache = true) => {
+  if (!useCache || !feedFetchCache) {
+    return fetchAndParseFeed(url, fetcher, timeoutMs);
+  }
+
+  const cached = feedFetchCache.get(url);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = fetchAndParseFeed(url, fetcher, timeoutMs);
+  feedFetchCache.set(url, pending);
+
+  try {
+    const result = await pending;
+    feedFetchCache.set(url, result);
+    return result;
+  } catch (error) {
+    feedFetchCache.delete(url);
+    throw error;
+  }
+};
+
 const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS }) => {
   if (!ownerKey) {
     throw new Error('ownerKey is required');
@@ -369,10 +406,11 @@ const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, ti
     throw new Error('No fetch implementation available');
   }
 
+  const useCache = !fetcher;
   const currentTime = ensureDate(now);
   const windowStart = new Date(currentTime.getTime() - WINDOW_MS);
 
-  const feeds = await prisma.feed.findMany({ where: { ownerKey } });
+  const feeds = await feedRepository.findAllByOwner(ownerKey);
   const results = [];
 
   for (const feed of feeds) {
@@ -400,10 +438,11 @@ const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, ti
     }
 
     try {
-      const { rawCount, items, invalidItems } = await fetchAndParseFeed(feed.url, fetchImpl, timeoutMs);
+      const { rawCount, items, invalidItems } = await fetchFeedWithCache(feed.url, fetchImpl, timeoutMs, useCache);
       feedSummary.itemsRead = rawCount;
       feedSummary.invalidItems = invalidItems;
 
+      const candidates = [];
       for (const item of items) {
         if (item.publishedAt.getTime() < windowStart.getTime()) {
           continue;
@@ -413,48 +452,46 @@ const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, ti
           continue;
         }
 
-        feedSummary.itemsWithinWindow += 1;
-        const dedupeKey = computeDedupeKey(item);
+        candidates.push({ ...item, dedupeKey: computeDedupeKey(item) });
+      }
 
-        const existing = await prisma.article.findUnique({
-          where: { feedId_dedupeKey: { feedId: feed.id, dedupeKey } },
-        });
+      feedSummary.itemsWithinWindow = candidates.length;
 
-        if (existing) {
-          feedSummary.duplicates += 1;
-          continue;
-        }
+      if (candidates.length > 0) {
+        const dedupeKeys = candidates.map((candidate) => candidate.dedupeKey);
+        const existing = await articleRepository.findExistingDedupeKeys({ feedId: feed.id, dedupeKeys });
+        const existingKeys = new Set(existing.map((entry) => entry.dedupeKey));
 
-        const article = await prisma.article.create({
-          data: {
+        for (const candidate of candidates) {
+          if (existingKeys.has(candidate.dedupeKey)) {
+            feedSummary.duplicates += 1;
+            continue;
+          }
+
+          const article = await articleRepository.create({
             feedId: feed.id,
-            title: item.title,
-            contentSnippet: item.contentSnippet,
-            publishedAt: item.publishedAt,
-            guid: item.guid ?? null,
-            link: item.link ?? null,
-            dedupeKey,
-          },
-        });
+            title: candidate.title,
+            contentSnippet: candidate.contentSnippet,
+            publishedAt: candidate.publishedAt,
+            guid: candidate.guid ?? null,
+            link: candidate.link ?? null,
+            dedupeKey: candidate.dedupeKey,
+          });
 
-        await prisma.post.create({
-          data: {
+          await postRepository.create({
             articleId: article.id,
             content: POST_PLACEHOLDER_CONTENT,
-          },
-        });
+          });
 
-        feedSummary.articlesCreated += 1;
+          existingKeys.add(candidate.dedupeKey);
+          feedSummary.articlesCreated += 1;
+        }
       }
     } catch (error) {
       feedSummary.error = { message: error.message };
     }
 
-    await prisma.feed.update({
-      where: { id: feed.id },
-      data: { lastFetchedAt: currentTime },
-    });
-
+    await feedRepository.updateById(feed.id, { lastFetchedAt: currentTime });
     results.push(feedSummary);
   }
 
@@ -498,13 +535,7 @@ const cleanupOldArticles = async ({ ownerKey, now = new Date() }) => {
   const currentTime = ensureDate(now);
   const threshold = new Date(currentTime.getTime() - WINDOW_MS);
 
-  const articlesToRemove = await prisma.article.findMany({
-    where: {
-      feed: { ownerKey },
-      publishedAt: { lt: threshold },
-    },
-    select: { id: true },
-  });
+  const articlesToRemove = await articleRepository.findIdsForCleanup({ ownerKey, olderThan: threshold });
 
   if (articlesToRemove.length === 0) {
     return { removedArticles: 0, removedPosts: 0 };
@@ -512,13 +543,8 @@ const cleanupOldArticles = async ({ ownerKey, now = new Date() }) => {
 
   const articleIds = articlesToRemove.map((article) => article.id);
 
-  const postsResult = await prisma.post.deleteMany({
-    where: { articleId: { in: articleIds } },
-  });
-
-  const articlesResult = await prisma.article.deleteMany({
-    where: { id: { in: articleIds } },
-  });
+  const postsResult = await postRepository.deleteManyByArticleIds(articleIds);
+  const articlesResult = await articleRepository.deleteManyByIds(articleIds);
 
   const removedPosts = typeof postsResult === 'number' ? postsResult : postsResult.count ?? 0;
   const removedArticles = typeof articlesResult === 'number' ? articlesResult : articlesResult.count ?? 0;
@@ -578,33 +604,13 @@ const listRecentArticles = async ({ ownerKey, cursor, limit, feedId, now = new D
     };
   }
 
-  const where = {
-    feed: { ownerKey },
-    publishedAt: {
-      gte: windowStart,
-      lte: currentTime,
-    },
-  };
-
-  if (feedId != null) {
-    where.feedId = feedId;
-  }
-
-  if (cursorFilter) {
-    where.AND = Array.isArray(where.AND) ? [...where.AND, cursorFilter] : [cursorFilter];
-  }
-
-  const articles = await prisma.article.findMany({
-    where,
-    orderBy: [
-      { publishedAt: 'desc' },
-      { id: 'desc' },
-    ],
-    take: safeLimit + 1,
-    include: {
-      post: true,
-      feed: { select: { id: true, title: true, url: true } },
-    },
+  const articles = await articleRepository.findRecentForOwner({
+    ownerKey,
+    windowStart,
+    currentTime,
+    limit: safeLimit + 1,
+    cursorFilter,
+    feedId,
   });
 
   const hasMore = articles.length > safeLimit;

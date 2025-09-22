@@ -31,6 +31,12 @@ const toNumber = (value, defaultValue) => {
   return Number.isNaN(parsed) ? defaultValue : parsed;
 };
 
+const toFloat = (value, defaultValue) => {
+  if (value === undefined || value === '') return defaultValue;
+  const parsed = Number.parseFloat(value);
+  return Number.isNaN(parsed) ? defaultValue : parsed;
+};
+
 const toList = (value, defaultValue = []) => {
   if (value === undefined || value === null) return defaultValue;
   if (Array.isArray(value)) return value;
@@ -54,6 +60,8 @@ const envSchema = z.object({
   RATE_LIMIT_MAX: z.preprocess((value) => toNumber(value, 100), z.number().int().positive()),
   ENABLE_METRICS: z.preprocess((value) => toBoolean(value, true), z.boolean()),
   CACHE_MAX_AGE_SECONDS: z.preprocess((value) => toNumber(value, 60), z.number().int().nonnegative()),
+  CACHE_FEED_FETCH_TTL_SECONDS: z.preprocess((value) => toNumber(value, 120), z.number().int().nonnegative()),
+  CACHE_FEED_FETCH_MAX_ENTRIES: z.preprocess((value) => toNumber(value, 16), z.number().int().positive()),
   SWAGGER_UI_ENABLED: z.preprocess((value) => toBoolean(value, true), z.boolean()),
   DEBUG_AUTH: z.preprocess((value) => toBoolean(value, false), z.boolean()),
   DATABASE_URL: z.string().url(),
@@ -66,6 +74,12 @@ const envSchema = z.object({
   SUPERADMIN_EMAIL: z.string().email(),
   SENTRY_DSN_BACKEND: z.string().optional().transform((value) => (value ? value.trim() : '')),
   PRISMA_URL: z.string().url().optional().transform((value) => (value ? value.trim() : '')),
+  SENTRY_TRACES_SAMPLE_RATE: z
+    .preprocess((value) => toFloat(value, 0.05), z.number().min(0).max(1))
+    .default(0),
+  SENTRY_PROFILES_SAMPLE_RATE: z
+    .preprocess((value) => toFloat(value, 0), z.number().min(0).max(1))
+    .default(0),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

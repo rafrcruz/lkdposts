@@ -2,24 +2,6 @@ const asyncHandler = require('../utils/async-handler');
 const ApiError = require('../utils/api-error');
 const postsService = require('../services/posts.service');
 
-const parsePositiveInteger = (value, { field = 'id', required = false } = {}) => {
-  if (value === undefined || value === null || value === '') {
-    if (required) {
-      throw new ApiError({ statusCode: 400, code: 'INVALID_INPUT', message: `Invalid ${field}` });
-    }
-
-    return null;
-  }
-
-  const number = Number(value);
-
-  if (!Number.isInteger(number) || number <= 0) {
-    throw new ApiError({ statusCode: 400, code: 'INVALID_INPUT', message: `Invalid ${field}` });
-  }
-
-  return number;
-};
-
 const getOwnerKey = (req) => {
   if (!req.user || req.user.id == null) {
     throw new ApiError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication required' });
@@ -84,13 +66,12 @@ const cleanup = asyncHandler(async (req, res) => {
 
 const list = asyncHandler(async (req, res) => {
   const ownerKey = getOwnerKey(req);
-  const cursor = typeof req.query.cursor === 'string' && req.query.cursor.length > 0 ? req.query.cursor : null;
-  const limit = req.query.limit != null ? parsePositiveInteger(req.query.limit, { field: 'limit' }) : undefined;
-  const feedId = req.query.feedId != null ? parsePositiveInteger(req.query.feedId, { field: 'feedId' }) : null;
+  const { cursor, limit, feedId } = req.validated?.query ?? {};
 
   try {
-    const result = await postsService.listRecentArticles({ ownerKey, cursor, limit, feedId: feedId ?? undefined });
+    const result = await postsService.listRecentArticles({ ownerKey, cursor, limit, feedId });
 
+    res.withCache(15, 'private');
     return res.success(
       {
         items: result.items.map(mapPostListItem),
