@@ -24,7 +24,7 @@ const validateRequest = ({ body, query, params } = {}) => {
         validated.params = params.parse(req.params ?? {});
       }
 
-      req.validated = { ...(req.validated ?? {}), ...validated };
+      req.validated = req.validated ? { ...req.validated, ...validated } : validated;
       next();
     } catch (error) {
       if (error?.errors && Array.isArray(error.errors)) {

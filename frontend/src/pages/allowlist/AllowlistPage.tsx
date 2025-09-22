@@ -153,7 +153,10 @@ export const AllowlistPage = () => {
                         if (entry.immutable) {
                           return;
                         }
-                        const confirmed = window.confirm(t('allowlist.table.removeConfirm', 'Remover este email da allowlist?'));
+                        const browserWindow =
+                          typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+                        const confirmed =
+                          browserWindow?.confirm(t('allowlist.table.removeConfirm', 'Remover este email da allowlist?')) ?? false;
                         if (!confirmed) {
                           return;
                         }

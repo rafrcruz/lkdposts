@@ -11,16 +11,17 @@ const stringToTheme = (value: string | null): Theme | null => {
 };
 
 const getInitialTheme = (): Theme => {
-  if (typeof window === 'undefined') {
+  const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+  if (!browserWindow) {
     return 'light';
   }
 
-  const stored = stringToTheme(window.localStorage.getItem(STORAGE_KEY));
+  const stored = stringToTheme(browserWindow.localStorage.getItem(STORAGE_KEY));
   if (stored) {
     return stored;
   }
 
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return browserWindow.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 };
 
 const applyTheme = (nextTheme: Theme) => {
@@ -36,7 +37,8 @@ export const ThemeToggle = () => {
 
   useEffect(() => {
     applyTheme(theme);
-    window.localStorage.setItem(STORAGE_KEY, theme);
+    const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+    browserWindow?.localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
   return (

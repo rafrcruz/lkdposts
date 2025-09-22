@@ -23,13 +23,13 @@ const notifyUnauthorized = (error: HttpError) => {
     return;
   }
 
-  unauthorizedHandlers.forEach((handler) => {
+  for (const handler of unauthorizedHandlers) {
     try {
       handler(error);
     } catch {
       // ignore listener failures so they do not affect the request flow
     }
-  });
+  }
 };
 
 export const onUnauthorized = (handler: UnauthorizedHandler) => {

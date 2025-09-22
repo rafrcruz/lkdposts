@@ -10,9 +10,7 @@ import type {
   RefreshSummary,
 } from '@/features/posts/types/post';
 import { useFeedList } from '@/features/feeds/hooks/useFeeds';
-import type { FeedListResponse } from '@/features/feeds/api/feeds';
 import type { Feed } from '@/features/feeds/types/feed';
-import type { PostListResponse } from '@/features/posts/api/posts';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
@@ -23,6 +21,7 @@ const PAGE_SIZE = 10;
 const FEED_OPTIONS_LIMIT = 50;
 
 type ExpandedSections = Record<number, { post: boolean; article: boolean }>;
+type SectionState = ExpandedSections[number];
 
 type RefreshOptions = {
   resetPagination?: boolean;
@@ -80,6 +79,30 @@ const buildSummaryTitle = (summary: RefreshFeedSummary, t: ReturnType<typeof use
 
 const NETWORK_ERROR_KEYWORDS = ['network', 'timeout', 'failed to fetch', 'load failed'];
 
+const createDefaultSectionState = (): SectionState => ({ post: true, article: false });
+
+const shouldRefetchPostsList = ({
+  wasExecutedBefore,
+  resetPagination,
+  previousCursor,
+  previousCursorCount,
+}: {
+  wasExecutedBefore: boolean;
+  resetPagination: boolean;
+  previousCursor: string | null;
+  previousCursorCount: number;
+}) => {
+  if (!wasExecutedBefore) {
+    return false;
+  }
+
+  if (!resetPagination) {
+    return true;
+  }
+
+  return previousCursor === null && previousCursorCount === 0;
+};
+
 const resolveOperationErrorMessage = (error: unknown, t: ReturnType<typeof useTranslation>['t']) => {
   if (error instanceof HttpError) {
     return error.message;
@@ -118,13 +141,13 @@ const PostsPage = () => {
   const [expandedSections, setExpandedSections] = useState<ExpandedSections>({});
 
   const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT });
-  const feedListData = feedList.data as FeedListResponse | undefined;
+  const feedListData = feedList.data;
   const feeds: Feed[] = feedListData?.items ?? [];
   const totalFeeds: number = feedListData?.meta.total ?? 0;
   const hasFeeds = totalFeeds > 0;
 
   const postListQuery = usePostList({ cursor, limit: PAGE_SIZE, feedId: selectedFeedId, enabled: hasExecutedSequence });
-  const postListData = postListQuery.data as PostListResponse | undefined;
+  const postListData = postListQuery.data;
   const posts = useMemo<PostListItem[]>(() => postListData?.items ?? [], [postListData?.items]);
   const nextCursor: string | null = postListData?.meta.nextCursor ?? null;
   const isLoading = postListQuery.isLoading && !postListQuery.isFetched;
@@ -167,7 +190,7 @@ const PostsPage = () => {
       setCleanupError(null);
 
       const previousCursorValue = cursor;
-      const hadPreviousCursors = previousCursors.length;
+      const previousCursorCount = previousCursors.length;
 
       setIsSyncing(true);
 
@@ -189,9 +212,12 @@ const PostsPage = () => {
 
         setHasExecutedSequence(true);
 
-        const shouldRefetchList =
-          wasExecutedBefore &&
-          (!resetPagination || (previousCursorValue === null && hadPreviousCursors === 0));
+        const shouldRefetchList = shouldRefetchPostsList({
+          wasExecutedBefore,
+          resetPagination,
+          previousCursor: previousCursorValue,
+          previousCursorCount,
+        });
 
         return { shouldRefetchList };
       } finally {
@@ -252,42 +278,39 @@ const PostsPage = () => {
       let hasChanges = false;
       const next: ExpandedSections = {};
 
-      posts.forEach((item) => {
+      for (const item of posts) {
         const existing = current[item.id];
         if (existing) {
           next[item.id] = existing;
-          return;
+          continue;
         }
 
         hasChanges = true;
-        next[item.id] = { post: true, article: false };
-      });
+        next[item.id] = createDefaultSectionState();
+      }
+
+      if (hasChanges) {
+        return next;
+      }
 
       const currentIds = Object.keys(current);
-      if (!hasChanges) {
-        if (currentIds.length !== posts.length) {
-          hasChanges = true;
-        } else {
-          for (const id of currentIds) {
-            if (!Object.hasOwn(next, id)) {
-              hasChanges = true;
-              break;
-            }
-          }
+      if (currentIds.length !== posts.length) {
+        return next;
+      }
+
+      for (const id of currentIds) {
+        if (!Object.hasOwn(next, id)) {
+          return next;
         }
       }
 
-      if (!hasChanges) {
-        return current;
-      }
-
-      return next;
+      return current;
     });
   }, [posts]);
 
   const toggleSection = (id: number, section: 'post' | 'article') => {
     setExpandedSections((current) => {
-      const currentEntry = current[id] ?? { post: true, article: false };
+      const currentEntry = current[id] ?? createDefaultSectionState();
       return {
         ...current,
         [id]: { ...currentEntry, [section]: !currentEntry[section] },
@@ -420,7 +443,7 @@ const PostsPage = () => {
     return (
       <div className="space-y-4">
         {posts.map((item) => {
-          const sectionState = expandedSections[item.id] ?? { post: true, article: false };
+          const sectionState = expandedSections[item.id] ?? createDefaultSectionState();
           const postContentId = `post-content-${item.id}`;
           const articleContentId = `article-content-${item.id}`;
           const feedLabel = resolveArticleFeedLabel(item.feed, t);
@@ -756,16 +779,16 @@ const PostsPage = () => {
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="space-y-1">
                         <h3 className="text-sm font-semibold text-foreground">{buildSummaryTitle(summary, t)}</h3>
-                        {summary.skippedByCooldown ? (
-                          <p className="text-xs text-warning">
-                            {t('posts.summary.skippedByCooldown', 'Skipped by cooldown window.')}
-                            {summary.cooldownSecondsRemaining != null
-                              ? ` ${t('posts.summary.cooldownRemaining', 'Cooldown remaining: {{seconds}}s', {
-                                  seconds: formatNumber(summary.cooldownSecondsRemaining, locale),
-                                })}`
-                              : ''}
-                          </p>
-                        ) : null}
+                {summary.skippedByCooldown ? (
+                  <p className="text-xs text-warning">
+                    {t('posts.summary.skippedByCooldown', 'Skipped by cooldown window.')}
+                    {summary.cooldownSecondsRemaining === null || summary.cooldownSecondsRemaining === undefined
+                      ? ''
+                      : ` ${t('posts.summary.cooldownRemaining', 'Cooldown remaining: {{seconds}}s', {
+                          seconds: formatNumber(summary.cooldownSecondsRemaining, locale),
+                        })}`}
+                  </p>
+                ) : null}
                       </div>
                       <span
                         className={`inline-flex items-center justify-center rounded-full border px-2 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide ${statusClassName}`}
