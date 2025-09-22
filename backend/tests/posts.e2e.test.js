@@ -78,15 +78,15 @@ describe('Posts API', () => {
       return null;
     });
 
-    originalFetch = global.fetch;
+    originalFetch = globalThis.fetch;
   });
 
   afterEach(() => {
     jest.clearAllMocks();
     if (originalFetch) {
-      global.fetch = originalFetch;
+      globalThis.fetch = originalFetch;
     } else {
-      delete global.fetch;
+      delete globalThis.fetch;
     }
   });
 
@@ -103,7 +103,7 @@ describe('Posts API', () => {
       const publishedAt = new Date(Date.now() - 60 * 1000);
       const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Feed</title><item><title>Story</title><description>Snippet</description><pubDate>${publishedAt.toUTCString()}</pubDate><guid>guid-1</guid></item></channel></rss>`;
 
-      global.fetch = createFetchMock(rss);
+      globalThis.fetch = createFetchMock(rss);
 
       const response = await withAuth(
         TOKENS.user1,
@@ -112,7 +112,7 @@ describe('Posts API', () => {
         .expect('Content-Type', /json/)
         .expect(200);
 
-      expect(global.fetch).toHaveBeenCalledWith(feed.url, expect.any(Object));
+      expect(globalThis.fetch).toHaveBeenCalledWith(feed.url, expect.any(Object));
       expect(response.body.data.feeds).toHaveLength(1);
       expect(response.body.data.feeds[0]).toEqual(
         expect.objectContaining({
@@ -145,7 +145,7 @@ describe('Posts API', () => {
       const publishedAt = new Date(Date.now() - 2 * 60 * 1000);
       const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Feed</title><item><title>Concurrent Story</title><description>Snippet</description><pubDate>${publishedAt.toUTCString()}</pubDate><guid>guid-concurrent</guid></item></channel></rss>`;
 
-      global.fetch = createDelayedFetchMock(rss);
+      globalThis.fetch = createDelayedFetchMock(rss);
 
       const requestA = withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh')).expect('Content-Type', /json/);
       const requestB = withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh')).expect('Content-Type', /json/);
@@ -155,7 +155,7 @@ describe('Posts API', () => {
 
       const [responseA, responseB] = await Promise.all([promiseA, promiseB]);
 
-      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
       expect(responseA.body.data).toEqual(responseB.body.data);
       expect(responseA.body.data.feeds[0].articlesCreated).toBe(1);
       const articles = await prisma.article.findMany();
@@ -231,9 +231,9 @@ describe('Posts API', () => {
         })
         .join('')}</channel></rss>`;
 
-      global.fetch = createFetchMock(rss);
+      globalThis.fetch = createFetchMock(rss);
 
-      await postsService.refreshUserFeeds({ ownerKey: '1', now, fetcher: global.fetch });
+      await postsService.refreshUserFeeds({ ownerKey: '1', now, fetcher: globalThis.fetch });
 
       const firstPage = await withAuth(
         TOKENS.user1,

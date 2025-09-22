@@ -555,7 +555,7 @@ const initialiseI18n = async () => {
 
 void initialiseI18n();
 
-export default i18n;
+export { default } from 'i18next';
 
 
 

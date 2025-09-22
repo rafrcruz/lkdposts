@@ -1,4 +1,4 @@
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, JSX } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -36,6 +36,8 @@ type RefreshAggregates = {
   skippedFeeds: number;
   errorFeeds: number;
 };
+
+type TranslateFunction = ReturnType<typeof useTranslation>['t'];
 
 const resolveFeedLabel = (feed: Feed, t: ReturnType<typeof useTranslation>['t']) => {
   if (feed.title) {
@@ -355,166 +357,9 @@ const PostsPage = () => {
     });
   };
 
-  const renderPosts = () => {
-    const listErrorMessage = postListQuery.error
-      ? resolveOperationErrorMessage(postListQuery.error, t)
-      : undefined;
-
-    if (!hasExecutedSequence) {
-      return (
-        <div className="card space-y-3 px-6 py-6">
-          <LoadingSkeleton className="h-5" />
-          <LoadingSkeleton className="h-5" />
-          <LoadingSkeleton className="h-5" />
-        </div>
-      );
-    }
-
-    if (!hasFeeds && feedList.isSuccess) {
-      return (
-        <EmptyState
-          title={t('posts.filters.empty.title', 'No feed available yet.')}
-          description={t(
-            'posts.filters.empty.description',
-            'Add feeds on the Feeds page to start generating posts.',
-          )}
-          action={
-            <a
-              href="/feeds"
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-            >
-              {t('posts.filters.empty.cta', 'Manage feeds')}
-            </a>
-          }
-        />
-      );
-    }
-
-    if (isLoading) {
-      return (
-        <div className="card space-y-3 px-6 py-6">
-          <LoadingSkeleton className="h-5" />
-          <LoadingSkeleton className="h-5" />
-          <LoadingSkeleton className="h-5" />
-        </div>
-      );
-    }
-
-    if (isError) {
-      return (
-        <ErrorState
-          title={t('posts.errors.list', 'Could not load posts. Try again later.')}
-          description={listErrorMessage}
-          action={
-            <button
-              type="button"
-              className="mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={() => runSequence()}
-              disabled={isSyncing}
-            >
-              {t('actions.tryAgain', 'Try again')}
-            </button>
-          }
-        />
-      );
-    }
-
-    if (posts.length === 0) {
-      const emptyTitleKey = selectedFeedId
-        ? 'posts.list.empty.filtered.title'
-        : 'posts.list.empty.default.title';
-      const emptyDescriptionKey = selectedFeedId
-        ? 'posts.list.empty.filtered.description'
-        : 'posts.list.empty.default.description';
-
-      return (
-        <EmptyState
-          title={t(emptyTitleKey, selectedFeedId ? 'No posts for this feed.' : 'No recent posts.')}
-          description={t(
-            emptyDescriptionKey,
-            selectedFeedId
-              ? 'Select another feed or refresh to get new posts.'
-              : 'Posts from the last seven days will appear here after a refresh.',
-          )}
-        />
-      );
-    }
-
-    return (
-      <div className="space-y-4">
-        {posts.map((item) => {
-          const sectionState = expandedSections[item.id] ?? createDefaultSectionState();
-          const postContentId = `post-content-${item.id}`;
-          const articleContentId = `article-content-${item.id}`;
-          const feedLabel = resolveArticleFeedLabel(item.feed, t);
-
-          return (
-            <article key={item.id} className="card space-y-4 px-6 py-6">
-              <header className="space-y-1">
-                <h2 className="text-lg font-semibold text-foreground">{item.title}</h2>
-                <p className="text-xs text-muted-foreground">
-                  {t('posts.list.metadata.publishedAt', 'Published {{date}}', {
-                    date: formatDate(item.publishedAt, locale),
-                  })}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {t('posts.list.metadata.feed', 'Feed: {{feed}}', { feed: feedLabel })}
-                </p>
-                {item.post?.createdAt ? (
-                  <p className="text-xs text-muted-foreground">
-                    {t('posts.list.metadata.createdAt', 'Generated {{date}}', {
-                      date: formatDate(item.post.createdAt, locale),
-                    })}
-                  </p>
-                ) : null}
-              </header>
-              <section className="space-y-2">
-                <button
-                  type="button"
-                  aria-expanded={sectionState.post}
-                  aria-controls={postContentId}
-                  className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
-                  onClick={() => toggleSection(item.id, 'post')}
-                >
-                  {t('posts.list.sections.post', 'Post')}
-                  <span aria-hidden="true">{sectionState.post ? '−' : '+'}</span>
-                </button>
-                {sectionState.post ? (
-                  <div id={postContentId} className="rounded-md border border-border bg-background px-4 py-4 text-sm text-foreground">
-                    {item.post?.content ? (
-                      <p className="whitespace-pre-wrap leading-relaxed">{item.post.content}</p>
-                    ) : (
-                      <p className="text-muted-foreground">{t('posts.list.postUnavailable', 'Post not available yet.')}</p>
-                    )}
-                  </div>
-                ) : null}
-              </section>
-              <section className="space-y-2">
-                <button
-                  type="button"
-                  aria-expanded={sectionState.article}
-                  aria-controls={articleContentId}
-                  className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
-                  onClick={() => toggleSection(item.id, 'article')}
-                >
-                  {t('posts.list.sections.article', 'Article')}
-                  <span aria-hidden="true">{sectionState.article ? '−' : '+'}</span>
-                </button>
-                {sectionState.article ? (
-                  <div
-                    id={articleContentId}
-                    className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
-                  >
-                    <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.contentSnippet}</p>
-                  </div>
-                ) : null}
-              </section>
-            </article>
-          );
-        })}
-      </div>
-    );
-  };
+  const listErrorMessage = postListQuery.error
+    ? resolveOperationErrorMessage(postListQuery.error, t)
+    : undefined;
 
   const summaryAggregates = useMemo<RefreshAggregates | null>(() => {
     if (!refreshSummary) {
@@ -820,31 +665,248 @@ const PostsPage = () => {
         </section>
       ) : null}
 
-      {renderPosts()}
+      <PostListContent
+        expandedSections={expandedSections}
+        hasExecutedSequence={hasExecutedSequence}
+        hasFeeds={hasFeeds}
+        hasPreviousPage={previousCursors.length > 0}
+        isError={isError}
+        isLoading={isLoading}
+        isSyncing={isSyncing}
+        listErrorMessage={listErrorMessage}
+        locale={locale}
+        nextCursor={nextCursor}
+        onNextPage={handleNextPage}
+        onPreviousPage={handlePreviousPage}
+        onToggleSection={toggleSection}
+        onTryAgain={() => runSequence()}
+        posts={posts}
+        selectedFeedId={selectedFeedId}
+        t={t}
+        currentPage={currentPage}
+        feedListIsSuccess={feedList.isSuccess}
+      />
+    </div>
+  );
+};
 
-      {posts.length > 0 ? (
-        <div className="flex items-center justify-between rounded-md border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
-          <div>{t('posts.pagination.page', 'Page {{page}}', { page: currentPage })}</div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={handlePreviousPage}
-              disabled={previousCursors.length === 0 || isLoading || isSyncing}
-            >
-              {t('posts.pagination.previous', 'Previous')}
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={handleNextPage}
-              disabled={!nextCursor || isLoading || isSyncing}
-            >
-              {t('posts.pagination.next', 'Next')}
-            </button>
-          </div>
+type PostListContentProps = {
+  expandedSections: ExpandedSections;
+  hasExecutedSequence: boolean;
+  hasFeeds: boolean;
+  hasPreviousPage: boolean;
+  isError: boolean;
+  isLoading: boolean;
+  isSyncing: boolean;
+  listErrorMessage?: string;
+  locale: ReturnType<typeof useLocale>;
+  nextCursor: string | null;
+  onNextPage: () => void;
+  onPreviousPage: () => void;
+  onToggleSection: (id: number, section: 'post' | 'article') => void;
+  onTryAgain: () => void;
+  posts: PostListItem[];
+  selectedFeedId: number | null;
+  t: TranslateFunction;
+  currentPage: number;
+  feedListIsSuccess: boolean;
+};
+
+const PostListContent = ({
+  expandedSections,
+  hasExecutedSequence,
+  hasFeeds,
+  isError,
+  isLoading,
+  isSyncing,
+  hasPreviousPage,
+  listErrorMessage,
+  locale,
+  nextCursor,
+  onNextPage,
+  onPreviousPage,
+  onToggleSection,
+  onTryAgain,
+  posts,
+  selectedFeedId,
+  t,
+  currentPage,
+  feedListIsSuccess,
+}: PostListContentProps): JSX.Element => {
+  if (!hasExecutedSequence) {
+    return (
+      <div className="card space-y-3 px-6 py-6">
+        <LoadingSkeleton className="h-5" />
+        <LoadingSkeleton className="h-5" />
+        <LoadingSkeleton className="h-5" />
+      </div>
+    );
+  }
+
+  if (!hasFeeds && feedListIsSuccess) {
+    return (
+      <EmptyState
+        title={t('posts.filters.empty.title', 'No feed available yet.')}
+        description={t(
+          'posts.filters.empty.description',
+          'Add feeds on the Feeds page to start generating posts.',
+        )}
+        action={
+          <a
+            href="/feeds"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+          >
+            {t('posts.filters.empty.cta', 'Manage feeds')}
+          </a>
+        }
+      />
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="card space-y-3 px-6 py-6">
+        <LoadingSkeleton className="h-5" />
+        <LoadingSkeleton className="h-5" />
+        <LoadingSkeleton className="h-5" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <ErrorState
+        title={t('posts.errors.list', 'Could not load posts. Try again later.')}
+        description={listErrorMessage}
+        action={
+          <button
+            type="button"
+            className="mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={onTryAgain}
+            disabled={isSyncing}
+          >
+            {t('actions.tryAgain', 'Try again')}
+          </button>
+        }
+      />
+    );
+  }
+
+  if (posts.length === 0) {
+    const emptyTitleKey = selectedFeedId
+      ? 'posts.list.empty.filtered.title'
+      : 'posts.list.empty.default.title';
+    const emptyDescriptionKey = selectedFeedId
+      ? 'posts.list.empty.filtered.description'
+      : 'posts.list.empty.default.description';
+
+    return (
+      <EmptyState
+        title={t(emptyTitleKey, selectedFeedId ? 'No posts for this feed.' : 'No recent posts.')}
+        description={t(
+          emptyDescriptionKey,
+          selectedFeedId
+            ? 'Select another feed or refresh to get new posts.'
+            : 'Posts from the last seven days will appear here after a refresh.',
+        )}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {posts.map((item) => {
+        const sectionState = expandedSections[item.id] ?? createDefaultSectionState();
+        const postContentId = `post-content-${item.id}`;
+        const articleContentId = `article-content-${item.id}`;
+        const feedLabel = resolveArticleFeedLabel(item.feed, t);
+
+        return (
+          <article key={item.id} className="card space-y-4 px-6 py-6">
+            <header className="space-y-1">
+              <h2 className="text-lg font-semibold text-foreground">{item.title}</h2>
+              <p className="text-xs text-muted-foreground">
+                {t('posts.list.metadata.publishedAt', 'Published {{date}}', {
+                  date: formatDate(item.publishedAt, locale),
+                })}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('posts.list.metadata.feed', 'Feed: {{feed}}', { feed: feedLabel })}
+              </p>
+              {item.post?.createdAt ? (
+                <p className="text-xs text-muted-foreground">
+                  {t('posts.list.metadata.createdAt', 'Generated {{date}}', {
+                    date: formatDate(item.post.createdAt, locale),
+                  })}
+                </p>
+              ) : null}
+            </header>
+            <section className="space-y-2">
+              <button
+                type="button"
+                aria-expanded={sectionState.post}
+                aria-controls={postContentId}
+                className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
+                onClick={() => onToggleSection(item.id, 'post')}
+              >
+                {t('posts.list.sections.post', 'Post')}
+                <span aria-hidden="true">{sectionState.post ? '−' : '+'}</span>
+              </button>
+              {sectionState.post ? (
+                <div id={postContentId} className="rounded-md border border-border bg-background px-4 py-4 text-sm text-foreground">
+                  {item.post?.content ? (
+                    <p className="whitespace-pre-wrap leading-relaxed">{item.post.content}</p>
+                  ) : (
+                    <p className="text-muted-foreground">{t('posts.list.postUnavailable', 'Post not available yet.')}</p>
+                  )}
+                </div>
+              ) : null}
+            </section>
+            <section className="space-y-2">
+              <button
+                type="button"
+                aria-expanded={sectionState.article}
+                aria-controls={articleContentId}
+                className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
+                onClick={() => onToggleSection(item.id, 'article')}
+              >
+                {t('posts.list.sections.article', 'Article')}
+                <span aria-hidden="true">{sectionState.article ? '−' : '+'}</span>
+              </button>
+              {sectionState.article ? (
+                <div
+                  id={articleContentId}
+                  className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
+                >
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.contentSnippet}</p>
+                </div>
+              ) : null}
+            </section>
+          </article>
+        );
+      })}
+
+      <div className="flex items-center justify-between rounded-md border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
+        <div>{t('posts.pagination.page', 'Page {{page}}', { page: currentPage })}</div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={onPreviousPage}
+            disabled={!hasPreviousPage || isLoading || isSyncing}
+          >
+            {t('posts.pagination.previous', 'Previous')}
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={onNextPage}
+            disabled={!nextCursor || isLoading || isSyncing}
+          >
+            {t('posts.pagination.next', 'Next')}
+          </button>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 };

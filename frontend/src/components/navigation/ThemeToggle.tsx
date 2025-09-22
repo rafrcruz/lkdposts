@@ -11,7 +11,7 @@ const stringToTheme = (value: string | null): Theme | null => {
 };
 
 const getInitialTheme = (): Theme => {
-  const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+  const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
   if (!browserWindow) {
     return 'light';
   }
@@ -25,11 +25,12 @@ const getInitialTheme = (): Theme => {
 };
 
 const applyTheme = (nextTheme: Theme) => {
-  if (typeof document === 'undefined') {
+  const rootDocument = 'document' in globalThis ? globalThis.document : undefined;
+  if (!rootDocument) {
     return;
   }
 
-  document.documentElement.dataset.theme = nextTheme;
+  rootDocument.documentElement.dataset.theme = nextTheme;
 };
 
 export const ThemeToggle = () => {
@@ -37,7 +38,7 @@ export const ThemeToggle = () => {
 
   useEffect(() => {
     applyTheme(theme);
-    const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+    const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
     browserWindow?.localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 

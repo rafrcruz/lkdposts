@@ -443,9 +443,9 @@ describe('posts.service', () => {
 
       const posts = await prisma.post.findMany();
       expect(posts).toHaveLength(3);
-      posts.forEach((post) => {
+      for (const post of posts) {
         expect(post.content).toBe(POST_PLACEHOLDER_CONTENT);
-      });
+      }
     });
 
     it('filters out articles older than seven days and supports feed filtering', async () => {

@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 const { config: loadEnv } = require('dotenv');
 const { z } = require('zod');
 
@@ -11,11 +11,11 @@ const envFiles = [
   path.resolve(process.cwd(), `.env.${envName}`),
 ];
 
-envFiles.forEach((filePath) => {
+for (const filePath of envFiles) {
   if (fs.existsSync(filePath)) {
     loadEnv({ path: filePath, override: true });
   }
-});
+}
 
 const toBoolean = (value, defaultValue = false) => {
   if (value === undefined) return defaultValue;
@@ -56,7 +56,7 @@ const envSchema = z.object({
     z.array(z.string().url()).nonempty()
   ),
   PAYLOAD_LIMIT: z.string().min(1).default('100kb'),
-  RATE_LIMIT_WINDOW_MS: z.preprocess((value) => toNumber(value, 60_000), z.number().int().positive()),
+  RATE_LIMIT_WINDOW_MS: z.preprocess((value) => toNumber(value, 60000), z.number().int().positive()),
   RATE_LIMIT_MAX: z.preprocess((value) => toNumber(value, 100), z.number().int().positive()),
   ENABLE_METRICS: z.preprocess((value) => toBoolean(value, true), z.boolean()),
   CACHE_MAX_AGE_SECONDS: z.preprocess((value) => toNumber(value, 60), z.number().int().nonnegative()),
@@ -69,7 +69,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1),
   GOOGLE_REDIRECT_URI: z.string().url(),
   SESSION_SECRET: z.string().min(16),
-  SESSION_TTL_SECONDS: z.preprocess((value) => toNumber(value, 3_600), z.number().int().positive()),
+  SESSION_TTL_SECONDS: z.preprocess((value) => toNumber(value, 3600), z.number().int().positive()),
   SESSION_RENEW_THRESHOLD_SECONDS: z.preprocess((value) => toNumber(value, 900), z.number().int().nonnegative()),
   SUPERADMIN_EMAIL: z.string().email(),
   SENTRY_DSN_BACKEND: z.string().optional().transform((value) => (value ? value.trim() : '')),

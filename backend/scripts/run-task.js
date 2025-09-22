@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/env node
-const { spawn } = require('child_process');
+const { spawn } = require('node:child_process');
 
 const tasks = {
   dev: ['npm', ['run', 'dev']],

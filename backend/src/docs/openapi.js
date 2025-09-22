@@ -1,4 +1,4 @@
-const path = require('path');
+const path = require('node:path');
 const swaggerJsdoc = require('swagger-jsdoc');
 const config = require('../config');
 const { ROLES } = require('../constants/roles');

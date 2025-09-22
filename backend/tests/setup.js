@@ -19,11 +19,11 @@ jest.mock('../src/lib/prisma', () => {
     }
 
     const copy = { ...entity };
-    Object.keys(copy).forEach((key) => {
+    for (const key of Object.keys(copy)) {
       if (copy[key] instanceof Date) {
-        copy[key] = new Date(copy[key].getTime());
+        copy[key] = new Date(copy[key]);
       }
-    });
+    }
     return copy;
   };
 
@@ -58,29 +58,30 @@ jest.mock('../src/lib/prisma', () => {
 
   const normalizeActualDate = (value) => {
     if (value instanceof Date) {
-      return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
+      const numericValue = value.valueOf();
+      return Number.isNaN(numericValue) ? null : new Date(numericValue);
     }
 
     const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+    return Number.isNaN(parsed.valueOf()) ? null : parsed;
   };
 
   const evaluateDateRange = (date, condition) => {
-    const timestamp = date.getTime();
+    const timestamp = date.valueOf();
 
-    if (condition.lt !== undefined && timestamp >= toDate(condition.lt).getTime()) {
+    if (condition.lt !== undefined && timestamp >= toDate(condition.lt).valueOf()) {
       return false;
     }
 
-    if (condition.lte !== undefined && timestamp > toDate(condition.lte).getTime()) {
+    if (condition.lte !== undefined && timestamp > toDate(condition.lte).valueOf()) {
       return false;
     }
 
-    if (condition.gt !== undefined && timestamp <= toDate(condition.gt).getTime()) {
+    if (condition.gt !== undefined && timestamp <= toDate(condition.gt).valueOf()) {
       return false;
     }
 
-    if (condition.gte !== undefined && timestamp < toDate(condition.gte).getTime()) {
+    if (condition.gte !== undefined && timestamp < toDate(condition.gte).valueOf()) {
       return false;
     }
 
@@ -103,14 +104,14 @@ jest.mock('../src/lib/prisma', () => {
 
     if (condition instanceof Date || typeof condition === 'string' || typeof condition === 'number') {
       const target = toDate(condition);
-      return date.getTime() === target.getTime();
+      return date.valueOf() === target.valueOf();
     }
 
     if (typeof condition === 'object') {
       return evaluateDateRange(date, condition);
     }
 
-    return date.getTime() === toDate(condition).getTime();
+    return date.valueOf() === toDate(condition).valueOf();
   };
 
   const matchFeedWhere = (feed, where = {}) => {
@@ -273,10 +274,10 @@ jest.mock('../src/lib/prisma', () => {
         let bValue = b[field];
 
         if (aValue instanceof Date) {
-          aValue = aValue.getTime();
+          aValue = aValue.valueOf();
         }
         if (bValue instanceof Date) {
-          bValue = bValue.getTime();
+          bValue = bValue.valueOf();
         }
 
         if (aValue < bValue) {
@@ -296,29 +297,29 @@ jest.mock('../src/lib/prisma', () => {
     }
 
     const result = {};
-    Object.keys(select).forEach((key) => {
+    for (const key of Object.keys(select)) {
       if (!select[key]) {
-        return;
+        continue;
       }
 
       const value = record[key];
       if (value instanceof Date) {
-        result[key] = new Date(value.getTime());
-        return;
+        result[key] = new Date(value);
+        continue;
       }
 
       if (Array.isArray(value)) {
         result[key] = value.map((item) => (item && typeof item === 'object' ? clone(item) : item));
-        return;
+        continue;
       }
 
       if (value && typeof value === 'object') {
         result[key] = clone(value);
-        return;
+        continue;
       }
 
       result[key] = value;
-    });
+    }
 
     return result;
   };
@@ -444,7 +445,9 @@ jest.mock('../src/lib/prisma', () => {
         }
 
         const [removed] = feeds.splice(index, 1);
-        const removedArticleIds = articles.filter((article) => article.feedId === removed.id).map((article) => article.id);
+        const removedArticleIds = new Set(
+          articles.filter((article) => article.feedId === removed.id).map((article) => article.id),
+        );
 
         for (let i = articles.length - 1; i >= 0; i -= 1) {
           if (articles[i].feedId === removed.id) {
@@ -453,7 +456,7 @@ jest.mock('../src/lib/prisma', () => {
         }
 
         for (let i = posts.length - 1; i >= 0; i -= 1) {
-          if (removedArticleIds.includes(posts[i].articleId)) {
+          if (removedArticleIds.has(posts[i].articleId)) {
             posts.splice(i, 1);
           }
         }

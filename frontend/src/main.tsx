@@ -89,7 +89,7 @@ const ErrorFallback: React.FC = () => (
         type="button"
         className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
         onClick={() => {
-          const browserWindow = typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
+          const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
           browserWindow?.location.reload();
         }}
       >
