@@ -83,6 +83,31 @@ const NETWORK_ERROR_KEYWORDS = ['network', 'timeout', 'failed to fetch', 'load f
 
 const createDefaultSectionState = (): SectionState => ({ post: true, article: false });
 
+const mergeExpandedSections = (
+  posts: PostListItem[],
+  current: ExpandedSections,
+): ExpandedSections => {
+  const next = posts.reduce<ExpandedSections>((accumulator, item) => {
+    accumulator[item.id] = current[item.id] ?? createDefaultSectionState();
+    return accumulator;
+  }, {});
+
+  if (posts.some((item) => !Object.hasOwn(current, item.id))) {
+    return next;
+  }
+
+  const currentIds = Object.keys(current);
+  if (currentIds.length !== posts.length) {
+    return next;
+  }
+
+  if (currentIds.some((id) => !Object.hasOwn(next, id))) {
+    return next;
+  }
+
+  return current;
+};
+
 const shouldRefetchPostsList = ({
   wasExecutedBefore,
   resetPagination,
@@ -276,38 +301,7 @@ const PostsPage = () => {
   };
 
   useEffect(() => {
-    setExpandedSections((current) => {
-      let hasChanges = false;
-      const next: ExpandedSections = {};
-
-      for (const item of posts) {
-        const existing = current[item.id];
-        if (existing) {
-          next[item.id] = existing;
-          continue;
-        }
-
-        hasChanges = true;
-        next[item.id] = createDefaultSectionState();
-      }
-
-      if (hasChanges) {
-        return next;
-      }
-
-      const currentIds = Object.keys(current);
-      if (currentIds.length !== posts.length) {
-        return next;
-      }
-
-      for (const id of currentIds) {
-        if (!Object.hasOwn(next, id)) {
-          return next;
-        }
-      }
-
-      return current;
-    });
+    setExpandedSections((current) => mergeExpandedSections(posts, current));
   }, [posts]);
 
   const toggleSection = (id: number, section: 'post' | 'article') => {

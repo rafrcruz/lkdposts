@@ -3,11 +3,13 @@ const ApiError = require('../utils/api-error');
 const feedService = require('../services/feed.service');
 
 const getOwnerKey = (req) => {
-  if (!req.user || req.user.id == null) {
+  const { user } = req;
+
+  if (user == null || user.id == null) {
     throw new ApiError({ statusCode: 401, code: 'UNAUTHENTICATED', message: 'Authentication required' });
   }
 
-  return String(req.user.id);
+  return String(user.id);
 };
 
 const mapFeed = (feed) => ({
