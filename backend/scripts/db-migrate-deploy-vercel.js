@@ -71,7 +71,7 @@ const parseConnectionString = (connectionString) => {
 
     return config;
   } catch (error) {
-    throw new Error('Invalid direct database URL; unable to parse connection string');
+    throw new Error('Invalid direct database URL; unable to parse connection string', { cause: error });
   }
 };
 

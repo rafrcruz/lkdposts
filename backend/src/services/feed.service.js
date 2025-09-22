@@ -109,7 +109,7 @@ const analyzeUrlCandidate = (value) => {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return { ok: false, url: sanitized, reason: 'INVALID_URL' };
     }
-  } catch (error) {
+  } catch {
     return { ok: false, url: sanitized, reason: 'INVALID_URL' };
   }
 

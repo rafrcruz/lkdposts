@@ -174,40 +174,53 @@ const parsePublishedAt = (item) => {
   return null;
 };
 
+const extractLinkFromString = (value) => sanitizeIdentifier(value);
+
+const extractLinkFromArray = (links) => {
+  for (const entry of links) {
+    const link = extractLink(entry);
+    if (link) {
+      return link;
+    }
+  }
+
+  return null;
+};
+
+const extractLinkFromObject = (rawLink) => {
+  if (typeof rawLink.href === 'string') {
+    return sanitizeIdentifier(rawLink.href);
+  }
+
+  if (typeof rawLink['@_href'] === 'string') {
+    const rel = typeof rawLink['@_rel'] === 'string' ? rawLink['@_rel'].trim().toLowerCase() : null;
+    if (!rel || rel === 'alternate' || rel === 'self') {
+      return sanitizeIdentifier(rawLink['@_href']);
+    }
+  }
+
+  if (Object.hasOwn(rawLink, '#text')) {
+    return extractLink(rawLink['#text']);
+  }
+
+  return null;
+};
+
 const extractLink = (rawLink) => {
   if (rawLink == null) {
     return null;
   }
 
   if (typeof rawLink === 'string') {
-    return sanitizeIdentifier(rawLink);
+    return extractLinkFromString(rawLink);
   }
 
   if (Array.isArray(rawLink)) {
-    for (const entry of rawLink) {
-      const link = extractLink(entry);
-      if (link) {
-        return link;
-      }
-    }
-    return null;
+    return extractLinkFromArray(rawLink);
   }
 
   if (typeof rawLink === 'object') {
-    if (typeof rawLink.href === 'string') {
-      return sanitizeIdentifier(rawLink.href);
-    }
-
-    if (typeof rawLink['@_href'] === 'string') {
-      const rel = typeof rawLink['@_rel'] === 'string' ? rawLink['@_rel'].trim().toLowerCase() : null;
-      if (!rel || rel === 'alternate' || rel === 'self') {
-        return sanitizeIdentifier(rawLink['@_href']);
-      }
-    }
-
-    if (Object.hasOwn(rawLink, '#text')) {
-      return extractLink(rawLink['#text']);
-    }
+    return extractLinkFromObject(rawLink);
   }
 
   return null;
@@ -300,6 +313,16 @@ const parserOptions = {
 
 const parser = new XMLParser(parserOptions);
 
+const isAbortError = (error) => error instanceof Error && error.name === 'AbortError';
+
+const rethrowFetchError = (error) => {
+  if (isAbortError(error)) {
+    throw new Error('Feed request timed out', { cause: error });
+  }
+
+  throw error;
+};
+
 const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -311,7 +334,7 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
         accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1',
         'user-agent': 'lkdposts-bot/1.0',
       },
-    });
+    }).catch(rethrowFetchError);
 
     if (!response || typeof response.text !== 'function') {
       throw new Error('Invalid response from feed fetcher');
@@ -330,7 +353,7 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
     try {
       parsed = parser.parse(body);
     } catch (error) {
-      throw new Error('Failed to parse feed XML');
+      throw new Error('Failed to parse feed XML', { cause: error });
     }
 
     const rawItems = extractItemsFromParsedFeed(parsed);
@@ -353,11 +376,6 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
       items,
       invalidItems,
     };
-  } catch (error) {
-    if (error && error.name === 'AbortError') {
-      throw new Error('Feed request timed out');
-    }
-    throw error;
   } finally {
     clearTimeout(timer);
   }
