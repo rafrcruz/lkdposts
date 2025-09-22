@@ -10,7 +10,6 @@ import {
   type AuthSession,
 } from '../api/auth';
 import { ALLOWLIST_QUERY_KEY } from '@/features/allowlist/api/allowlist';
-import { HELLO_QUERY_KEY } from '@/features/hello/hooks/constants';
 import { onUnauthorized } from '@/lib/api/http';
 
 const GUEST_SESSION: AuthSession = { authenticated: false, user: null };
@@ -49,9 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const clearCaches = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: HELLO_QUERY_KEY }).catch(() => {
-      // ignore cache errors
-    });
     queryClient.invalidateQueries({ queryKey: ALLOWLIST_QUERY_KEY }).catch(() => {
       // ignore cache errors
     });

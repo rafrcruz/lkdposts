@@ -10,7 +10,6 @@ const resources = {
       navigation: {
         primary: 'Primary navigation',
         home: 'Home',
-        dashboard: 'Dashboard',
         posts: 'Posts',
         feeds: 'Feeds',
         allowlist: 'Allowlist',
@@ -34,30 +33,11 @@ const resources = {
         auth: {
           title: 'Authentication required',
           description: 'Use your authorised Google account to access the protected content.',
-          welcome: 'Active session for {{email}}',
+          checking: 'Checking your session...',
         },
-      },
-      hello: {
-        subtitle: 'This message is served by the backend API and cached with smart revalidation.',
-        errorTitle: 'Could not load the hello message',
-        errorDescription: 'Check your connection or try again in a few moments.',
-        emptyTitle: 'No greeting available right now',
-        emptyDescription: 'Once the backend responds with a message it will appear here automatically.',
-        authRequiredTitle: 'Authentication required',
-        authRequiredDescription: 'Sign in to view the backend hello message.',
       },
       actions: {
         tryAgain: 'Try again',
-        tryingAgain: 'Trying again...',
-        refresh: 'Refresh message',
-        refreshing: 'Refreshing...',
-      },
-      dashboard: {
-        meta: { title: 'lkdposts - Dashboard' },
-        empty: {
-          title: 'Dashboard coming soon',
-          description: 'This area is protected. Sign in to explore internal content.',
-        },
       },
       feeds: {
         meta: { title: 'lkdposts - Feeds' },
@@ -291,7 +271,6 @@ const resources = {
       navigation: {
         primary: 'Navegacao principal',
         home: 'Inicio',
-        dashboard: 'Painel',
         posts: 'Posts',
         feeds: 'Feeds',
         allowlist: 'Allowlist',
@@ -315,30 +294,11 @@ const resources = {
         auth: {
           title: 'Autenticacao necessaria',
           description: 'Use sua conta Google autorizada para acessar o conteudo protegido.',
-          welcome: 'Sessao ativa para {{email}}',
+          checking: 'Verificando sessao...',
         },
-      },
-      hello: {
-        subtitle: 'Esta mensagem vem da API e usa cache com revalidacao inteligente.',
-        errorTitle: 'Nao foi possivel carregar a mensagem',
-        errorDescription: 'Verifique sua conexao ou tente novamente em instantes.',
-        emptyTitle: 'Nenhuma saudacao disponivel no momento',
-        emptyDescription: 'Assim que o backend responder com uma mensagem ela aparecera aqui automaticamente.',
-        authRequiredTitle: 'Autenticacao necessaria',
-        authRequiredDescription: 'Entre para visualizar a mensagem do backend.',
       },
       actions: {
         tryAgain: 'Tentar novamente',
-        tryingAgain: 'Tentando...',
-        refresh: 'Atualizar mensagem',
-        refreshing: 'Atualizando...',
-      },
-      dashboard: {
-        meta: { title: 'lkdposts - Painel' },
-        empty: {
-          title: 'Painel em desenvolvimento',
-          description: 'Esta area e protegida. Entre para acessar conteudos internos.',
-        },
       },
       feeds: {
         meta: { title: 'lkdposts - Feeds' },

@@ -7,7 +7,6 @@ import { RequireAdmin } from '@/features/auth/components/RequireAdmin';
 import { RequireAuth } from '@/features/auth/components/RequireAuth';
 
 const HomePage = lazy(() => import('@/pages/home/HomePage'));
-const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'));
 const FeedsPage = lazy(() => import('@/pages/feeds/FeedsPage'));
 const PostsPage = lazy(() => import('@/pages/posts/PostsPage'));
 const AllowlistPage = lazy(() => import('@/pages/allowlist/AllowlistPage'));
@@ -23,14 +22,6 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: withSuspense(<HomePage />),
-      },
-      {
-        path: 'dashboard',
-        element: withSuspense(
-          <RequireAuth>
-            <DashboardPage />
-          </RequireAuth>
-        ),
       },
       {
         path: 'feeds',

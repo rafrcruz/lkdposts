@@ -21,7 +21,7 @@ export const RequireAdmin: React.FC<RequireAdminProps> = ({ children }) => {
   }
 
   if (!user || user.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/posts" replace />;
   }
 
   return children;
