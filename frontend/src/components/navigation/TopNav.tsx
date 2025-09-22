@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -69,9 +69,12 @@ export const TopNav = () => {
       </a>
       <div className="container-responsive flex h-16 items-center justify-between gap-4">
         <div className="flex items-center gap-6">
-          <span className="text-lg font-display font-semibold tracking-tight text-primary">
+          <Link
+            to={status === 'authenticated' ? '/posts' : '/'}
+            className="text-lg font-display font-semibold tracking-tight text-primary"
+          >
             LinkedIn Posts
-          </span>
+          </Link>
           <nav aria-label={t('navigation.primary')}>
             <ul className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
               {links.map((link) => (
