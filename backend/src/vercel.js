@@ -1,7 +1,7 @@
 const app = require('./app');
 const { ensureAppBootstrapped } = require('./startup');
 
-module.exports = async (req, res) => {
+const vercelHandler = async (req, res) => {
   try {
     await ensureAppBootstrapped();
     return app(req, res);
@@ -12,3 +12,5 @@ module.exports = async (req, res) => {
     res.end(JSON.stringify({ success: false, error: { message: 'Internal Server Error' } }));
   }
 };
+
+module.exports = vercelHandler;
