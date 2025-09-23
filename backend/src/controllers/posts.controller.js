@@ -1,6 +1,9 @@
 const asyncHandler = require('../utils/async-handler');
 const ApiError = require('../utils/api-error');
 const postsService = require('../services/posts.service');
+const config = require('../config');
+const { ROLES } = require('../constants/roles');
+const { hasBlockTags, buildPreview } = require('../utils/html-diagnostics');
 
 const getOwnerKey = (req) => {
   if (!req.user || req.user.id == null) {
@@ -24,28 +27,42 @@ const mapFeedSummary = (entry) => ({
   error: entry.error ? entry.error.message : null,
 });
 
-const mapPostListItem = (article) => ({
-  id: article.id,
-  title: article.title,
-  contentSnippet: article.contentSnippet,
-  publishedAt: article.publishedAt instanceof Date ? article.publishedAt.toISOString() : article.publishedAt,
-  feed: article.feed
-    ? {
-        id: article.feed.id,
-        title: article.feed.title ?? null,
-        url: article.feed.url ?? null,
-      }
-    : null,
-  post: article.post
-    ? {
-        content: article.post.content,
-        createdAt:
-          article.post.createdAt instanceof Date
-            ? article.post.createdAt.toISOString()
-            : article.post.createdAt ?? null,
-      }
-    : null,
-});
+const mapPostListItem = (article, { includeDiagnostics = false } = {}) => {
+  const noticia = article.articleHtml ?? null;
+  const response = {
+    id: article.id,
+    title: article.title,
+    contentSnippet: article.contentSnippet,
+    publishedAt: article.publishedAt instanceof Date ? article.publishedAt.toISOString() : article.publishedAt,
+    feed: article.feed
+      ? {
+          id: article.feed.id,
+          title: article.feed.title ?? null,
+          url: article.feed.url ?? null,
+        }
+      : null,
+    post: article.post
+      ? {
+          content: article.post.content,
+          createdAt:
+            article.post.createdAt instanceof Date
+              ? article.post.createdAt.toISOString()
+              : article.post.createdAt ?? null,
+        }
+      : null,
+    link: article.link ?? null,
+    articleHtml: noticia,
+    noticia,
+  };
+
+  if (includeDiagnostics) {
+    const preview = buildPreview(noticia);
+    response.noticiaPreviewLength = preview.length;
+    response.hasBlockTags = hasBlockTags(noticia);
+  }
+
+  return response;
+};
 
 const refresh = asyncHandler(async (req, res) => {
   const ownerKey = getOwnerKey(req);
@@ -72,9 +89,11 @@ const list = asyncHandler(async (req, res) => {
     const result = await postsService.listRecentArticles({ ownerKey, cursor, limit, feedId });
 
     res.withCache(15, 'private');
+    const includeDiagnostics = !config.isProduction || req.user?.role === ROLES.ADMIN;
+
     return res.success(
       {
-        items: result.items.map(mapPostListItem),
+        items: result.items.map((article) => mapPostListItem(article, { includeDiagnostics })),
       },
       {
         meta: {

@@ -4,6 +4,7 @@ const helloRoutes = require('./hello.routes');
 const feedRoutes = require('./feed.routes');
 const postsRoutes = require('./posts.routes');
 const allowlistRoutes = require('./allowlist.routes');
+const diagnosticsRoutes = require('./diagnostics.routes');
 const { requireAuth } = require('../../middlewares/authentication');
 const { requireRole, ROLES } = require('../../middlewares/authorization');
 
@@ -15,5 +16,6 @@ router.use(helloRoutes);
 router.use(feedRoutes);
 router.use(postsRoutes);
 router.use('/allowlist', requireRole(ROLES.ADMIN), allowlistRoutes);
+router.use('/diagnostics', requireRole(ROLES.ADMIN), diagnosticsRoutes);
 
 module.exports = router;

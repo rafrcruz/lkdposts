@@ -6,6 +6,7 @@ const { refreshUserFeeds } = require('../src/services/posts.service');
 const { prisma } = require('../src/lib/prisma');
 const config = require('../src/config');
 const rssMetrics = require('../src/services/rss-metrics');
+const ingestionDiagnostics = require('../src/services/ingestion-diagnostics');
 
 const loadFixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
 
@@ -39,6 +40,7 @@ describe('RSS ingestion end-to-end', () => {
   beforeEach(() => {
     prisma.__reset();
     rssMetrics.resetMetrics();
+    ingestionDiagnostics.reset();
     Object.assign(config.rss, {
       keepEmbeds: false,
       allowedIframeHosts: [],
@@ -66,6 +68,15 @@ describe('RSS ingestion end-to-end', () => {
     expect(article.articleHtml).toContain('https://static.404media.co/images/story-main.jpg');
     expect(article.articleHtml).not.toContain('<iframe');
 
+    const diagnostics = ingestionDiagnostics.getRecent({ feedId: feed.id });
+    expect(diagnostics).toHaveLength(1);
+    const diag = diagnostics[0];
+    expect(diag.chosenSource).toBe('contentEncoded');
+    expect(diag.articleHtmlLength).toBeGreaterThan(diag.rawDescriptionLength);
+    expect(diag.hasBlockTags).toBe(true);
+    expect(diag.looksEscapedHtml).toBe(false);
+    expect(diag.weakContent).toBe(false);
+
     expect(await getMetricValue('rss_image_source_total', { source: 'media:content' })).toBe(1);
   });
 
@@ -83,6 +94,14 @@ describe('RSS ingestion end-to-end', () => {
     expect(article.articleHtml).not.toMatch(/utm_/i);
     expect(article.articleHtml).toMatch(/custom=trackme/);
     expect(article.articleHtml).not.toContain('<iframe');
+    expect(article.articleHtml).toMatch(/rel="noopener noreferrer"/);
+
+    const [substackDiag] = ingestionDiagnostics.getRecent({ feedId: feed.id });
+    expect(substackDiag).toBeDefined();
+    expect(substackDiag.chosenSource).not.toBe('descriptionOrSummary');
+    expect(substackDiag.hasBlockTags).toBe(true);
+    expect(substackDiag.looksEscapedHtml).toBe(false);
+
     expect(await getMetricValue('rss_tracker_params_removed_total')).toBeGreaterThan(0);
   });
 
@@ -133,6 +152,11 @@ describe('RSS ingestion end-to-end', () => {
 
     const [article] = await prisma.article.findMany();
     expect(article.articleHtml).toContain('Just a short entry.');
+    const [minimalDiag] = ingestionDiagnostics.getRecent({ feedId: feed.id });
+    expect(minimalDiag).toBeDefined();
+    expect(minimalDiag.weakContent).toBe(true);
+    expect(minimalDiag.articleHtmlLength).toBeLessThan(600);
+    expect(minimalDiag.looksEscapedHtml).toBe(false);
     expect(await getMetricValue('rss_image_source_total', { source: 'none' })).toBe(1);
   });
 

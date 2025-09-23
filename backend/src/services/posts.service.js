@@ -11,6 +11,8 @@ const { assembleArticle } = require('../lib/article-assembler');
 const { createLogger } = require('./rss-logger');
 const rssMetrics = require('./rss-metrics');
 const config = require('../config');
+const ingestionDiagnostics = require('./ingestion-diagnostics');
+const { hasBlockTags, looksEscapedHtml, computeWeakContent, buildPreview } = require('../utils/html-diagnostics');
 
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const WINDOW_DAYS = 7;
@@ -537,13 +539,42 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
           feedUrl: url,
           reason: wrapped.message,
         });
+        const fallbackHtml = buildFallbackArticleHtml({ title: fallbackTitle, link: fallbackLink });
+        const fallbackWeakContent = computeWeakContent({ html: fallbackHtml });
+        const fallbackLooksEscaped = looksEscapedHtml(fallbackHtml);
+
+        if (!config.isProduction && !config.isTest) {
+          logger.info('RSS ingestion article diagnostics', {
+            feedUrl: url,
+            itemId: fallbackGuid ?? fallbackLink ?? fallbackTitle,
+            chosenSource: 'fallback',
+            articleHtmlLength: fallbackWeakContent.length,
+            hasBlockTags: fallbackWeakContent.containsBlocks,
+            looksEscapedHtml: fallbackLooksEscaped,
+            weakContent: fallbackWeakContent.weak,
+          });
+        }
+
+        rssMetrics.recordArticleHtmlBlockTags(fallbackWeakContent.containsBlocks);
+        rssMetrics.recordArticleHtmlEscaped(fallbackLooksEscaped);
+
         items.push({
           title: fallbackTitle,
           contentSnippet: mergedSnippet,
           publishedAt,
           guid: fallbackGuid,
           link: fallbackLink,
-          articleHtml: buildFallbackArticleHtml({ title: fallbackTitle, link: fallbackLink }),
+          articleHtml: fallbackHtml,
+          ingestionDiagnostics: {
+            chosenSource: 'fallback',
+            rawDescriptionLength: 0,
+            bodyHtmlRawLength: 0,
+            articleHtmlLength: fallbackWeakContent.length,
+            hasBlockTags: fallbackWeakContent.containsBlocks,
+            looksEscapedHtml: fallbackLooksEscaped,
+            weakContent: fallbackWeakContent.weak,
+            articleHtmlPreview: buildPreview(fallbackHtml),
+          },
         });
         rssMetrics.incrementItemsProcessed();
         continue;
@@ -564,8 +595,10 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
       let articleHtml = '';
       let usedFallback = false;
 
+      let selection;
+
       try {
-        const selection = selectBodyAndLead(normalized);
+        selection = selectBodyAndLead(normalized);
         selectionDiagnostics = selection.diagnostics ?? selectionDiagnostics;
         const assembly = assembleArticle(normalized, selection, assemblerOptions);
         assembleDiagnostics = assembly.diagnostics ?? assembleDiagnostics;
@@ -608,6 +641,43 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
         };
       }
 
+      const rawDescriptionSource = normalized?.rawHtmlCandidates?.descriptionOrSummary;
+      const rawDescriptionLength = typeof rawDescriptionSource === 'string' ? rawDescriptionSource.length : 0;
+      const bodyHtmlRawLength = typeof selection?.bodyHtmlRaw === 'string' ? selection.bodyHtmlRaw.length : 0;
+      const articleContentStats = computeWeakContent({ html: articleHtml });
+      const articleLooksEscaped = looksEscapedHtml(articleHtml);
+      const rawHtmlLength = typeof bodyHtmlRawLength === 'number' ? bodyHtmlRawLength : 0;
+      const rawShort = rawHtmlLength > 0 && rawHtmlLength < 300;
+      const finalShort = articleContentStats.length < 300;
+      const longFinalHtml = articleContentStats.length >= 600;
+      const weakContentFlag =
+        finalShort || !articleContentStats.containsBlocks || (rawShort && !longFinalHtml);
+      const ingestionInfo = {
+        chosenSource: selectionDiagnostics?.chosenSource ?? 'empty',
+        rawDescriptionLength,
+        bodyHtmlRawLength,
+        articleHtmlLength: articleContentStats.length,
+        hasBlockTags: articleContentStats.containsBlocks,
+        looksEscapedHtml: articleLooksEscaped,
+        weakContent: weakContentFlag,
+        articleHtmlPreview: buildPreview(articleHtml),
+      };
+
+      if (!config.isProduction && !config.isTest) {
+        logger.info('RSS ingestion article diagnostics', {
+          feedUrl: url,
+          itemId: guid ?? canonicalUrl ?? finalTitle,
+          chosenSource: ingestionInfo.chosenSource,
+          articleHtmlLength: ingestionInfo.articleHtmlLength,
+          hasBlockTags: ingestionInfo.hasBlockTags,
+          looksEscapedHtml: ingestionInfo.looksEscapedHtml,
+          weakContent: weakContentFlag,
+        });
+      }
+
+      rssMetrics.recordArticleHtmlBlockTags(ingestionInfo.hasBlockTags);
+      rssMetrics.recordArticleHtmlEscaped(ingestionInfo.looksEscapedHtml);
+
       rssMetrics.recordChosenSource(selectionDiagnostics?.chosenSource ?? 'empty');
       rssMetrics.recordLeadUsed(Boolean(selectionDiagnostics?.leadUsed));
       rssMetrics.recordImageSource(assembleDiagnostics?.imageSource ?? 'none');
@@ -638,6 +708,7 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
         guid,
         link: canonicalUrl,
         articleHtml,
+        ingestionDiagnostics: ingestionInfo,
       });
       rssMetrics.incrementItemsProcessed();
     }
@@ -774,30 +845,46 @@ const persistCandidates = async ({ feed, candidates }) => {
       const existingArticle = existingByKey.get(candidate.dedupeKey);
 
       if (!existingArticle) {
-      const article = await articleRepository.create({
-        feedId: feed.id,
-        title: candidate.title,
-        contentSnippet: candidate.contentSnippet,
-        articleHtml: candidate.articleHtml,
-        publishedAt: candidate.publishedAt,
-        guid: candidate.guid ?? null,
-        link: candidate.link ?? null,
-        dedupeKey: candidate.dedupeKey,
-      });
+        const article = await articleRepository.create({
+          feedId: feed.id,
+          title: candidate.title,
+          contentSnippet: candidate.contentSnippet,
+          articleHtml: candidate.articleHtml,
+          publishedAt: candidate.publishedAt,
+          guid: candidate.guid ?? null,
+          link: candidate.link ?? null,
+          dedupeKey: candidate.dedupeKey,
+        });
 
-      await postRepository.create({
-        articleId: article.id,
-        content: POST_PLACEHOLDER_CONTENT,
-      });
+        await postRepository.create({
+          articleId: article.id,
+          content: POST_PLACEHOLDER_CONTENT,
+        });
 
-      existingByKey.set(candidate.dedupeKey, {
-        id: article.id,
-        dedupeKey: candidate.dedupeKey,
-        articleHtml: candidate.articleHtml,
-      });
-      created += 1;
-      continue;
-    }
+        existingByKey.set(candidate.dedupeKey, {
+          id: article.id,
+          dedupeKey: candidate.dedupeKey,
+          articleHtml: candidate.articleHtml,
+        });
+        ingestionDiagnostics.record({
+          articleId: article.id,
+          feedId: feed.id,
+          feedTitle: feed.title ?? null,
+          itemTitle: candidate.title,
+          canonicalUrl: candidate.link ?? null,
+          publishedAt: candidate.publishedAt,
+          chosenSource: candidate.ingestionDiagnostics?.chosenSource ?? 'empty',
+          rawDescriptionLength: candidate.ingestionDiagnostics?.rawDescriptionLength ?? 0,
+          bodyHtmlRawLength: candidate.ingestionDiagnostics?.bodyHtmlRawLength ?? 0,
+          articleHtmlLength: candidate.ingestionDiagnostics?.articleHtmlLength ?? 0,
+          hasBlockTags: candidate.ingestionDiagnostics?.hasBlockTags ?? false,
+          looksEscapedHtml: candidate.ingestionDiagnostics?.looksEscapedHtml ?? false,
+          weakContent: candidate.ingestionDiagnostics?.weakContent ?? false,
+          articleHtmlPreview: candidate.ingestionDiagnostics?.articleHtmlPreview ?? '',
+        });
+        created += 1;
+        continue;
+      }
 
     if (!shouldUpdateArticleHtml(policy, existingArticle.articleHtml ?? '', candidate.articleHtml)) {
       duplicates += 1;
@@ -815,6 +902,22 @@ const persistCandidates = async ({ feed, candidates }) => {
       articleHtml: candidate.articleHtml,
     });
     existingArticle.articleHtml = candidate.articleHtml;
+    ingestionDiagnostics.record({
+      articleId: existingArticle.id,
+      feedId: feed.id,
+      feedTitle: feed.title ?? null,
+      itemTitle: candidate.title,
+      canonicalUrl: candidate.link ?? null,
+      publishedAt: candidate.publishedAt,
+      chosenSource: candidate.ingestionDiagnostics?.chosenSource ?? 'empty',
+      rawDescriptionLength: candidate.ingestionDiagnostics?.rawDescriptionLength ?? 0,
+      bodyHtmlRawLength: candidate.ingestionDiagnostics?.bodyHtmlRawLength ?? 0,
+      articleHtmlLength: candidate.ingestionDiagnostics?.articleHtmlLength ?? 0,
+      hasBlockTags: candidate.ingestionDiagnostics?.hasBlockTags ?? false,
+      looksEscapedHtml: candidate.ingestionDiagnostics?.looksEscapedHtml ?? false,
+      weakContent: candidate.ingestionDiagnostics?.weakContent ?? false,
+      articleHtmlPreview: candidate.ingestionDiagnostics?.articleHtmlPreview ?? '',
+    });
     logger.debug('Updated article HTML via reprocess policy', {
       feedId: feed.id,
       policy,
@@ -1007,6 +1110,8 @@ const listRecentArticles = async ({ ownerKey, cursor, limit, feedId, now = new D
       publishedAt: article.publishedAt,
       feed: article.feed,
       post: article.post ?? null,
+      articleHtml: article.articleHtml ?? null,
+      link: article.link ?? null,
     })),
     nextCursor,
     limit: safeLimit,
