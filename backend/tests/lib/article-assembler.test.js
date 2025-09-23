@@ -25,6 +25,11 @@ const parseFirstItem = (xml) => {
       ? parsed.rss.channel.item[0]
       : parsed.rss.channel.item;
   }
+  if (parsed['rdf:RDF']?.item) {
+    return Array.isArray(parsed['rdf:RDF'].item)
+      ? parsed['rdf:RDF'].item[0]
+      : parsed['rdf:RDF'].item;
+  }
   if (parsed.feed?.entry) {
     return Array.isArray(parsed.feed.entry) ? parsed.feed.entry[0] : parsed.feed.entry;
   }

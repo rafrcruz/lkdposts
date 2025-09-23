@@ -99,7 +99,20 @@ const parseNumberAttribute = (value) => {
   return Number.isNaN(numberValue) ? undefined : numberValue;
 };
 
+const URL_ATTRIBUTE_KEYS = ['@_href', '@_url', '@_rdf:resource', '@_resource', '@_src', 'href', 'url', 'src'];
+
 const decodeUrl = (value) => {
+  if (value && typeof value === 'object') {
+    for (const key of URL_ATTRIBUTE_KEYS) {
+      if (Object.hasOwn(value, key)) {
+        const decodedFromAttr = decodeUrl(value[key]);
+        if (decodedFromAttr) {
+          return decodedFromAttr;
+        }
+      }
+    }
+  }
+
   const raw = extractFirstText(value);
   if (typeof raw !== 'string') {
     return undefined;
@@ -118,34 +131,23 @@ const extractAtomLink = (links) => {
       continue;
     }
 
-    if (typeof entry === 'string') {
-      const url = decodeUrl(entry);
-      if (url && !fallback) {
-        fallback = url;
-      }
+    const href = decodeUrl(entry);
+    if (!href) {
       continue;
     }
 
+    let rel;
     if (typeof entry === 'object') {
       const relRaw = entry['@_rel'] ?? entry.rel;
-      const rel = typeof relRaw === 'string' ? relRaw.trim().toLowerCase() : undefined;
-      const href = decodeUrl(entry['@_href'] ?? entry.href ?? entry);
+      rel = typeof relRaw === 'string' ? relRaw.trim().toLowerCase() : undefined;
+    }
 
-      if (!href) {
-        continue;
-      }
+    if (rel === 'alternate') {
+      return href;
+    }
 
-      if (rel === 'alternate') {
-        return href;
-      }
-
-      if (!fallback && !rel) {
-        fallback = href;
-      }
-
-      if (!fallback && rel === 'self') {
-        fallback = href;
-      }
+    if (!fallback && (!rel || rel === 'self')) {
+      fallback = href;
     }
   }
 
@@ -159,7 +161,7 @@ const resolveCanonicalUrl = (item) => {
   }
 
   const link = item.link;
-  if (link && typeof link === 'object' && (link['@_href'] || Array.isArray(link))) {
+  if (link && typeof link === 'object') {
     const atomLink = extractAtomLink(link);
     if (atomLink) {
       return atomLink;
@@ -175,7 +177,15 @@ const resolveCanonicalUrl = (item) => {
 };
 
 const formatPublishedDate = (item) => {
-  const candidates = [item.pubDate, item.published, item.updated];
+  const candidates = [
+    item.pubDate,
+    item.published,
+    item.updated,
+    item['dc:date'],
+    item['dcterms:issued'],
+    item['dcterms:created'],
+    item['dcterms:modified'],
+  ];
 
   for (const candidate of candidates) {
     const text = extractFirstText(candidate);
@@ -240,10 +250,11 @@ const collectCategoryStrings = (value) => {
       result.push(value['@_scheme']);
     }
 
-    for (const key of TEXT_NODE_KEYS) {
-      if (Object.hasOwn(value, key)) {
-        result.push(...collectCategoryStrings(value[key]));
+    for (const [key, nested] of Object.entries(value)) {
+      if (key.startsWith('@_')) {
+        continue;
       }
+      result.push(...collectCategoryStrings(nested));
     }
   }
 
@@ -282,7 +293,9 @@ const parseMediaResource = (entry) => {
     return undefined;
   }
 
-  const url = decodeUrl(entry['@_url'] ?? entry.url);
+  const urlCandidate =
+    entry['@_url'] ?? entry.url ?? entry['@_rdf:resource'] ?? entry['@_resource'] ?? entry;
+  const url = decodeUrl(urlCandidate);
   if (!url) {
     return undefined;
   }
@@ -321,7 +334,9 @@ const selectEnclosureImage = (value) => {
     if (!type || !type.toLowerCase().startsWith('image/')) {
       continue;
     }
-    const url = decodeUrl(entry['@_url'] ?? entry.url);
+    const urlCandidate =
+      entry['@_url'] ?? entry.url ?? entry['@_rdf:resource'] ?? entry['@_resource'] ?? entry;
+    const url = decodeUrl(urlCandidate);
     if (!url) {
       continue;
     }
@@ -394,13 +409,21 @@ const extractGuid = (item) => {
     guidRaw && typeof guidRaw === 'object' ? guidRaw['@_isPermaLink'] ?? guidRaw.isPermaLink : undefined,
   );
 
-  if (!guid && isPermaLink === undefined) {
+  let identifier = guid;
+  if (!identifier) {
+    const rdfAbout = decodeAndTrim(item['@_rdf:about'] ?? item['@_about']);
+    if (rdfAbout) {
+      identifier = rdfAbout;
+    }
+  }
+
+  if (!identifier && isPermaLink === undefined) {
     return undefined;
   }
 
   const result = {};
-  if (guid) {
-    result.guid = guid;
+  if (identifier) {
+    result.guid = identifier;
   }
   if (isPermaLink !== undefined) {
     result.isPermaLink = isPermaLink;
@@ -410,6 +433,8 @@ const extractGuid = (item) => {
 
 /**
  * Normalizes a parsed feed entry (RSS 2.0, Atom 1.0 or RSS 1.0/RDF) into a standard shape.
+ * Handles common Dublin Core fields (dc:creator, dc:date, dc:subject, dcterms:*) and RDF attributes
+ * such as rdf:about/rdf:resource so RSS 1.0 feeds map to the same schema used for RSS 2.0/Atom.
  *
  * @param {object} rawItem - Item produced by the XML parser used by the feed fetcher.
  * @param {object} [options]
