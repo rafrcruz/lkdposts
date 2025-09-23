@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Minimal Feed</title>
+    <item>
+      <title>Quick Update</title>
+      <link>https://example.com/quick-update</link>
+      <pubDate>Fri, 07 Mar 2025 12:00:00 +0000</pubDate>
+      <description>Just a short note.</description>
+    </item>
+  </channel>
+</rss>

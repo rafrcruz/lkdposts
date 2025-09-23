@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Text Only Atom Feed</title>
+  <entry>
+    <title>Status Update</title>
+    <id>tag:example.com,2025-02-11:/status-update</id>
+    <updated>2025-02-11T08:00:00Z</updated>
+    <content type="text">Status update without HTML tags</content>
+    <summary type="text">Short status summary</summary>
+  </entry>
+</feed>
