@@ -234,6 +234,32 @@ const resources = {
           next: 'Next',
         },
       },
+      news: {
+        list: {
+          metaTitle: 'lkdposts - News',
+          heading: 'Latest highlights',
+          subtitle: 'Explore the most recent news processed from your feeds.',
+          empty: {
+            title: 'No posts found.',
+            description: 'Refresh your feeds to generate new content.',
+            cta: 'Refresh list',
+          },
+          error: {
+            title: 'We could not load your posts.',
+            description: 'Check your connection and try again.',
+            retry: 'Try again',
+          },
+        },
+        detail: {
+          metaTitle: 'lkdposts - News article',
+          back: 'Go back',
+          backToList: 'Back to post list',
+          original: 'Open original article',
+          publishedAt: 'Published on {{date}}',
+          missing: 'We could not find this news entry.',
+          invalid: 'Invalid article address.',
+        },
+      },
       allowlist: {
         heading: 'Allowlist management',
         subtitle: 'Manage which email addresses can access the application.',
@@ -498,6 +524,32 @@ const resources = {
           page: 'Pagina {{page}}',
           previous: 'Anterior',
           next: 'Proxima',
+        },
+      },
+      news: {
+        list: {
+          metaTitle: 'lkdposts - Notícias',
+          heading: 'Novidades geradas',
+          subtitle: 'Confira os destaques das notícias processadas recentemente.',
+          empty: {
+            title: 'Nenhum post encontrado.',
+            description: 'Atualize seus feeds para gerar novos posts.',
+            cta: 'Atualizar lista',
+          },
+          error: {
+            title: 'Não foi possível carregar os posts.',
+            description: 'Verifique sua conexão e tente novamente.',
+            retry: 'Tentar novamente',
+          },
+        },
+        detail: {
+          metaTitle: 'lkdposts - Notícia',
+          back: 'Voltar',
+          backToList: 'Voltar para a lista de posts',
+          original: 'Abrir notícia original',
+          publishedAt: 'Publicado em {{date}}',
+          missing: 'Não encontramos os detalhes desta notícia.',
+          invalid: 'Endereço inválido para a notícia.',
         },
       },
       allowlist: {

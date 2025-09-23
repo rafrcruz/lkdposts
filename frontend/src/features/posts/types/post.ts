@@ -15,14 +15,21 @@ export const postContentSchema = z
   })
   .nullable();
 
-export const postListItemSchema = z.object({
-  id: z.number().int().positive(),
-  title: z.string(),
-  contentSnippet: z.string(),
-  publishedAt: z.string(),
-  feed: postFeedReferenceSchema,
-  post: postContentSchema,
-});
+export const postListItemSchema = z
+  .object({
+    id: z.number().int().positive(),
+    title: z.string(),
+    contentSnippet: z.string(),
+    publishedAt: z.string(),
+    feed: postFeedReferenceSchema,
+    post: postContentSchema,
+  })
+  .extend({
+    link: z.string().nullable().optional(),
+    articleHtml: z.string().nullable().optional(),
+    noticia: z.string().nullable().optional(),
+    author: z.string().nullable().optional(),
+  });
 
 export type PostListItem = z.infer<typeof postListItemSchema>;
 
