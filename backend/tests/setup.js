@@ -114,6 +114,27 @@ jest.mock('../src/lib/prisma', () => {
     return date.valueOf() === toDate(condition).valueOf();
   };
 
+  const matchNullableDateField = (actual, expected) => {
+    if (expected === undefined) {
+      return true;
+    }
+
+    if (expected === null) {
+      return actual === null;
+    }
+
+    if (typeof expected === 'object' && expected !== null) {
+      if (Object.prototype.hasOwnProperty.call(expected, 'not')) {
+        const negated = expected.not;
+        return !matchNullableDateField(actual, negated);
+      }
+
+      return matchDateCondition(actual, expected);
+    }
+
+    return matchDateCondition(actual, expected);
+  };
+
   const matchFeedWhere = (feed, where = {}) => {
     if (where == null) {
       return true;
@@ -133,6 +154,29 @@ jest.mock('../src/lib/prisma', () => {
           return false;
         }
       } else if (typeof where.url === 'string' && feed.url !== where.url) {
+        return false;
+      }
+    }
+
+    if (!matchNullableDateField(feed.lastFetchedAt, where.lastFetchedAt)) {
+      return false;
+    }
+
+    if (Array.isArray(where.AND) && where.AND.length > 0) {
+      if (!where.AND.every((condition) => matchFeedWhere(feed, condition))) {
+        return false;
+      }
+    }
+
+    if (Array.isArray(where.OR) && where.OR.length > 0) {
+      if (!where.OR.some((condition) => matchFeedWhere(feed, condition))) {
+        return false;
+      }
+    }
+
+    if (where.NOT !== undefined) {
+      const conditions = Array.isArray(where.NOT) ? where.NOT : [where.NOT];
+      if (conditions.some((condition) => matchFeedWhere(feed, condition))) {
         return false;
       }
     }
@@ -437,6 +481,30 @@ jest.mock('../src/lib/prisma', () => {
 
         return clone(feeds[index]);
       },
+      updateMany: async ({ where = {}, data = {} } = {}) => {
+        const matching = filterFeeds(where);
+
+        if (matching.length === 0) {
+          return { count: 0 };
+        }
+
+        const ids = new Set(matching.map((feed) => feed.id));
+        const now = new Date();
+
+        for (let index = 0; index < feeds.length; index += 1) {
+          if (!ids.has(feeds[index].id)) {
+            continue;
+          }
+
+          feeds[index] = {
+            ...feeds[index],
+            ...data,
+            updatedAt: Object.prototype.hasOwnProperty.call(data, 'updatedAt') ? data.updatedAt : now,
+          };
+        }
+
+        return { count: matching.length };
+      },
       delete: async ({ where }) => {
         const index = feeds.findIndex((feed) => feed.id === where.id);
 
@@ -689,7 +757,7 @@ jest.mock('../src/lib/prisma', () => {
 
         return clone(article);
       },
-      deleteMany: async ({ where = {} }) => {
+      deleteMany: async ({ where = {} } = {}) => {
         const matching = filterArticles(where);
         const ids = new Set(matching.map((article) => article.id));
 
@@ -728,7 +796,7 @@ jest.mock('../src/lib/prisma', () => {
         return clone(record);
       },
       findMany: async ({ where = {} } = {}) => filterPosts(where).map(clone),
-      deleteMany: async ({ where = {} }) => {
+      deleteMany: async ({ where = {} } = {}) => {
         const matching = filterPosts(where);
         const ids = new Set(matching.map((post) => post.id));
 
@@ -743,6 +811,22 @@ jest.mock('../src/lib/prisma', () => {
     },
     helloMessage: {
       findFirst: async () => null,
+    },
+    $transaction: async (operations) => {
+      if (typeof operations === 'function') {
+        return operations(prisma);
+      }
+
+      if (Array.isArray(operations)) {
+        const results = [];
+        for (const operation of operations) {
+          // eslint-disable-next-line no-await-in-loop
+          results.push(await operation);
+        }
+        return results;
+      }
+
+      throw new Error('Unsupported transaction payload');
     },
     __reset: () => {
       feeds.splice(0, feeds.length);

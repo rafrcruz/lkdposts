@@ -7,6 +7,8 @@ import {
   type FeedBulkResult,
   type FeedList,
   type FeedListMeta,
+  feedResetSummarySchema,
+  type FeedResetSummary,
 } from '../types/feed';
 
 import { deleteJson, getJsonWithMeta, patchJson, postJson } from '@/lib/api/http';
@@ -67,4 +69,12 @@ export const updateFeed = (id: number, payload: { url?: string; title?: string |
 
 export const deleteFeed = (id: number) => {
   return deleteJson<{ message: string }>(`/api/v1/feeds/${id}`);
+};
+
+export const resetAllFeeds = () => {
+  return postJson<FeedResetSummary, Record<string, never>>(
+    '/api/v1/feeds/reset',
+    {},
+    feedResetSummarySchema,
+  );
 };

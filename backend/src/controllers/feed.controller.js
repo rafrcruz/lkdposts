@@ -91,10 +91,19 @@ const remove = asyncHandler(async (req, res) => {
   return res.success({ message: 'Feed removed' });
 });
 
+const reset = asyncHandler(async (req, res) => {
+  const adminId = req.user?.id != null ? String(req.user.id) : null;
+
+  const result = await feedService.resetAllFeeds({ requestedBy: adminId });
+
+  return res.success(result);
+});
+
 module.exports = {
   list,
   create,
   bulkCreate,
   update,
   remove,
+  reset,
 };

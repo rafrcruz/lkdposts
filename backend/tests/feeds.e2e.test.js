@@ -17,9 +17,10 @@ const ORIGIN = 'http://localhost:5173';
 const TOKENS = {
   user1: 'token-user-1',
   user2: 'token-user-2',
+  admin: 'token-admin',
 };
 
-const sessionForUser = (userId, email) => ({
+const sessionForUser = (userId, email, role = 'user') => ({
   session: {
     id: `session-${userId}`,
     userId,
@@ -27,7 +28,7 @@ const sessionForUser = (userId, email) => ({
     user: {
       id: userId,
       email,
-      role: 'user',
+      role,
     },
   },
   renewed: false,
@@ -46,6 +47,10 @@ describe('Feeds API', () => {
 
       if (token === TOKENS.user2) {
         return sessionForUser(2, 'user2@example.com');
+      }
+
+      if (token === TOKENS.admin) {
+        return sessionForUser(99, 'admin@example.com', 'admin');
       }
 
       return null;
@@ -267,6 +272,91 @@ describe('Feeds API', () => {
       await withAuth(TOKENS.user1, request(app).delete(`/api/v1/feeds/${foreignFeed.id}`))
         .expect('Content-Type', /json/)
         .expect(404);
+    });
+  });
+
+  describe('POST /api/v1/feeds/reset', () => {
+    it('returns 403 for non-admin users', async () => {
+      await withAuth(TOKENS.user1, request(app).post('/api/v1/feeds/reset'))
+        .expect('Content-Type', /json/)
+        .expect(403);
+    });
+
+    it('removes stored articles and posts and resets feed state for admins', async () => {
+      const feedA = await feedService.createFeed({ ownerKey: '1', url: 'https://reset.example.com/a', title: 'Feed A' });
+      const feedB = await feedService.createFeed({ ownerKey: '2', url: 'https://reset.example.com/b', title: 'Feed B' });
+
+      await prisma.feed.update({
+        where: { id: feedA.id },
+        data: { lastFetchedAt: new Date('2024-01-01T00:00:00.000Z') },
+      });
+      await prisma.feed.update({
+        where: { id: feedB.id },
+        data: { lastFetchedAt: new Date('2024-01-02T00:00:00.000Z') },
+      });
+
+      const article1 = await prisma.article.create({
+        data: {
+          feedId: feedA.id,
+          title: 'Article A1',
+          contentSnippet: 'Snippet A1',
+          articleHtml: '<p>A1</p>',
+          publishedAt: new Date('2024-01-03T10:00:00.000Z'),
+          guid: 'guid-a-1',
+          link: 'https://reset.example.com/a/1',
+          dedupeKey: 'dedupe-a-1',
+        },
+      });
+      const article2 = await prisma.article.create({
+        data: {
+          feedId: feedB.id,
+          title: 'Article B1',
+          contentSnippet: 'Snippet B1',
+          articleHtml: '<p>B1</p>',
+          publishedAt: new Date('2024-01-04T11:00:00.000Z'),
+          guid: 'guid-b-1',
+          link: 'https://reset.example.com/b/1',
+          dedupeKey: 'dedupe-b-1',
+        },
+      });
+
+      await prisma.post.create({ data: { articleId: article1.id, content: 'Post A1' } });
+      await prisma.post.create({ data: { articleId: article2.id, content: 'Post B1' } });
+
+      const response = await withAuth(TOKENS.admin, request(app).post('/api/v1/feeds/reset'))
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data).toEqual(
+        expect.objectContaining({
+          feedsResetCount: 2,
+          articlesDeletedCount: 2,
+          postsDeletedCount: 2,
+        })
+      );
+      expect(typeof response.body.data.durationMs).toBe('number');
+      expect(response.body.data.durationMs).toBeGreaterThanOrEqual(0);
+
+      const remainingArticles = await prisma.article.findMany();
+      const remainingPosts = await prisma.post.findMany();
+      expect(remainingArticles).toHaveLength(0);
+      expect(remainingPosts).toHaveLength(0);
+
+      const feedsAfterReset = await prisma.feed.findMany();
+      expect(feedsAfterReset).toHaveLength(2);
+      expect(feedsAfterReset.every((feed) => feed.lastFetchedAt === null)).toBe(true);
+
+      const secondResponse = await withAuth(TOKENS.admin, request(app).post('/api/v1/feeds/reset'))
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(secondResponse.body.data).toEqual(
+        expect.objectContaining({
+          feedsResetCount: 0,
+          articlesDeletedCount: 0,
+          postsDeletedCount: 0,
+        })
+      );
     });
   });
 });

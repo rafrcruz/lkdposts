@@ -12,11 +12,14 @@ import {
   useCreateFeed,
   useDeleteFeed,
   useFeedList,
+  useResetFeeds,
   useUpdateFeed,
 } from '@/features/feeds/hooks/useFeeds';
-import type { Feed } from '@/features/feeds/types/feed';
+import type { Feed, FeedResetSummary } from '@/features/feeds/types/feed';
 import type { FeedListResponse } from '@/features/feeds/api/feeds';
 import { HttpError } from '@/lib/api/http';
+import { useAuth } from '@/features/auth/hooks/useAuth';
+import type { AuthContextValue } from '@/features/auth/context/AuthContext';
 
 type FeedsHooksModule = typeof import('@/features/feeds/hooks/useFeeds');
 
@@ -37,17 +40,27 @@ vi.mock('@/features/feeds/hooks/useFeeds', () => ({
     Parameters<FeedsHooksModule['useUpdateFeed']>,
     ReturnType<FeedsHooksModule['useUpdateFeed']>
   >(),
+  useResetFeeds: vi.fn<
+    Parameters<FeedsHooksModule['useResetFeeds']>,
+    ReturnType<FeedsHooksModule['useResetFeeds']>
+  >(),
   useDeleteFeed: vi.fn<
     Parameters<FeedsHooksModule['useDeleteFeed']>,
     ReturnType<FeedsHooksModule['useDeleteFeed']>
   >(),
 }));
 
+vi.mock('@/features/auth/hooks/useAuth', () => ({
+  useAuth: vi.fn(),
+}));
+
 const mockedUseFeedList = vi.mocked(useFeedList);
 const mockedUseCreateFeed = vi.mocked(useCreateFeed);
 const mockedUseBulkCreateFeeds = vi.mocked(useBulkCreateFeeds);
 const mockedUseUpdateFeed = vi.mocked(useUpdateFeed);
+const mockedUseResetFeeds = vi.mocked(useResetFeeds);
 const mockedUseDeleteFeed = vi.mocked(useDeleteFeed);
+const mockedUseAuth = vi.mocked(useAuth);
 
 type CreateVariables = { url: string; title?: string | null };
 type CreateOptions = Parameters<UseMutationResult<Feed, HttpError, CreateVariables>['mutate']>[1];
@@ -56,6 +69,7 @@ type BulkOptions = Parameters<UseMutationResult<unknown, HttpError, BulkVariable
 type UpdateVariables = { id: number; url?: string; title?: string | null };
 type UpdateOptions = Parameters<UseMutationResult<Feed, HttpError, UpdateVariables>['mutate']>[1];
 type DeleteOptions = Parameters<UseMutationResult<{ message: string }, HttpError, number>['mutate']>[1];
+type ResetOptions = Parameters<UseMutationResult<FeedResetSummary, HttpError, void>['mutate']>[1];
 
 const buildFeed = (override: Partial<Feed> = {}): Feed => {
   const hasTitleOverride = Object.hasOwn(override, 'title');
@@ -147,6 +161,21 @@ const createMutationResult = <TData, TVariables>(
   return { ...base, ...overrides, mutate };
 };
 
+const buildAuthContext = (override: Partial<AuthContextValue> = {}): AuthContextValue => {
+  const defaultUser = { email: 'user@example.com', role: 'user' as const, expiresAt: '2024-01-01T00:00:00.000Z' };
+
+  return {
+    status: override.status ?? 'authenticated',
+    user: Object.hasOwn(override, 'user') ? override.user ?? null : defaultUser,
+    isAuthenticating: override.isAuthenticating ?? false,
+    authError: override.authError ?? null,
+    loginWithGoogle: override.loginWithGoogle ?? vi.fn(),
+    logout: override.logout ?? vi.fn(),
+    clearAuthError: override.clearAuthError ?? vi.fn(),
+    refreshSession: override.refreshSession ?? vi.fn(),
+  };
+};
+
 const renderPage = () =>
   render(
     <I18nextProvider i18n={i18n}>
@@ -158,6 +187,11 @@ let createMutate: Mock<(variables: CreateVariables, options?: CreateOptions) => 
 let bulkMutate: Mock<(variables: BulkVariables, options?: BulkOptions) => void>;
 let updateMutate: Mock<(variables: UpdateVariables, options?: UpdateOptions) => void>;
 let deleteMutate: Mock<(variables: number, options?: DeleteOptions) => void>;
+let resetMutate: Mock<(variables: void, options?: ResetOptions) => void>;
+let resetMutateAsync: Mock<
+  Parameters<UseMutateAsyncFunction<FeedResetSummary, HttpError, void, unknown>>,
+  ReturnType<UseMutateAsyncFunction<FeedResetSummary, HttpError, void, unknown>>
+>;
 let confirmSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
@@ -174,6 +208,11 @@ beforeEach(() => {
   bulkMutate = vi.fn<(variables: BulkVariables, options?: BulkOptions) => void>();
   updateMutate = vi.fn<(variables: UpdateVariables, options?: UpdateOptions) => void>();
   deleteMutate = vi.fn<(variables: number, options?: DeleteOptions) => void>();
+  resetMutate = vi.fn<(variables: void, options?: ResetOptions) => void>();
+  resetMutateAsync = vi.fn<
+    Parameters<UseMutateAsyncFunction<FeedResetSummary, HttpError, void, unknown>>,
+    ReturnType<UseMutateAsyncFunction<FeedResetSummary, HttpError, void, unknown>>
+  >();
 
   mockedUseCreateFeed.mockReturnValue(
     createMutationResult<Feed, CreateVariables>(createMutate, { isPending: false }),
@@ -190,6 +229,15 @@ beforeEach(() => {
   mockedUseDeleteFeed.mockReturnValue(
     createMutationResult<{ message: string }, number>(deleteMutate, { isPending: false }),
   );
+
+  mockedUseResetFeeds.mockReturnValue(
+    createMutationResult<FeedResetSummary, void>(resetMutate, {
+      isPending: false,
+      mutateAsync: resetMutateAsync,
+    }),
+  );
+
+  mockedUseAuth.mockReturnValue(buildAuthContext());
 
   const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
   if (!browserWindow) {
@@ -418,6 +466,73 @@ describe('FeedsPage', () => {
 
     expect(deleteMutate).toHaveBeenCalledWith(1, expect.any(Object));
     expect(screen.getByText('Feed removido com sucesso.')).toBeInTheDocument();
+  });
+
+  it('does not render the reset button for non-admin users', () => {
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({ user: { email: 'user@example.com', role: 'user', expiresAt: '2024-01-01T00:00:00.000Z' } }),
+    );
+
+    renderPage();
+
+    expect(screen.queryByRole('button', { name: /Resetar feeds/i })).not.toBeInTheDocument();
+  });
+
+  it('allows admins to trigger feed reset and shows success feedback', async () => {
+    const user = userEvent.setup();
+    const summary: FeedResetSummary = {
+      feedsResetCount: 3,
+      articlesDeletedCount: 4,
+      postsDeletedCount: 5,
+      durationMs: 42,
+    };
+
+    resetMutateAsync.mockResolvedValue(summary);
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({ user: { email: 'admin@example.com', role: 'admin', expiresAt: '2024-01-01T00:00:00.000Z' } }),
+    );
+
+    renderPage();
+
+    const button = screen.getByRole('button', { name: /Resetar feeds \(admin\)/i });
+    await user.click(button);
+
+    expect(resetMutateAsync).toHaveBeenCalled();
+
+    const successMessage = i18n.t(
+      'feeds.reset.success',
+      'Reset concluído. Feeds reiniciados: {{feeds}} · Notícias removidas: {{articles}} · Posts removidos: {{posts}}.',
+      {
+        feeds: summary.feedsResetCount,
+        articles: summary.articlesDeletedCount,
+        posts: summary.postsDeletedCount,
+      },
+    );
+
+    expect(await screen.findByText(successMessage)).toBeInTheDocument();
+  });
+
+  it('shows an error message when the reset operation fails', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({ user: { email: 'admin@example.com', role: 'admin', expiresAt: '2024-01-01T00:00:00.000Z' } }),
+    );
+
+    resetMutateAsync.mockRejectedValue(new HttpError('failure', 500));
+
+    renderPage();
+
+    const button = screen.getByRole('button', { name: /Resetar feeds \(admin\)/i });
+    await user.click(button);
+
+    expect(resetMutateAsync).toHaveBeenCalled();
+
+    const errorMessage = i18n.t(
+      'feeds.reset.error',
+      'Não foi possível concluir o reset. Tente novamente ou contate o administrador.',
+    );
+
+    expect(await screen.findByText(errorMessage)).toBeInTheDocument();
   });
 });
 

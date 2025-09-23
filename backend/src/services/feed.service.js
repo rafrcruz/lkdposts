@@ -1,5 +1,6 @@
 const ApiError = require('../utils/api-error');
 const feedRepository = require('../repositories/feed.repository');
+const { prisma } = require('../lib/prisma');
 const { FEED_MAX_PAGE_SIZE, FEED_MAX_BULK_URLS } = require('../constants/feed');
 
 const sanitizeString = (value) => {
@@ -219,12 +220,51 @@ const deleteFeed = async ({ ownerKey, feedId }) => {
   await feedRepository.deleteById(feedId);
 };
 
+const resetAllFeeds = async ({ requestedBy }) => {
+  const startedAt = Date.now();
+
+  const { postsDeletedCount, articlesDeletedCount, feedsResetCount } = await prisma.$transaction(
+    async (tx) => {
+      const postsResult = await tx.post.deleteMany();
+      const articlesResult = await tx.article.deleteMany();
+      const { count: updatedFeeds } = await tx.feed.updateMany({
+        where: { lastFetchedAt: { not: null } },
+        data: { lastFetchedAt: null, updatedAt: new Date() },
+      });
+
+      return {
+        postsDeletedCount: postsResult.count,
+        articlesDeletedCount: articlesResult.count,
+        feedsResetCount: updatedFeeds,
+      };
+    }
+  );
+
+  const durationMs = Date.now() - startedAt;
+
+  console.info('Admin reset feeds executed', {
+    adminUserId: requestedBy ?? null,
+    feedsResetCount,
+    articlesDeletedCount,
+    postsDeletedCount,
+    durationMs,
+  });
+
+  return {
+    feedsResetCount,
+    articlesDeletedCount,
+    postsDeletedCount,
+    durationMs,
+  };
+};
+
 module.exports = {
   listFeeds,
   createFeed,
   createFeedsInBulk,
   updateFeed,
   deleteFeed,
+  resetAllFeeds,
   constants: {
     MAX_PAGE_SIZE: FEED_MAX_PAGE_SIZE,
     MAX_BULK_FEED_URLS: FEED_MAX_BULK_URLS,
