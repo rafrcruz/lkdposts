@@ -39,6 +39,7 @@
         "express-rate-limit": "^8.1.0",
         "fast-xml-parser": "^4.5.1",
         "google-auth-library": "^9.15.1",
+        "he": "^1.2.0",
         "helmet": "^8.1.0",
         "hpp": "^0.2.3",
         "morgan": "^1.10.1",

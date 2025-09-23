@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Atom Feed</title>
+  <entry>
+    <title>Orbital Mechanics Explained</title>
+    <id>tag:example.com,2025-02-10:/orbital-mechanics-explained</id>
+    <updated>2025-02-10T08:00:00Z</updated>
+    <published>2025-02-09T23:00:00Z</published>
+    <link rel="alternate" type="text/html" href="https://example.com/orbital-mechanics-explained" />
+    <link rel="self" href="https://example.com/atom.xml" />
+    <summary type="html">&lt;p&gt;Learn about orbits.&lt;/p&gt;</summary>
+    <content type="html">
+      &lt;p&gt;Full article body&lt;/p&gt;
+      &lt;p&gt;&lt;img src="https://example.com/images/orbit.png" alt="orbit" /&gt;&lt;/p&gt;
+    </content>
+    <author>
+      <name>Alex Johnson</name>
+    </author>
+    <category term="Science" label="Science" />
+  </entry>
+</feed>
