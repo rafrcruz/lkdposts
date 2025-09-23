@@ -10,7 +10,7 @@ module.exports = {
   },
   rules: {
     semi: ['error', 'always'],
-    'no-console': ['error', { allow: ['warn', 'error', 'info', 'log'] }],
+    'no-console': ['error', { allow: ['warn', 'error', 'info', 'log', 'debug'] }],
   },
   ignorePatterns: ['node_modules', 'docs/openapi.json'],
 };
