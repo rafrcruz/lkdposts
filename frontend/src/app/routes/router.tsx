@@ -11,6 +11,8 @@ const FeedsPage = lazy(() => import('@/pages/feeds/FeedsPage'));
 const PostsPage = lazy(() => import('@/pages/posts/PostsPage'));
 const AllowlistPage = lazy(() => import('@/pages/allowlist/AllowlistPage'));
 const NotFoundPage = lazy(() => import('@/pages/not-found/NotFoundPage'));
+const NewsListPage = lazy(() => import('@/pages/news/NewsListPage'));
+const NewsDetailPage = lazy(() => import('@/pages/news/NewsDetailPage'));
 
 const withSuspense = (node: ReactNode) => <Suspense fallback={<LoadingSplash />}>{node}</Suspense>;
 
@@ -36,6 +38,22 @@ export const router = createBrowserRouter([
         element: withSuspense(
           <RequireAuth>
             <PostsPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'news',
+        element: withSuspense(
+          <RequireAuth>
+            <NewsListPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'news/:postId',
+        element: withSuspense(
+          <RequireAuth>
+            <NewsDetailPage />
           </RequireAuth>
         ),
       },
