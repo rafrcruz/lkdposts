@@ -9,6 +9,7 @@ const {
 const { prisma } = require('../src/lib/prisma');
 const rssMetrics = require('../src/services/rss-metrics');
 const config = require('../src/config');
+const ingestionDiagnostics = require('../src/services/ingestion-diagnostics');
 
 const toRssDate = (date) => new Date(date).toUTCString();
 
@@ -103,6 +104,7 @@ describe('posts.service', () => {
   beforeEach(() => {
     prisma.__reset();
     rssMetrics.resetMetrics();
+    ingestionDiagnostics.reset();
     Object.assign(config.rss, {
       keepEmbeds: false,
       allowedIframeHosts: [],

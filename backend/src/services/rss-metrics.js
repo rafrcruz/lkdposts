@@ -55,6 +55,16 @@ const trackerParamsRemoved = new client.Counter({
   help: 'Total number of tracker parameters removed from links.',
 });
 
+const articleHtmlWithBlockTags = new client.Counter({
+  name: 'article_html_with_blocktags_total',
+  help: 'Number of ingested articles whose final HTML contains block-level tags.',
+});
+
+const articleHtmlEscaped = new client.Counter({
+  name: 'article_html_escaped_total',
+  help: 'Number of ingested articles whose final HTML looks HTML-escaped.',
+});
+
 const itemDurationMs = new client.Histogram({
   name: 'rss_item_duration_ms',
   help: 'Processing duration per RSS item in milliseconds.',
@@ -112,6 +122,18 @@ const addTrackerParamsRemoved = (count) => {
   }
 };
 
+const recordArticleHtmlBlockTags = (hasBlockTags) => {
+  if (hasBlockTags) {
+    articleHtmlWithBlockTags.inc();
+  }
+};
+
+const recordArticleHtmlEscaped = (looksEscaped) => {
+  if (looksEscaped) {
+    articleHtmlEscaped.inc();
+  }
+};
+
 const observeItemDuration = (durationMs) => {
   if (typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0) {
     itemDurationMs.observe(durationMs);
@@ -129,6 +151,8 @@ const resetMetrics = () => {
   truncatedHtml.reset();
   removedEmbedsCount.reset();
   trackerParamsRemoved.reset();
+  articleHtmlWithBlockTags.reset();
+  articleHtmlEscaped.reset();
   itemDurationMs.reset();
 };
 
@@ -143,6 +167,8 @@ module.exports = {
   recordTruncated,
   addRemovedEmbeds,
   addTrackerParamsRemoved,
+  recordArticleHtmlBlockTags,
+  recordArticleHtmlEscaped,
   observeItemDuration,
   resetMetrics,
 };

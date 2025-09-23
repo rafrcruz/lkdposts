@@ -12,11 +12,13 @@ const app = require('../src/app');
 const authService = require('../src/services/auth.service');
 const { prisma } = require('../src/lib/prisma');
 const postsService = require('../src/services/posts.service');
+const ingestionDiagnostics = require('../src/services/ingestion-diagnostics');
 
 const ORIGIN = 'http://localhost:5173';
 const TOKENS = {
   user1: 'token-user-1',
   user2: 'token-user-2',
+  admin: 'token-admin',
 };
 
 const sessionForUser = (userId, email) => ({
@@ -28,6 +30,20 @@ const sessionForUser = (userId, email) => ({
       id: userId,
       email,
       role: 'user',
+    },
+  },
+  renewed: false,
+});
+
+const sessionForAdmin = (userId, email) => ({
+  session: {
+    id: `session-admin-${userId}`,
+    userId,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    user: {
+      id: userId,
+      email,
+      role: 'admin',
     },
   },
   renewed: false,
@@ -75,10 +91,15 @@ describe('Posts API', () => {
         return sessionForUser(2, 'user2@example.com');
       }
 
+      if (token === TOKENS.admin) {
+        return sessionForAdmin(99, 'admin@example.com');
+      }
+
       return null;
     });
 
     originalFetch = globalThis.fetch;
+    ingestionDiagnostics.reset();
   });
 
   afterEach(() => {
@@ -263,6 +284,45 @@ describe('Posts API', () => {
       expect(secondPage.body.meta.nextCursor).toBeNull();
     });
 
+    it('returns stored article HTML as noticia with diagnostics in non-production environments', async () => {
+      const feed = await prisma.feed.create({
+        data: {
+          ownerKey: '1',
+          url: 'https://example.com/manual.xml',
+          title: 'Manual Feed',
+        },
+      });
+
+      const articleHtml = '<p><strong>Breaking</strong> news content.</p>';
+      const publishedAt = new Date();
+      const article = await prisma.article.create({
+        data: {
+          feedId: feed.id,
+          title: 'Breaking news',
+          contentSnippet: 'Breaking news content.',
+          articleHtml,
+          publishedAt,
+          guid: 'manual-guid',
+          link: 'https://example.com/posts/breaking',
+          dedupeKey: 'guid:manual-guid',
+        },
+      });
+      await prisma.post.create({ data: { articleId: article.id, content: 'post content' } });
+
+      const response = await withAuth(TOKENS.user1, request(app).get('/api/v1/posts'))
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data.items).toHaveLength(1);
+      const [item] = response.body.data.items;
+      expect(item.noticia).toBe(articleHtml);
+      expect(item.articleHtml).toBe(articleHtml);
+      expect(item.noticia).not.toMatch(/&lt;p&gt;/);
+      expect(item.link).toBe('https://example.com/posts/breaking');
+      expect(item.noticiaPreviewLength).toBe(articleHtml.length);
+      expect(item.hasBlockTags).toBe(true);
+    });
+
     it('caps the requested limit to the maximum allowed page size', async () => {
       const now = new Date();
       const feed = await prisma.feed.create({
@@ -297,6 +357,64 @@ describe('Posts API', () => {
 
       expect(response.body.data.items).toHaveLength(postsService.constants.MAX_PAGE_SIZE);
       expect(response.body.meta.limit).toBe(postsService.constants.MAX_PAGE_SIZE);
+    });
+  });
+
+  describe('GET /api/v1/diagnostics/ingestion', () => {
+    it('rejects non-admin users', async () => {
+      await withAuth(TOKENS.user1, request(app).get('/api/v1/diagnostics/ingestion'))
+        .expect('Content-Type', /json/)
+        .expect(403);
+    });
+
+    it('returns recent ingestion diagnostics for admins', async () => {
+      const feed = await prisma.feed.create({
+        data: {
+          ownerKey: '1',
+          url: 'https://example.com/diagnostics.xml',
+          title: 'Diagnostics Feed',
+        },
+      });
+
+      const longBody = `<p>${'Diagnostics paragraph '.repeat(25)}</p>`;
+      const rss = `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+          <channel>
+            <title>Diagnostics Feed</title>
+            <item>
+              <title>Diagnostics Story</title>
+              <link>https://source.example.com/story</link>
+              <description><![CDATA[Plain summary]]></description>
+              <content:encoded><![CDATA[${longBody}]]></content:encoded>
+              <pubDate>Mon, 10 Mar 2025 09:00:00 +0000</pubDate>
+              <guid>diagnostics-guid</guid>
+            </item>
+          </channel>
+        </rss>`;
+
+      globalThis.fetch = createFetchMock(rss);
+      await postsService.refreshUserFeeds({ ownerKey: '1', now: new Date('2025-03-10T10:00:00Z'), fetcher: globalThis.fetch });
+
+      const response = await withAuth(
+        TOKENS.admin,
+        request(app).get('/api/v1/diagnostics/ingestion').query({ feedId: feed.id, limit: 5 })
+      )
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data.items).toHaveLength(1);
+      const [entry] = response.body.data.items;
+      expect(entry.itemId).toBeGreaterThan(0);
+      expect(entry.feedId).toBe(feed.id);
+      expect(entry.feedTitle).toBe('Diagnostics Feed');
+      expect(entry.itemTitle).toBe('Diagnostics Story');
+      expect(entry.canonicalUrl).toBe('https://source.example.com/story');
+      expect(entry.articleHtmlLength).toBeGreaterThan(entry.rawDescriptionLength);
+      expect(entry.hasBlockTags).toBe(true);
+      expect(entry.looksEscapedHtml).toBe(false);
+      expect(entry.articleHtmlPreview.length).toBeLessThanOrEqual(300);
+      expect(entry.weakContent).toBe(false);
+      expect(entry.chosenSource).toBe('contentEncoded');
     });
   });
 });
