@@ -80,6 +80,24 @@ const envSchema = z.object({
   SENTRY_PROFILES_SAMPLE_RATE: z
     .preprocess((value) => toFloat(value, 0), z.number().min(0).max(1))
     .default(0),
+  RSS_KEEP_EMBEDS: z.preprocess((value) => toBoolean(value, false), z.boolean()),
+  RSS_ALLOWED_IFRAME_HOSTS: z.preprocess((value) => toList(value, []), z.array(z.string())),
+  RSS_INJECT_TOP_IMAGE: z.preprocess((value) => toBoolean(value, true), z.boolean()),
+  RSS_EXCERPT_MAX_CHARS: z.preprocess((value) => toNumber(value, 220), z.number().int().positive()),
+  RSS_MAX_HTML_KB: z.preprocess((value) => toNumber(value, 150), z.number().int().positive()),
+  RSS_STRIP_KNOWN_BOILERPLATES: z.preprocess((value) => toBoolean(value, true), z.boolean()),
+  RSS_REPROCESS_POLICY: z
+    .enum(['never', 'if-empty', 'if-empty-or-changed', 'always'])
+    .default('if-empty-or-changed'),
+  RSS_LOG_LEVEL: z
+    .preprocess((value) => (typeof value === 'string' ? value.trim().toLowerCase() : value ?? 'info'), z.string())
+    .transform((value) => (value ? value : 'info')),
+  RSS_TRACKER_PARAMS_REMOVE_LIST: z
+    .preprocess((value) => {
+      const list = toList(value, []);
+      return list.length === 0 ? null : list;
+    }, z.array(z.string()).nullable())
+    .default(null),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

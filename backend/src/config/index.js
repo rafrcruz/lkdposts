@@ -49,6 +49,17 @@ const config = {
     metricsEnabled: env.ENABLE_METRICS,
     swaggerEnabled: env.SWAGGER_UI_ENABLED,
   },
+  rss: {
+    keepEmbeds: env.RSS_KEEP_EMBEDS,
+    allowedIframeHosts: env.RSS_ALLOWED_IFRAME_HOSTS,
+    injectTopImage: env.RSS_INJECT_TOP_IMAGE,
+    excerptMaxChars: env.RSS_EXCERPT_MAX_CHARS,
+    maxHtmlKB: env.RSS_MAX_HTML_KB,
+    stripKnownBoilerplates: env.RSS_STRIP_KNOWN_BOILERPLATES,
+    reprocessPolicy: env.RSS_REPROCESS_POLICY,
+    logLevel: env.RSS_LOG_LEVEL || 'info',
+    trackerParamsRemoveList: env.RSS_TRACKER_PARAMS_REMOVE_LIST,
+  },
   auth: {
     google: {
       clientId: env.GOOGLE_CLIENT_ID,

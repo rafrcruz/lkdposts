@@ -209,7 +209,7 @@ jest.mock('../src/lib/prisma', () => {
       return false;
     }
 
-    if (where.dedupeKey !== undefined && article.dedupeKey !== where.dedupeKey) {
+    if (!matchesScalar(article.dedupeKey, where.dedupeKey)) {
       return false;
     }
 
@@ -658,6 +658,7 @@ jest.mock('../src/lib/prisma', () => {
           feedId: data.feedId,
           title: data.title,
           contentSnippet: data.contentSnippet,
+          articleHtml: data.articleHtml ?? null,
           publishedAt: new Date(data.publishedAt),
           guid: data.guid ?? null,
           link: data.link ?? null,
@@ -669,6 +670,24 @@ jest.mock('../src/lib/prisma', () => {
         articles.push(record);
 
         return clone(record);
+      },
+      update: async ({ where, data }) => {
+        if (!where || where.id == null) {
+          throw new Error('Mock article.update requires an id in where clause');
+        }
+
+        const article = articles.find((entry) => entry.id === where.id);
+        if (!article) {
+          throw new Error('Record not found');
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data, 'articleHtml')) {
+          article.articleHtml = data.articleHtml ?? null;
+        }
+
+        article.updatedAt = new Date();
+
+        return clone(article);
       },
       deleteMany: async ({ where = {} }) => {
         const matching = filterArticles(where);

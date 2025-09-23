@@ -60,6 +60,7 @@ model Article {
   feed           Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
   title          String    @db.Text
   contentSnippet String    @db.Text
+  articleHtml    String?   @db.Text
   publishedAt    DateTime
   guid           String?   @db.Text
   link           String?   @db.Text

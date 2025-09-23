@@ -13,7 +13,9 @@
       <description><![CDATA[Short intro &amp; highlights.]]></description>
       <content:encoded><![CDATA[
         <p>Hello readers!</p>
-        <p>Here is some content.</p>
+        <div class="outpost-promo">Share this on Substack</div>
+        <p>Here is some content with <a href="https://example.com/story?utm_source=rss&utm_medium=email&ref=newsletter&custom=trackme">links</a>.</p>
+        <p><iframe src="https://open.spotify.com/embed/episode/12345" width="400" height="200"></iframe></p>
       ]]></content:encoded>
       <enclosure url="https://substackcdn.com/image.jpg" length="0" type="image/jpeg" />
     </item>

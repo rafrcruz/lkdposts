@@ -96,7 +96,7 @@ describe('selectBodyAndLead', () => {
 
     const result = selectBodyAndLead(normalized);
 
-    expect(result.bodyHtmlRaw).toBe('<p>Just a short note.</p>');
+    expect(result.bodyHtmlRaw).toBe('<p>Just a short entry.</p>');
     expect(result.leadHtmlRaw).toBeNull();
     expect(result.diagnostics.chosenSource).toBe('descriptionOrSummary');
     expect(result.diagnostics.leadUsed).toBe(false);

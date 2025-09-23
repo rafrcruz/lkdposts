@@ -11,7 +11,9 @@ const findExistingDedupeKeys = ({ feedId, dedupeKeys }) => {
       dedupeKey: { in: dedupeKeys },
     },
     select: {
+      id: true,
       dedupeKey: true,
+      articleHtml: true,
     },
   });
 };
@@ -19,6 +21,12 @@ const findExistingDedupeKeys = ({ feedId, dedupeKeys }) => {
 const create = (data) =>
   prisma.article.create({
     data,
+  });
+
+const updateArticleHtmlById = ({ id, articleHtml }) =>
+  prisma.article.update({
+    where: { id },
+    data: { articleHtml },
   });
 
 const findIdsForCleanup = ({ ownerKey, olderThan }) =>
@@ -69,6 +77,7 @@ const findRecentForOwner = ({ ownerKey, windowStart, currentTime, limit, cursorF
 module.exports = {
   findExistingDedupeKeys,
   create,
+  updateArticleHtmlById,
   findIdsForCleanup,
   deleteManyByIds,
   findRecentForOwner,
