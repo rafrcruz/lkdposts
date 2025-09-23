@@ -5,6 +5,11 @@ const feedRepository = require('../repositories/feed.repository');
 const articleRepository = require('../repositories/article.repository');
 const postRepository = require('../repositories/post.repository');
 const { createTtlCache } = require('../utils/ttl-cache');
+const { normalizeFeedItem } = require('../lib/feed-normalizer');
+const { selectBodyAndLead } = require('../lib/body-lead-selector');
+const { assembleArticle } = require('../lib/article-assembler');
+const { createLogger } = require('./rss-logger');
+const rssMetrics = require('./rss-metrics');
 const config = require('../config');
 
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
@@ -43,6 +48,22 @@ class InvalidCursorError extends Error {
     this.code = 'INVALID_CURSOR';
   }
 }
+
+class RSSIngestionError extends Error {
+  constructor(message, options = {}) {
+    super(message, options);
+    this.name = 'RSSIngestionError';
+  }
+}
+
+let ingestionLogger = createLogger(config.rss?.logLevel ?? 'info');
+const getIngestionLogger = () => {
+  const desiredLevel = config.rss?.logLevel ?? 'info';
+  if (ingestionLogger.level !== desiredLevel) {
+    ingestionLogger = createLogger(desiredLevel);
+  }
+  return ingestionLogger;
+};
 
 const normalizeDate = (value) => {
   if (value instanceof Date) {
@@ -154,6 +175,152 @@ const sanitizeIdentifier = (value) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replaceAll(/&/g, '&amp;')
+    .replaceAll(/</g, '&lt;')
+    .replaceAll(/>/g, '&gt;')
+    .replaceAll(/"/g, '&quot;')
+    .replaceAll(/'/g, '&#39;');
+
+const buildFallbackArticleHtml = ({ title, link }) => {
+  const safeTitle = escapeHtml(title ?? '');
+  const safeLink = link ? escapeHtml(link) : null;
+
+  if (safeLink) {
+    const prefix = safeTitle ? `${safeTitle} ` : '';
+    return `<p>${prefix}<a href="${safeLink}" rel="noopener" target="_blank">Ler na fonte</a></p>`;
+  }
+
+  return `<p>${safeTitle}</p>`;
+};
+
+const getAssemblerOptions = () => {
+  const rssConfig = config.rss ?? {};
+  const allowedHosts = Array.isArray(rssConfig.allowedIframeHosts)
+    ? rssConfig.allowedIframeHosts
+        .map((host) => (typeof host === 'string' ? host.trim() : ''))
+        .filter((host) => host.length > 0)
+    : [];
+
+  return {
+    keepEmbeds: Boolean(rssConfig.keepEmbeds),
+    allowedIframeHosts: allowedHosts,
+    injectTopImage: rssConfig.injectTopImage !== false,
+    excerptMaxChars:
+      Number.isFinite(rssConfig.excerptMaxChars) && rssConfig.excerptMaxChars > 0
+        ? rssConfig.excerptMaxChars
+        : 220,
+    maxHtmlKB:
+      Number.isFinite(rssConfig.maxHtmlKB) && rssConfig.maxHtmlKB > 0 ? rssConfig.maxHtmlKB : 150,
+    stripKnownBoilerplates: rssConfig.stripKnownBoilerplates !== false,
+    trackerParamsRemoveList: Array.isArray(rssConfig.trackerParamsRemoveList)
+      ? rssConfig.trackerParamsRemoveList
+          .map((entry) => (typeof entry === 'string' ? entry.trim().toLowerCase() : ''))
+          .filter((entry) => entry.length > 0)
+      : null,
+  };
+};
+
+const VALID_REPROCESS_POLICIES = new Set(['never', 'if-empty', 'if-empty-or-changed', 'always']);
+
+const getReprocessPolicy = () => {
+  const policy = config.rss?.reprocessPolicy ?? 'if-empty-or-changed';
+  return VALID_REPROCESS_POLICIES.has(policy) ? policy : 'if-empty-or-changed';
+};
+
+const isHtmlEmpty = (value) => {
+  if (typeof value !== 'string') {
+    return true;
+  }
+  return value.replace(/\s+/g, '').length === 0;
+};
+
+const normalizeHtmlForDiff = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.replace(/\s+/g, ' ').trim();
+};
+
+const hasSubstantialHtmlChange = (currentHtml, newHtml) => {
+  const normalizedCurrent = normalizeHtmlForDiff(currentHtml);
+  const normalizedNew = normalizeHtmlForDiff(newHtml);
+
+  if (!normalizedCurrent && !normalizedNew) {
+    return false;
+  }
+
+  const currentHash = createHash('sha256').update(normalizedCurrent).digest('hex');
+  const newHash = createHash('sha256').update(normalizedNew).digest('hex');
+  if (currentHash === newHash) {
+    return false;
+  }
+
+  const currentLength = normalizedCurrent.length;
+  const newLength = normalizedNew.length;
+  if (currentLength === 0 || newLength === 0) {
+    return currentLength !== newLength;
+  }
+
+  const maxLength = Math.max(currentLength, newLength);
+  const lengthDelta = Math.abs(currentLength - newLength) / maxLength;
+  if (lengthDelta > 0.05) {
+    return true;
+  }
+
+  const currentTokens = new Set(
+    normalizedCurrent
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+  );
+  const newTokens = new Set(
+    normalizedNew
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+  );
+
+  if (currentTokens.size === 0 || newTokens.size === 0) {
+    return currentTokens.size !== newTokens.size;
+  }
+
+  let intersection = 0;
+  for (const token of currentTokens) {
+    if (newTokens.has(token)) {
+      intersection += 1;
+    }
+  }
+
+  const unionSize = currentTokens.size + newTokens.size - intersection;
+  const similarity = unionSize === 0 ? 1 : intersection / unionSize;
+  return similarity < 0.9;
+};
+
+const shouldUpdateArticleHtml = (policy, currentHtml, newHtml) => {
+  switch (policy) {
+    case 'never':
+      return false;
+    case 'always':
+      return true;
+    case 'if-empty':
+      return isHtmlEmpty(currentHtml);
+    case 'if-empty-or-changed':
+    default:
+      return isHtmlEmpty(currentHtml) || hasSubstantialHtmlChange(currentHtml, newHtml);
+  }
+};
+
+const wrapIngestionError = (stage, error) => {
+  if (error instanceof RSSIngestionError) {
+    return error;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return new RSSIngestionError(`${stage}: ${message}`, { cause: error });
+};
+
 const parsePublishedAt = (item) => {
   const publishedSources = [
     item.pubDate,
@@ -244,33 +411,6 @@ const buildContentSnippet = (item) => {
   return '';
 };
 
-const normalizeFeedItem = (rawItem) => {
-  const publishedAt = parsePublishedAt(rawItem);
-  if (!publishedAt) {
-    return null;
-  }
-
-  const rawTitle = cleanText(extractText(rawItem.title));
-  const normalizedTitle = rawTitle ? truncateText(rawTitle, MAX_ARTICLE_TITLE_LENGTH) : '';
-  const normalizedSnippet = buildContentSnippet(rawItem);
-  const snippetFromTitle = normalizedTitle ? truncateText(normalizedTitle, MAX_ARTICLE_CONTENT_LENGTH) : '';
-  const mergedSnippet = normalizedSnippet || snippetFromTitle;
-  const guid = sanitizeIdentifier(extractText(rawItem.guid));
-  const link = extractLink(rawItem.link);
-
-  if (!normalizedTitle && !mergedSnippet) {
-    return null;
-  }
-
-  return {
-    title: normalizedTitle || 'Untitled',
-    contentSnippet: mergedSnippet || 'No description available.',
-    publishedAt,
-    guid,
-    link,
-  };
-};
-
 const flattenRssChannelItems = (channels) => {
   const items = [];
   for (const channel of ensureArray(channels)) {
@@ -359,14 +499,147 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
     const rawItems = extractItemsFromParsedFeed(parsed);
     const items = [];
     let invalidItems = 0;
+    const assemblerOptions = getAssemblerOptions();
+    const logger = getIngestionLogger();
 
     for (const raw of rawItems) {
-      const normalized = normalizeFeedItem(raw);
-      if (normalized) {
-        items.push(normalized);
-      } else {
+      rssMetrics.incrementItemsTotal();
+      const itemStart = Date.now();
+
+      const publishedAt = parsePublishedAt(raw);
+      if (!publishedAt) {
         invalidItems += 1;
+        rssMetrics.observeItemDuration(Date.now() - itemStart);
+        continue;
       }
+
+      const rawTitle = cleanText(extractText(raw.title));
+      const truncatedRawTitle = rawTitle ? truncateText(rawTitle, MAX_ARTICLE_TITLE_LENGTH) : '';
+      const snippet = buildContentSnippet(raw);
+      const snippetFallback = truncatedRawTitle ? truncateText(truncatedRawTitle, MAX_ARTICLE_CONTENT_LENGTH) : '';
+      const mergedSnippet = snippet || snippetFallback || 'No description available.';
+      const fallbackTitle = truncatedRawTitle || 'Untitled';
+      const fallbackGuid = sanitizeIdentifier(extractText(raw.guid));
+      const fallbackLink = sanitizeIdentifier(extractLink(raw.link));
+
+      let normalized;
+      try {
+        normalized = normalizeFeedItem(raw, { feedUrl: url, logger });
+      } catch (error) {
+        const wrapped = wrapIngestionError('normalize', error);
+        rssMetrics.incrementItemsFailed();
+        rssMetrics.recordChosenSource('fallback');
+        rssMetrics.recordLeadUsed(false);
+        rssMetrics.recordImageSource('none');
+        rssMetrics.recordTruncated(false);
+        rssMetrics.observeItemDuration(Date.now() - itemStart);
+        logger.warn('Failed to normalize feed item, using fallback HTML', {
+          feedUrl: url,
+          reason: wrapped.message,
+        });
+        items.push({
+          title: fallbackTitle,
+          contentSnippet: mergedSnippet,
+          publishedAt,
+          guid: fallbackGuid,
+          link: fallbackLink,
+          articleHtml: buildFallbackArticleHtml({ title: fallbackTitle, link: fallbackLink }),
+        });
+        rssMetrics.incrementItemsProcessed();
+        continue;
+      }
+
+      const normalizedTitle = typeof normalized.title === 'string' ? normalized.title.trim() : '';
+      const finalTitle = truncateText(normalizedTitle || truncatedRawTitle || '', MAX_ARTICLE_TITLE_LENGTH) || 'Untitled';
+      const guid = sanitizeIdentifier(normalized.guid ?? fallbackGuid);
+      const canonicalUrl = sanitizeIdentifier(normalized.canonicalUrl ?? fallbackLink);
+
+      let selectionDiagnostics = { chosenSource: 'empty', leadUsed: false };
+      let assembleDiagnostics = {
+        imageSource: 'none',
+        truncated: false,
+        removedEmbeds: 0,
+        trackerParamsRemoved: 0,
+      };
+      let articleHtml = '';
+      let usedFallback = false;
+
+      try {
+        const selection = selectBodyAndLead(normalized);
+        selectionDiagnostics = selection.diagnostics ?? selectionDiagnostics;
+        const assembly = assembleArticle(normalized, selection, assemblerOptions);
+        assembleDiagnostics = assembly.diagnostics ?? assembleDiagnostics;
+        articleHtml = (assembly.articleHtml ?? '').trim();
+
+        if (!articleHtml) {
+          usedFallback = true;
+          rssMetrics.incrementItemsFailed();
+          articleHtml = buildFallbackArticleHtml({ title: finalTitle, link: canonicalUrl });
+          logger.warn('Article assembly returned empty HTML, using fallback', {
+            feedUrl: url,
+            guid,
+            link: canonicalUrl,
+          });
+          selectionDiagnostics = {
+            ...selectionDiagnostics,
+            leadUsed: false,
+          };
+        }
+      } catch (error) {
+        const wrapped = wrapIngestionError('assemble', error);
+        usedFallback = true;
+        rssMetrics.incrementItemsFailed();
+        articleHtml = buildFallbackArticleHtml({ title: finalTitle, link: canonicalUrl });
+        logger.warn('Article assembly failed, using fallback HTML', {
+          feedUrl: url,
+          guid,
+          link: canonicalUrl,
+          reason: wrapped.message,
+        });
+        selectionDiagnostics = {
+          ...selectionDiagnostics,
+          leadUsed: false,
+        };
+        assembleDiagnostics = {
+          imageSource: 'none',
+          truncated: false,
+          removedEmbeds: 0,
+          trackerParamsRemoved: 0,
+        };
+      }
+
+      rssMetrics.recordChosenSource(selectionDiagnostics?.chosenSource ?? 'empty');
+      rssMetrics.recordLeadUsed(Boolean(selectionDiagnostics?.leadUsed));
+      rssMetrics.recordImageSource(assembleDiagnostics?.imageSource ?? 'none');
+      rssMetrics.recordTruncated(Boolean(assembleDiagnostics?.truncated));
+      rssMetrics.addRemovedEmbeds(assembleDiagnostics?.removedEmbeds ?? 0);
+      rssMetrics.addTrackerParamsRemoved(assembleDiagnostics?.trackerParamsRemoved ?? 0);
+
+      const durationMs = Date.now() - itemStart;
+      rssMetrics.observeItemDuration(durationMs);
+
+      logger.debug('RSS item processed', {
+        feedUrl: url,
+        guid,
+        link: canonicalUrl,
+        chosenSource: selectionDiagnostics?.chosenSource ?? 'empty',
+        imageSource: assembleDiagnostics?.imageSource ?? 'none',
+        leadUsed: Boolean(selectionDiagnostics?.leadUsed),
+        truncated: Boolean(assembleDiagnostics?.truncated),
+        trackerParamsRemoved: assembleDiagnostics?.trackerParamsRemoved ?? 0,
+        removedEmbeds: assembleDiagnostics?.removedEmbeds ?? 0,
+        fallback: usedFallback,
+      });
+
+      items.push({
+        title: finalTitle,
+        contentSnippet: mergedSnippet,
+        publishedAt,
+        guid,
+        link: canonicalUrl,
+        articleHtml,
+      });
+      rssMetrics.incrementItemsProcessed();
     }
 
     items.sort((a, b) => a.publishedAt.valueOf() - b.publishedAt.valueOf());
@@ -490,34 +763,63 @@ const persistCandidates = async ({ feed, candidates }) => {
 
   const dedupeKeys = candidates.map((candidate) => candidate.dedupeKey);
   const existing = await articleRepository.findExistingDedupeKeys({ feedId: feed.id, dedupeKeys });
-  const existingKeys = new Set(existing.map((entry) => entry.dedupeKey));
+  const existingByKey = new Map(existing.map((entry) => [entry.dedupeKey, entry]));
+  const policy = getReprocessPolicy();
+  const logger = getIngestionLogger();
 
   let created = 0;
   let duplicates = 0;
 
-  for (const candidate of candidates) {
-    if (existingKeys.has(candidate.dedupeKey)) {
-      duplicates += 1;
+    for (const candidate of candidates) {
+      const existingArticle = existingByKey.get(candidate.dedupeKey);
+
+      if (!existingArticle) {
+      const article = await articleRepository.create({
+        feedId: feed.id,
+        title: candidate.title,
+        contentSnippet: candidate.contentSnippet,
+        articleHtml: candidate.articleHtml,
+        publishedAt: candidate.publishedAt,
+        guid: candidate.guid ?? null,
+        link: candidate.link ?? null,
+        dedupeKey: candidate.dedupeKey,
+      });
+
+      await postRepository.create({
+        articleId: article.id,
+        content: POST_PLACEHOLDER_CONTENT,
+      });
+
+      existingByKey.set(candidate.dedupeKey, {
+        id: article.id,
+        dedupeKey: candidate.dedupeKey,
+        articleHtml: candidate.articleHtml,
+      });
+      created += 1;
       continue;
     }
 
-    const article = await articleRepository.create({
+    if (!shouldUpdateArticleHtml(policy, existingArticle.articleHtml ?? '', candidate.articleHtml)) {
+      duplicates += 1;
+      rssMetrics.incrementItemsSkipped(policy);
+      logger.debug('Skipping article reprocessing per policy', {
+        feedId: feed.id,
+        policy,
+        dedupeKey: candidate.dedupeKey,
+      });
+      continue;
+    }
+
+    await articleRepository.updateArticleHtmlById({
+      id: existingArticle.id,
+      articleHtml: candidate.articleHtml,
+    });
+    existingArticle.articleHtml = candidate.articleHtml;
+    logger.debug('Updated article HTML via reprocess policy', {
       feedId: feed.id,
-      title: candidate.title,
-      contentSnippet: candidate.contentSnippet,
-      publishedAt: candidate.publishedAt,
-      guid: candidate.guid ?? null,
-      link: candidate.link ?? null,
+      policy,
       dedupeKey: candidate.dedupeKey,
     });
-
-    await postRepository.create({
-      articleId: article.id,
-      content: POST_PLACEHOLDER_CONTENT,
-    });
-
-    existingKeys.add(candidate.dedupeKey);
-    created += 1;
   }
 
   return { created, duplicates };

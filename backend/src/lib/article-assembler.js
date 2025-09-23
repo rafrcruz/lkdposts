@@ -47,7 +47,7 @@ const DROP_CONTENT_TAGS = new Set([
 
 const READ_MORE_PHRASES = new Set(['read more', 'continue reading']);
 
-const TRACKING_PARAM_NAMES = new Set([
+const DEFAULT_TRACKING_PARAM_NAMES = new Set([
   'ref',
   'fbclid',
   'gclid',
@@ -173,6 +173,25 @@ const isLikelyImageUrl = (urlObject) => {
   return false;
 };
 
+const buildTrackerParamNames = (overrideList) => {
+  if (!Array.isArray(overrideList) || overrideList.length === 0) {
+    return new Set(DEFAULT_TRACKING_PARAM_NAMES);
+  }
+
+  const normalized = new Set();
+  for (const entry of overrideList) {
+    if (typeof entry !== 'string') {
+      continue;
+    }
+    const trimmed = entry.trim().toLowerCase();
+    if (trimmed) {
+      normalized.add(trimmed);
+    }
+  }
+
+  return normalized.size > 0 ? normalized : new Set(DEFAULT_TRACKING_PARAM_NAMES);
+};
+
 const normalizeUrlValue = (rawValue, context, { allowedSchemes, record = true } = {}) => {
   if (typeof rawValue !== 'string') {
     return { ok: false };
@@ -243,9 +262,10 @@ const normalizeUrlValue = (rawValue, context, { allowedSchemes, record = true } 
   let removedParams = 0;
   if (protocol === 'http:' || protocol === 'https:') {
     const params = resolved.searchParams;
+    const trackerParamNames = context.trackerParamNames || DEFAULT_TRACKING_PARAM_NAMES;
     for (const key of Array.from(params.keys())) {
       const lowerKey = key.toLowerCase();
-      if (lowerKey.startsWith('utm_') || TRACKING_PARAM_NAMES.has(lowerKey)) {
+      if (lowerKey.startsWith('utm_') || trackerParamNames.has(lowerKey)) {
         const occurrences = params.getAll(key).length || 1;
         removedParams += occurrences;
         params.delete(key);
@@ -336,7 +356,7 @@ const createDiagnostics = () => ({
   keptEmbedsHosts: [],
 });
 
-const createSanitizeContext = (baseUrls, diagnostics, options) => ({
+const createSanitizeContext = (baseUrls, diagnostics, options, trackerParamNames) => ({
   baseUrls,
   diagnostics,
   options,
@@ -344,6 +364,7 @@ const createSanitizeContext = (baseUrls, diagnostics, options) => ({
   sanitizedTopImageUrl: null,
   inlineImageCandidate: null,
   keptEmbedsHosts: new Set(),
+  trackerParamNames,
 });
 
 const createDescriptor = ({ type, tagName = null, html = '', textContent = '', attributes = null }) => ({
@@ -839,6 +860,7 @@ const buildBaseHtml = (normalized, contentChoice, imageCandidate, options) => {
  * @param {number} [options.excerptMaxChars=220] - Maximum number of characters for the excerpt.
  * @param {number} [options.maxHtmlKB=150] - Maximum HTML size in kilobytes before truncation.
  * @param {boolean} [options.stripKnownBoilerplates=true] - Remove known boilerplate blocks.
+ * @param {string[]} [options.trackerParamsRemoveList] - Overrides default tracker parameters removal list.
  * @returns {{
  *   articleHtml: string,
  *   mainImageUrl: string | undefined,
@@ -866,10 +888,11 @@ const assembleArticle = (normalized, contentChoice, options = {}) => {
     ...options,
   };
   mergedOptions.allowedIframeHosts = normalizeAllowedHosts(mergedOptions.allowedIframeHosts);
+  const trackerParamNames = buildTrackerParamNames(mergedOptions.trackerParamsRemoveList);
 
   const diagnostics = createDiagnostics();
   const baseUrls = computeBaseUrls(normalized);
-  const sanitizeContext = createSanitizeContext(baseUrls, diagnostics, mergedOptions);
+  const sanitizeContext = createSanitizeContext(baseUrls, diagnostics, mergedOptions, trackerParamNames);
 
   const imageCandidate = selectMainImageCandidate(normalized, sanitizeContext);
   if (imageCandidate?.normalizedUrl) {

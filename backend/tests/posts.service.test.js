@@ -7,6 +7,8 @@ const {
   constants: postsConstants,
 } = require('../src/services/posts.service');
 const { prisma } = require('../src/lib/prisma');
+const rssMetrics = require('../src/services/rss-metrics');
+const config = require('../src/config');
 
 const toRssDate = (date) => new Date(date).toUTCString();
 
@@ -100,6 +102,18 @@ const createFeed = async ({ ownerKey = '1', url = 'https://example.com/feed.xml'
 describe('posts.service', () => {
   beforeEach(() => {
     prisma.__reset();
+    rssMetrics.resetMetrics();
+    Object.assign(config.rss, {
+      keepEmbeds: false,
+      allowedIframeHosts: [],
+      injectTopImage: true,
+      excerptMaxChars: 220,
+      maxHtmlKB: 150,
+      stripKnownBoilerplates: true,
+      reprocessPolicy: 'if-empty-or-changed',
+      logLevel: 'info',
+      trackerParamsRemoveList: null,
+    });
   });
 
   describe('refreshUserFeeds', () => {
@@ -147,6 +161,10 @@ describe('posts.service', () => {
 
       const updatedFeed = await prisma.feed.findUnique({ where: { id: feed.id } });
       expect(updatedFeed.lastFetchedAt?.toISOString()).toBe(now.toISOString());
+
+      const storedArticles = await prisma.article.findMany();
+      expect(storedArticles).toHaveLength(1);
+      expect(storedArticles[0].articleHtml).toMatch(/<p>Sample description/);
     });
 
     it('ignores items published outside the 7-day window', async () => {
@@ -174,6 +192,7 @@ describe('posts.service', () => {
       const storedArticles = await prisma.article.findMany();
       expect(storedArticles).toHaveLength(1);
       expect(storedArticles[0].title).toBe('Recent');
+      expect(storedArticles[0].articleHtml).toContain(recentDate.toISOString().slice(0, 10));
     });
 
     it('reports summary indicators for read, windowed, duplicate and invalid items', async () => {
@@ -211,6 +230,9 @@ describe('posts.service', () => {
       expect(articles).toHaveLength(2);
       expect(articles.some((article) => article.guid === 'fresh-guid')).toBe(true);
       expect(articles.some((article) => article.guid === 'dup-guid')).toBe(true);
+      for (const article of articles) {
+        expect(article.articleHtml).toMatch(/<p>/);
+      }
     });
 
     it('is idempotent for items that provide guid values', async () => {
@@ -294,6 +316,7 @@ describe('posts.service', () => {
       const articles = await prisma.article.findMany();
       expect(articles).toHaveLength(1);
       expect(articles[0].title).toBe('Success');
+      expect(articles[0].articleHtml).toMatch(/<p>/);
     });
 
     it('counts invalid items that cannot be normalized', async () => {
@@ -332,6 +355,7 @@ describe('posts.service', () => {
       expect(article).toBeDefined();
       expect(article.title.length).toBeLessThanOrEqual(postsConstants.MAX_ARTICLE_TITLE_LENGTH);
       expect(article.contentSnippet.length).toBeLessThanOrEqual(postsConstants.MAX_ARTICLE_CONTENT_LENGTH);
+      expect(article.articleHtml).toMatch(/<p>/);
     });
 
     it('processes items missing guid, link and title by deriving a fallback dedupe key', async () => {
@@ -356,6 +380,7 @@ describe('posts.service', () => {
       expect(article).toBeDefined();
       expect(article.title).toBe('Untitled');
       expect(article.contentSnippet).toBe('Useful summary of the article');
+      expect(article.articleHtml).toMatch(/Useful summary of the article/);
     });
 
     it('handles malformed XML without aborting the refresh routine', async () => {
