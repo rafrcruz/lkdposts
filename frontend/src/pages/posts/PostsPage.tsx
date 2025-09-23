@@ -1,6 +1,7 @@
 import type { ChangeEvent, JSX } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { clsx } from 'clsx';
 
 import { useCleanupPosts, usePostList, useRefreshPosts } from '@/features/posts/hooks/usePosts';
 import type {
@@ -14,6 +15,7 @@ import type { Feed } from '@/features/feeds/types/feed';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 import { HttpError } from '@/lib/api/http';
 import { formatDate, formatNumber, useLocale } from '@/utils/formatters';
 
@@ -114,6 +116,233 @@ const formatCooldownTime = ({
   });
 };
 
+const ARTICLE_BLOCK_SELECTOR = 'p,div,img,h1,h2,h3,ul,ol,li,figure,pre,code,blockquote';
+const ARTICLE_BLOCK_REGEX = /<(p|div|img|h1|h2|h3|ul|ol|li|figure|pre|code|blockquote)\b/gi;
+const ARTICLE_WEAK_CONTENT_MIN_LENGTH = 160;
+const ARTICLE_LONG_CONTENT_THRESHOLD = 1200;
+const ARTICLE_COLLAPSED_MAX_HEIGHT = 480;
+const ARTICLE_EXCERPT_MAX_LENGTH = 320;
+
+type ArticleAnalysis = {
+  text: string;
+  textLength: number;
+  blockCount: number;
+  isWeak: boolean;
+};
+
+const EMPTY_ARTICLE_ANALYSIS: ArticleAnalysis = {
+  text: '',
+  textLength: 0,
+  blockCount: 0,
+  isWeak: true,
+};
+
+const normaliseWhitespace = (input: string) => input.replace(/\s+/g, ' ').trim();
+
+const analyseArticleHtml = (html: string): ArticleAnalysis => {
+  if (!html.trim()) {
+    return EMPTY_ARTICLE_ANALYSIS;
+  }
+
+  if (typeof document !== 'undefined') {
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    const textContent = normaliseWhitespace(container.textContent ?? '');
+    const blockElements = container.querySelectorAll(ARTICLE_BLOCK_SELECTOR);
+    const blockCount = blockElements.length;
+    const isWeak = blockCount === 0 || textContent.length < ARTICLE_WEAK_CONTENT_MIN_LENGTH;
+
+    return {
+      text: textContent,
+      textLength: textContent.length,
+      blockCount,
+      isWeak,
+    };
+  }
+
+  const textContent = normaliseWhitespace(html.replace(/<[^>]+>/g, ' '));
+  const blockMatches = html.match(ARTICLE_BLOCK_REGEX);
+  const blockCount = blockMatches?.length ?? 0;
+  const isWeak = blockCount === 0 || textContent.length < ARTICLE_WEAK_CONTENT_MIN_LENGTH;
+
+  return {
+    text: textContent,
+    textLength: textContent.length,
+    blockCount,
+    isWeak,
+  };
+};
+
+const createExcerpt = (text: string, fallback?: string | null) => {
+  const primarySource = text && text.trim().length > 0 ? text.trim() : fallback?.trim() ?? '';
+
+  if (!primarySource) {
+    return '';
+  }
+
+  if (primarySource.length <= ARTICLE_EXCERPT_MAX_LENGTH) {
+    return primarySource;
+  }
+
+  return `${primarySource.slice(0, ARTICLE_EXCERPT_MAX_LENGTH).trimEnd()}…`;
+};
+
+type ArticleContentProps = {
+  id: string;
+  postId: number;
+  html?: string | null;
+  fallbackSnippet?: string | null;
+  isAdmin: boolean;
+  readMoreLabel: string;
+  readLessLabel: string;
+  partialAdminNotice: string;
+  unavailableLabel: string;
+};
+
+const ArticleContentComponent = ({
+  id,
+  html,
+  fallbackSnippet,
+  isAdmin,
+  readMoreLabel,
+  readLessLabel,
+  partialAdminNotice,
+  unavailableLabel,
+}: ArticleContentProps) => {
+  const htmlValue = typeof html === 'string' ? html : '';
+  const hasHtml = htmlValue.trim().length > 0;
+  const analysis = useMemo(() => (hasHtml ? analyseArticleHtml(htmlValue) : EMPTY_ARTICLE_ANALYSIS), [htmlValue, hasHtml]);
+  const shouldShowFallback = !hasHtml || analysis.isWeak;
+  const excerpt = useMemo(() => createExcerpt(analysis.text, fallbackSnippet), [analysis.text, fallbackSnippet]);
+  const shouldCollapse = useMemo(
+    () =>
+      !shouldShowFallback &&
+      (analysis.textLength > ARTICLE_LONG_CONTENT_THRESHOLD || analysis.blockCount > 12),
+    [analysis.blockCount, analysis.textLength, shouldShowFallback],
+  );
+  const [isCollapsed, setIsCollapsed] = useState(shouldCollapse);
+  useEffect(() => {
+    setIsCollapsed(shouldCollapse);
+  }, [shouldCollapse, htmlValue]);
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const isLoading = typeof html === 'undefined';
+
+  useEffect(() => {
+    if (shouldShowFallback || isLoading) {
+      return;
+    }
+
+    const element = containerRef.current;
+    if (!element) {
+      return;
+    }
+
+    element.querySelectorAll('a').forEach((anchor) => {
+      if (!anchor.getAttribute('target')) {
+        anchor.setAttribute('target', '_blank');
+      }
+
+      const currentRel = anchor.getAttribute('rel') ?? '';
+      const relTokens = new Set(currentRel.split(/\s+/).filter(Boolean));
+      relTokens.add('noopener');
+      relTokens.add('noreferrer');
+      anchor.setAttribute('rel', Array.from(relTokens).join(' '));
+    });
+
+    element.querySelectorAll('img').forEach((image) => {
+      if (!image.getAttribute('loading')) {
+        image.setAttribute('loading', 'lazy');
+      }
+
+      if (!image.getAttribute('decoding')) {
+        image.setAttribute('decoding', 'async');
+      }
+
+      if (!image.getAttribute('alt')) {
+        image.setAttribute('alt', '');
+      }
+
+      image.style.maxWidth = '100%';
+      image.style.height = 'auto';
+    });
+  }, [htmlValue, isLoading, shouldShowFallback]);
+
+  const htmlContainerId = `${id}-html`;
+
+  return (
+    <div
+      id={id}
+      className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
+    >
+      {isLoading ? (
+        <div className="space-y-3" aria-busy="true">
+          <LoadingSkeleton className="h-4 w-1/3" />
+          <LoadingSkeleton className="h-4 w-full" />
+          <LoadingSkeleton className="h-4 w-5/6" />
+          <LoadingSkeleton className="h-64 w-full" />
+        </div>
+      ) : shouldShowFallback ? (
+        <div className="space-y-2">
+          {excerpt ? (
+            <p className="whitespace-pre-wrap text-sm text-foreground">{excerpt}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">{unavailableLabel}</p>
+          )}
+          {isAdmin ? <p className="text-xs text-muted-foreground">{partialAdminNotice}</p> : null}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div
+            id={htmlContainerId}
+            ref={containerRef}
+            className={clsx('article-content', {
+              'article-content--collapsed': shouldCollapse && isCollapsed,
+            })}
+            style={
+              shouldCollapse && isCollapsed
+                ? {
+                    maxHeight: `${ARTICLE_COLLAPSED_MAX_HEIGHT}px`,
+                  }
+                : undefined
+            }
+            dangerouslySetInnerHTML={{ __html: htmlValue }}
+          />
+          {shouldCollapse ? (
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                className="text-xs font-semibold uppercase tracking-wide text-primary transition hover:text-primary/80"
+                onClick={() => setIsCollapsed((current) => !current)}
+                aria-expanded={!isCollapsed}
+                aria-controls={htmlContainerId}
+              >
+                {isCollapsed ? readMoreLabel : readLessLabel}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ArticleContent = memo(
+  ArticleContentComponent,
+  (previous, next) =>
+    previous.id === next.id &&
+    previous.postId === next.postId &&
+    previous.html === next.html &&
+    previous.fallbackSnippet === next.fallbackSnippet &&
+    previous.isAdmin === next.isAdmin &&
+    previous.readMoreLabel === next.readMoreLabel &&
+    previous.readLessLabel === next.readLessLabel &&
+    previous.partialAdminNotice === next.partialAdminNotice &&
+    previous.unavailableLabel === next.unavailableLabel,
+);
+
+ArticleContent.displayName = 'ArticleContent';
+
 const NETWORK_ERROR_KEYWORDS = ['network', 'timeout', 'failed to fetch', 'load failed'];
 
 const createDefaultSectionState = (): SectionState => ({ post: true, article: false });
@@ -185,6 +414,11 @@ const resolveOperationErrorMessage = (error: unknown, t: ReturnType<typeof useTr
 const PostsPage = () => {
   const { t } = useTranslation();
   const locale = useLocale();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  if (isAdmin) {
+    // admin-specific analytics can be hooked here in the future
+  }
 
   useEffect(() => {
     document.title = t('posts.meta.title', 'lkdposts - Posts');
@@ -702,6 +936,7 @@ const PostsPage = () => {
         expandedSections={expandedSections}
         hasExecutedSequence={hasExecutedSequence}
         hasFeeds={hasFeeds}
+        isAdmin={isAdmin}
         hasPreviousPage={previousCursors.length > 0}
         isError={isError}
         isLoading={isLoading}
@@ -727,6 +962,7 @@ type PostListContentProps = {
   expandedSections: ExpandedSections;
   hasExecutedSequence: boolean;
   hasFeeds: boolean;
+  isAdmin: boolean;
   hasPreviousPage: boolean;
   isError: boolean;
   isLoading: boolean;
@@ -749,6 +985,7 @@ const PostListContent = ({
   expandedSections,
   hasExecutedSequence,
   hasFeeds,
+  isAdmin,
   isError,
   isLoading,
   isSyncing,
@@ -907,12 +1144,23 @@ const PostListContent = ({
                 <span aria-hidden="true">{sectionState.article ? '−' : '+'}</span>
               </button>
               {sectionState.article ? (
-                <div
+                <ArticleContent
                   id={articleContentId}
-                  className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
-                >
-                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.contentSnippet}</p>
-                </div>
+                  postId={item.id}
+                  html={item.noticia}
+                  fallbackSnippet={item.contentSnippet}
+                  isAdmin={isAdmin}
+                  readMoreLabel={t('posts.list.article.readMore', 'See more')}
+                  readLessLabel={t('posts.list.article.readLess', 'See less')}
+                  partialAdminNotice={t(
+                    'posts.list.article.partialAdminNotice',
+                    'This article looks partial. Review the feed extraction.',
+                  )}
+                  unavailableLabel={t(
+                    'posts.list.article.unavailable',
+                    'News content not available yet.',
+                  )}
+                />
               ) : null}
             </section>
           </article>
