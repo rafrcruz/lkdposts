@@ -1,7 +1,14 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useBulkCreateFeeds, useCreateFeed, useDeleteFeed, useFeedList, useUpdateFeed } from '@/features/feeds/hooks/useFeeds';
+import {
+  useBulkCreateFeeds,
+  useCreateFeed,
+  useDeleteFeed,
+  useFeedList,
+  useResetFeeds,
+  useUpdateFeed,
+} from '@/features/feeds/hooks/useFeeds';
 import type {
   Feed,
   FeedBulkResult,
@@ -12,6 +19,7 @@ import type {
 import { HttpError } from '@/lib/api/http';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { formatDate, useLocale } from '@/utils/formatters';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 
 const PAGE_SIZE = 10;
 
@@ -111,6 +119,9 @@ const FeedsPage = () => {
   const bulkCreate = useBulkCreateFeeds();
   const updateFeedMutation = useUpdateFeed();
   const deleteFeedMutation = useDeleteFeed();
+  const resetFeedsMutation = useResetFeeds();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   const feeds: Feed[] = feedList.data?.items ?? [];
   const meta: FeedListMeta | undefined = feedList.data?.meta;
@@ -126,6 +137,7 @@ const FeedsPage = () => {
   const isBulkCreating = bulkCreate.isPending;
   const isUpdating = updateFeedMutation.isPending;
   const isDeleting = deleteFeedMutation.isPending;
+  const isResettingFeeds = resetFeedsMutation.isPending;
 
   const resetPagination = () => {
     setCursor(null);
@@ -389,6 +401,49 @@ const FeedsPage = () => {
         setListFeedback({ type: 'error', message: resolveErrorMessage(error) });
       },
     });
+  };
+
+  const handleResetFeeds = async () => {
+    if (!isAdmin) {
+      return;
+    }
+
+    const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
+    const confirmed =
+      browserWindow?.confirm(
+        t(
+          'feeds.reset.confirmation',
+          'Esta ação excluirá todas as notícias e posts gerados a partir dos feeds e reiniciará o processamento de todos os feeds. Deseja continuar?',
+        ),
+      ) ?? false;
+
+    if (!confirmed) {
+      return;
+    }
+
+    setListFeedback(null);
+
+    try {
+      const result = await resetFeedsMutation.mutateAsync();
+      const message = t(
+        'feeds.reset.success',
+        'Reset concluído. Feeds reiniciados: {{feeds}} · Notícias removidas: {{articles}} · Posts removidos: {{posts}}.',
+        {
+          feeds: result.feedsResetCount,
+          articles: result.articlesDeletedCount,
+          posts: result.postsDeletedCount,
+        },
+      );
+      setListFeedback({ type: 'success', message });
+    } catch (_error) {
+      setListFeedback({
+        type: 'error',
+        message: t(
+          'feeds.reset.error',
+          'Não foi possível concluir o reset. Tente novamente ou contate o administrador.',
+        ),
+      });
+    }
   };
 
   const renderBulkSummary = () => {
@@ -743,6 +798,18 @@ const FeedsPage = () => {
             </p>
           </div>
           <div className="flex flex-col items-end gap-2 sm:items-start">
+            {isAdmin ? (
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md border border-destructive px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleResetFeeds}
+                disabled={isResettingFeeds}
+              >
+                {isResettingFeeds
+                  ? t('feeds.reset.pending', 'Resetando...')
+                  : t('feeds.reset.action', 'Resetar feeds (admin)')}
+              </button>
+            ) : null}
             {isFetching ? (
               <span className="text-xs text-muted-foreground">{t('feeds.list.syncing', 'Sincronizando...')}</span>
             ) : null}

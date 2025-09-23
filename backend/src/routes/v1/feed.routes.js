@@ -1,6 +1,7 @@
 const express = require('express');
 const feedController = require('../../controllers/feed.controller');
 const { validateRequest } = require('../../middlewares/validate-request');
+const { requireRole, ROLES } = require('../../middlewares/authorization');
 const {
   listFeedsQuerySchema,
   createFeedBodySchema,
@@ -289,5 +290,47 @@ router.patch(
   feedController.update
 );
 router.delete('/feeds/:id', validateRequest({ params: deleteFeedParamsSchema }), feedController.remove);
+
+/**
+ * @openapi
+ * /api/v1/feeds/reset:
+ *   post:
+ *     summary: Reset RSS feed ingestion state
+ *     description: Remove todas as noticias e posts derivados dos feeds e reinicia o estado de processamento. Disponivel apenas para administradores.
+ *     tags:
+ *       - Feeds
+ *     security:
+ *       - SessionCookie: []
+ *       - BearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: Resultado do reset dos feeds
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Envelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/FeedResetResult'
+ *             examples:
+ *               success:
+ *                 summary: Reset concluido
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     feedsResetCount: 12
+ *                     articlesDeletedCount: 480
+ *                     postsDeletedCount: 480
+ *                     durationMs: 85
+ *                   meta:
+ *                     requestId: 11111111-2222-4333-8444-555555555555
+ *       '401':
+ *         $ref: '#/components/responses/Unauthorized'
+ *       '403':
+ *         $ref: '#/components/responses/Forbidden'
+ */
+router.post('/feeds/reset', requireRole(ROLES.ADMIN), feedController.reset);
 
 module.exports = router;

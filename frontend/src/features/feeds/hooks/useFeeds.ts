@@ -12,12 +12,14 @@ import {
   createFeed,
   deleteFeed,
   fetchFeeds,
+  resetAllFeeds,
   updateFeed,
   type FeedListResponse,
 } from '../api/feeds';
-import type { Feed, FeedBulkResult } from '../types/feed';
+import type { Feed, FeedBulkResult, FeedResetSummary } from '../types/feed';
 import { HttpError } from '@/lib/api/http';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { POSTS_QUERY_KEY, type PostListResponse } from '@/features/posts/api/posts';
 
 type FeedListQueryParams = {
   cursor: string | null;
@@ -186,6 +188,47 @@ export const useDeleteFeed = () => {
         };
       });
       queryClient.invalidateQueries({ queryKey: FEEDS_QUERY_KEY }).catch(() => {
+        // ignore cache errors
+      });
+    },
+  });
+};
+
+export const useResetFeeds = () => {
+  const queryClient = useQueryClient();
+  return useMutation<FeedResetSummary, HttpError, void>({
+    mutationFn: () => resetAllFeeds(),
+    onSuccess: () => {
+      queryClient.setQueriesData<FeedListResponse | undefined>({ queryKey: FEEDS_QUERY_KEY }, (current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          items: current.items.map((item) => ({ ...item, lastFetchedAt: null })),
+        };
+      });
+
+      queryClient.setQueriesData<PostListResponse | undefined>({ queryKey: POSTS_QUERY_KEY }, (current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          items: [],
+          meta: {
+            ...current.meta,
+            nextCursor: null,
+          },
+        };
+      });
+
+      queryClient.invalidateQueries({ queryKey: FEEDS_QUERY_KEY }).catch(() => {
+        // ignore cache errors
+      });
+      queryClient.invalidateQueries({ queryKey: POSTS_QUERY_KEY }).catch(() => {
         // ignore cache errors
       });
     },

@@ -144,6 +144,15 @@ const definition = {
           message: { type: 'string', example: 'Feed removed' },
         },
       },
+      FeedResetResult: {
+        type: 'object',
+        properties: {
+          feedsResetCount: { type: 'integer', example: 12 },
+          articlesDeletedCount: { type: 'integer', example: 480 },
+          postsDeletedCount: { type: 'integer', example: 480 },
+          durationMs: { type: 'integer', example: 85 },
+        },
+      },
       FeedRefreshSummary: {
         type: 'object',
         properties: {

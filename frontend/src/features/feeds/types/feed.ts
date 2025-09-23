@@ -55,3 +55,12 @@ export const feedBulkResultSchema = z.object({
 });
 
 export type FeedBulkResult = z.infer<typeof feedBulkResultSchema>;
+
+export const feedResetSummarySchema = z.object({
+  feedsResetCount: z.number().int().nonnegative(),
+  articlesDeletedCount: z.number().int().nonnegative(),
+  postsDeletedCount: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative(),
+});
+
+export type FeedResetSummary = z.infer<typeof feedResetSummarySchema>;
