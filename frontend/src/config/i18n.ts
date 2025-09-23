@@ -217,6 +217,12 @@ const resources = {
             article: 'NEWS',
           },
           postUnavailable: 'Post not available yet.',
+          article: {
+            readMore: 'See more',
+            readLess: 'See less',
+            partialAdminNotice: 'This article looks partial. Review the feed extraction.',
+            unavailable: 'News content not available yet.',
+          },
           empty: {
             default: {
               title: 'No recent posts.',
@@ -509,6 +515,12 @@ const resources = {
             article: 'NOTICIA',
           },
           postUnavailable: 'Post ainda nao disponivel.',
+          article: {
+            readMore: 'Ver mais',
+            readLess: 'Ver menos',
+            partialAdminNotice: 'Conteudo parcial da noticia. Verifique a coleta no feed.',
+            unavailable: 'Noticia indisponivel no momento.',
+          },
           empty: {
             default: {
               title: 'Nenhum post recente.',

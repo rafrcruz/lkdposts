@@ -19,19 +19,24 @@ import { useFeedList } from '@/features/feeds/hooks/useFeeds';
 import type { FeedListResponse } from '@/features/feeds/api/feeds';
 import type { Feed } from '@/features/feeds/types/feed';
 import { HttpError } from '@/lib/api/http';
+import { useAuth } from '@/features/auth/hooks/useAuth';
+import type { AuthContextValue } from '@/features/auth/context/AuthContext';
 
 vi.mock('@/features/posts/hooks/usePosts');
 vi.mock('@/features/feeds/hooks/useFeeds');
+vi.mock('@/features/auth/hooks/useAuth');
 
 const mockedUsePostList = vi.mocked(usePostList);
 const mockedUseRefreshPosts = vi.mocked(useRefreshPosts);
 const mockedUseCleanupPosts = vi.mocked(useCleanupPosts);
 const mockedUseFeedList = vi.mocked(useFeedList);
+const mockedUseAuth = vi.mocked(useAuth);
 
 const buildPost = (override: Partial<PostListItem> = {}): PostListItem => ({
   id: override.id ?? 1,
   title: override.title ?? 'Post 1',
   contentSnippet: override.contentSnippet ?? 'Resumo da noticia 1',
+  noticia: Object.hasOwn(override, 'noticia') ? override.noticia ?? null : '<p>Resumo da noticia 1</p>',
   publishedAt: override.publishedAt ?? '2024-01-01T00:00:00.000Z',
   feed:
     Object.hasOwn(override, 'feed')
@@ -58,6 +63,27 @@ const buildFeed = (override: Partial<Feed> = {}): Feed => ({
   createdAt: override.createdAt ?? '2024-01-01T00:00:00.000Z',
   updatedAt: override.updatedAt ?? '2024-01-01T00:00:00.000Z',
 });
+
+const buildAuthContext = (override: Partial<AuthContextValue> = {}): AuthContextValue => {
+  const defaultUser: AuthContextValue['user'] =
+    override.user ?? {
+      email: 'user@example.com',
+      role: 'user',
+      expiresAt: '2024-01-01T00:00:00.000Z',
+    };
+
+  return {
+    status: 'authenticated',
+    user: defaultUser,
+    isAuthenticating: false,
+    authError: null,
+    loginWithGoogle: vi.fn(),
+    logout: vi.fn(),
+    clearAuthError: vi.fn(),
+    refreshSession: vi.fn(() => Promise.resolve({ authenticated: true, user: defaultUser })),
+    ...override,
+  };
+};
 
 const createPostQueryResult = (
   override: Partial<UseQueryResult<PostListResponse, HttpError>> = {},
@@ -171,6 +197,8 @@ describe('PostsPage', () => {
   let cleanupMutateAsync: Mock;
 
   beforeEach(() => {
+    mockedUseAuth.mockReturnValue(buildAuthContext());
+
     const feeds: Feed[] = [buildFeed({ id: 1, title: 'Feed 1' }), buildFeed({ id: 2, title: 'Feed 2' })];
     const defaultPosts: PostListItem[] = [
       buildPost(),
@@ -178,6 +206,7 @@ describe('PostsPage', () => {
         id: 2,
         title: 'Post 2',
         contentSnippet: 'Resumo 2',
+        noticia: '<p>Resumo 2</p>',
         post: { content: 'Conteudo gerado 2', createdAt: '2024-01-01T15:00:00.000Z' },
       }),
     ];
@@ -492,6 +521,262 @@ describe('PostsPage', () => {
       expect(screen.getByText('Pagina 1')).toBeInTheDocument();
       expect(screen.getByText('Primeiro post')).toBeInTheDocument();
     });
+  });
+
+  it('renders the full article HTML with block elements and responsive media', async () => {
+    const user = userEvent.setup();
+
+    const richHtml = `
+      <h2>Subtitulo da materia</h2>
+      <p>Introducao com <strong>destaque</strong> e varias informacoes complementares para garantir uma leitura completa do artigo, fornecendo contexto detalhado sobre o tema tratado.</p>
+      <ul><li>Ponto 1 com detalhes adicionais relevantes para o entendimento.</li><li>Ponto 2 com descricao extensa cobrindo aspectos importantes.</li></ul>
+      <p>Fechamento com conclusoes e chamada para acao, destacando implicacoes futuras.</p>
+      <img src="https://example.com/imagem.jpg" />
+    `;
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (!params.enabled) {
+        return createPostQueryResult();
+      }
+
+      return createPostQueryResult({
+        data: {
+          items: [
+            buildPost({
+              id: 10,
+              title: 'Noticia rica',
+              noticia: richHtml,
+              contentSnippet: 'Resumo estruturado',
+            }),
+          ],
+          meta: { nextCursor: null, limit: 10 },
+        },
+        isSuccess: true,
+        isFetched: true,
+        status: 'success',
+      });
+    });
+
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Noticia rica' });
+
+    const articleToggle = screen.getAllByRole('button', { name: /NOTICIA/i })[0];
+    await user.click(articleToggle);
+
+    await waitFor(() => {
+      expect(document.getElementById('article-content-10-html')).not.toBeNull();
+    });
+
+    const htmlContainer = document.getElementById('article-content-10-html') as HTMLElement;
+    expect(htmlContainer.querySelector('h2')).not.toBeNull();
+    expect(htmlContainer.querySelectorAll('p').length).toBeGreaterThanOrEqual(1);
+    expect(htmlContainer.querySelector('ul')).not.toBeNull();
+
+    const image = htmlContainer.querySelector('img') as HTMLImageElement;
+    expect(image).not.toBeNull();
+    await waitFor(() => {
+      expect(image).toHaveAttribute('loading', 'lazy');
+    });
+    expect(image.getAttribute('alt')).toBe('');
+    expect(image.style.maxWidth).toBe('100%');
+    expect(image.style.height).toBe('auto');
+  });
+
+  it('renders article HTML without escaping tags', async () => {
+    const user = userEvent.setup();
+
+    const html =
+      '<p>Trecho com <strong>tag</strong> e um contexto amplo que se estende por varias sentencas, garantindo que o algoritmo de avaliacao reconheca o conteudo como robusto e adequado para exibicao completa no painel.</p>';
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (!params.enabled) {
+        return createPostQueryResult();
+      }
+
+      return createPostQueryResult({
+        data: {
+          items: [
+            buildPost({
+              id: 20,
+              title: 'Noticia sem escape',
+              noticia: html,
+              contentSnippet: 'Trecho com tag',
+            }),
+          ],
+          meta: { nextCursor: null, limit: 10 },
+        },
+        isSuccess: true,
+        isFetched: true,
+        status: 'success',
+      });
+    });
+
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Noticia sem escape' });
+
+    const articleToggle = screen.getAllByRole('button', { name: /NOTICIA/i })[0];
+    await user.click(articleToggle);
+
+    await waitFor(() => {
+      const container = document.getElementById('article-content-20-html');
+      expect(container).not.toBeNull();
+      expect(container?.querySelectorAll('p').length ?? 0).toBeGreaterThan(0);
+    });
+
+    const htmlContainer = document.getElementById('article-content-20-html') as HTMLElement;
+    expect(htmlContainer.textContent).toContain('Trecho com tag');
+    expect(screen.queryByText(/<p>/i)).not.toBeInTheDocument();
+  });
+
+  it('collapses and expands long article content', async () => {
+    const user = userEvent.setup();
+
+    const longSegment = '<p>' + 'Conteudo longo '.repeat(60) + '</p>';
+    const longHtml = `<h2>Resumo extenso</h2>${longSegment.repeat(6)}`;
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (!params.enabled) {
+        return createPostQueryResult();
+      }
+
+      return createPostQueryResult({
+        data: {
+          items: [
+            buildPost({
+              id: 30,
+              title: 'Noticia extensa',
+              noticia: longHtml,
+              contentSnippet: 'Conteudo muito extenso',
+            }),
+          ],
+          meta: { nextCursor: null, limit: 10 },
+        },
+        isSuccess: true,
+        isFetched: true,
+        status: 'success',
+      });
+    });
+
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Noticia extensa' });
+
+    const articleToggle = screen.getAllByRole('button', { name: /NOTICIA/i })[0];
+    await user.click(articleToggle);
+
+    const showMoreButton = await screen.findByRole('button', { name: 'Ver mais' });
+    const htmlContainer = document.getElementById('article-content-30-html') as HTMLElement;
+    expect(htmlContainer.className).toContain('article-content--collapsed');
+    expect(showMoreButton).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(showMoreButton);
+
+    await waitFor(() => {
+      expect(htmlContainer.className).not.toContain('article-content--collapsed');
+    });
+    expect(showMoreButton).toHaveAttribute('aria-expanded', 'true');
+    expect(showMoreButton).toHaveTextContent('Ver menos');
+  });
+
+  it('shows fallback excerpt and admin notice when article is weak', async () => {
+    const user = userEvent.setup();
+
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({
+        user: {
+          email: 'admin@example.com',
+          role: 'admin',
+          expiresAt: '2024-01-01T00:00:00.000Z',
+        },
+      }),
+    );
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (!params.enabled) {
+        return createPostQueryResult();
+      }
+
+      return createPostQueryResult({
+        data: {
+          items: [
+            buildPost({
+              id: 40,
+              title: 'Noticia parcial',
+              noticia: 'Atualizacao rapida',
+              contentSnippet: 'Resumo curto',
+            }),
+          ],
+          meta: { nextCursor: null, limit: 10 },
+        },
+        isSuccess: true,
+        isFetched: true,
+        status: 'success',
+      });
+    });
+
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Noticia parcial' });
+
+    const articleToggle = screen.getAllByRole('button', { name: /NOTICIA/i })[0];
+    await user.click(articleToggle);
+
+    expect(await screen.findByText('Atualizacao rapida')).toBeInTheDocument();
+    expect(screen.getByText('Conteudo parcial da noticia. Verifique a coleta no feed.')).toBeInTheDocument();
+    expect(document.getElementById('article-content-40-html')).toBeNull();
+  });
+
+  it('opens article links in a new tab with noopener noreferrer', async () => {
+    const user = userEvent.setup();
+
+    const html =
+      '<p>Este texto contextualiza a noticia com bastante detalhes para garantir que o conteudo nao seja considerado fraco pelo analizador. <a href="https://example.com/noticia">Leia mais detalhes completos</a> sobre o caso e entenda os proximos passos.</p>';
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (!params.enabled) {
+        return createPostQueryResult();
+      }
+
+      return createPostQueryResult({
+        data: {
+          items: [
+            buildPost({
+              id: 50,
+              title: 'Noticia com link',
+              noticia: html,
+              contentSnippet: 'Visite o link',
+            }),
+          ],
+          meta: { nextCursor: null, limit: 10 },
+        },
+        isSuccess: true,
+        isFetched: true,
+        status: 'success',
+      });
+    });
+
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'Noticia com link' });
+
+    const articleToggle = screen.getAllByRole('button', { name: /NOTICIA/i })[0];
+    await user.click(articleToggle);
+
+    await waitFor(() => {
+      expect(document.getElementById('article-content-50-html')).not.toBeNull();
+    });
+
+    const anchor = document
+      .getElementById('article-content-50-html')
+      ?.querySelector('a') as HTMLAnchorElement;
+    expect(anchor).not.toBeNull();
+    await waitFor(() => {
+      expect(anchor).toHaveAttribute('target', '_blank');
+    });
+    const relValue = anchor.getAttribute('rel') ?? '';
+    expect(relValue.split(/\s+/)).toEqual(expect.arrayContaining(['noopener', 'noreferrer']));
   });
 
   it('shows empty state when the user has no feeds', async () => {

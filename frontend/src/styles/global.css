@@ -38,6 +38,101 @@
   .card {
     @apply rounded-lg border border-border bg-surface shadow-sm;
   }
+
+  .article-content {
+    @apply space-y-4 text-sm leading-relaxed text-foreground;
+  }
+
+  .article-content p {
+    @apply leading-7;
+    margin: 0;
+  }
+
+  .article-content h1 {
+    @apply text-2xl font-semibold leading-snug text-foreground;
+    margin-top: 1.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .article-content h2 {
+    @apply text-xl font-semibold leading-snug text-foreground;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .article-content h3 {
+    @apply text-lg font-semibold leading-snug text-foreground;
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .article-content ul,
+  .article-content ol {
+    @apply my-4 ml-6 space-y-2;
+  }
+
+  .article-content ul {
+    list-style-type: disc;
+  }
+
+  .article-content ol {
+    list-style-type: decimal;
+  }
+
+  .article-content li {
+    @apply leading-7;
+  }
+
+  .article-content blockquote {
+    @apply my-4 border-l-4 border-primary/40 pl-4 italic text-muted-foreground;
+  }
+
+  .article-content pre {
+    @apply my-4 overflow-x-auto rounded-md bg-muted/40 p-4 text-sm font-mono;
+  }
+
+  .article-content code {
+    @apply rounded bg-muted/40 px-1 py-0.5 text-sm;
+  }
+
+  .article-content figure {
+    @apply my-4;
+  }
+
+  .article-content figcaption {
+    @apply mt-2 text-xs text-muted-foreground;
+  }
+
+  .article-content img,
+  .article-content video,
+  .article-content iframe {
+    @apply my-4 rounded-md;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .article-content a {
+    @apply font-medium text-primary underline underline-offset-4 transition-colors duration-200 hover:text-primary/80;
+  }
+
+  .article-content--collapsed {
+    @apply relative overflow-hidden;
+  }
+
+  .article-content--collapsed::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 4rem;
+    background: linear-gradient(
+      to top,
+      hsl(var(--color-background)) 0%,
+      hsl(var(--color-background) / 0.8) 60%,
+      hsl(var(--color-background) / 0) 100%
+    );
+    pointer-events: none;
+  }
 }
 
 @layer utilities {
