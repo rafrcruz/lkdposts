@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Example Substack</title>
+    <item>
+      <title>Understanding Machine Learning</title>
+      <link>https://magazine.sebastianraschka.com/p/understanding-machine-learning</link>
+      <guid isPermaLink="false">substack-article-12345</guid>
+      <pubDate>Mon, 03 Feb 2025 15:30:00 +0000</pubDate>
+      <author><![CDATA[Sebastian Raschka]]></author>
+      <category><![CDATA[Data Science]]></category>
+      <description><![CDATA[Short intro &amp; highlights.]]></description>
+      <content:encoded><![CDATA[
+        <p>Hello readers!</p>
+        <p>Here is some content.</p>
+      ]]></content:encoded>
+      <enclosure url="https://substackcdn.com/image.jpg" length="0" type="image/jpeg" />
+    </item>
+  </channel>
+</rss>

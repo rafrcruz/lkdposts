@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:media="http://search.yahoo.com/mrss/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:feedburner="http://rssnamespace.org/feedburner/ext/1.0">
+  <channel>
+    <title>404 Media</title>
+    <item>
+      <title><![CDATA[Inside the &quot;Example&quot; Conspiracy]]></title>
+      <link>https://www.404media.co/inside-the-example-conspiracy/</link>
+      <feedburner:origLink>https://www.404media.co/inside-the-example-conspiracy/</feedburner:origLink>
+      <guid isPermaLink="false">tag:404media.co,2025-01-01:/inside-the-example-conspiracy</guid>
+      <pubDate>Wed, 01 Jan 2025 10:00:00 +0000</pubDate>
+      <dc:creator><![CDATA[404 Media Team]]></dc:creator>
+      <category><![CDATA[Investigations]]></category>
+      <category><![CDATA[Technology]]></category>
+      <description><![CDATA[<p>A short summary for the story.</p>]]></description>
+      <content:encoded><![CDATA[
+        <p>The long-form story body.</p>
+        <figure><img src="https://static.404media.co/images/story-main.jpg" width="1600" height="900" /></figure>
+      ]]></content:encoded>
+      <media:content url="https://static.404media.co/images/story-main.jpg" width="1600" height="900" medium="image" />
+      <media:thumbnail url="https://static.404media.co/images/story-thumb.jpg" width="800" height="450" />
+    </item>
+  </channel>
+</rss>
