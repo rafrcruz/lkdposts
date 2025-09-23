@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns="http://purl.org/rss/1.0/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:dcterms="http://purl.org/dc/terms/"
+>
+  <channel rdf:about="https://news.example.org/feed">
+    <title>Example News</title>
+    <link>https://news.example.org/</link>
+    <items>
+      <rdf:Seq>
+        <rdf:li rdf:resource="https://news.example.org/posts/brief-update" />
+      </rdf:Seq>
+    </items>
+  </channel>
+  <item rdf:about="https://news.example.org/posts/brief-update">
+    <title>Brief Update</title>
+    <link rdf:resource="https://news.example.org/posts/brief-update" />
+    <dcterms:issued>2024-04-01</dcterms:issued>
+    <dc:creator>News Desk</dc:creator>
+    <dc:subject>
+      <rdf:Bag>
+        <rdf:li>Updates</rdf:li>
+        <rdf:li>Community</rdf:li>
+      </rdf:Bag>
+    </dc:subject>
+    <description>A short update on community events.</description>
+  </item>
+</rdf:RDF>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns="http://purl.org/rss/1.0/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:media="http://search.yahoo.com/mrss/"
+>
+  <channel rdf:about="https://example.com/rdf/feed">
+    <title>Example RDF Feed</title>
+    <link>https://example.com/rdf/</link>
+    <description>Example feed using RSS 1.0.</description>
+    <items>
+      <rdf:Seq>
+        <rdf:li rdf:resource="https://example.com/rdf/articles/mission-update" />
+      </rdf:Seq>
+    </items>
+  </channel>
+  <item rdf:about="https://example.com/rdf/articles/mission-update">
+    <title>Mission Update from Orbit</title>
+    <link>https://example.com/rdf/articles/mission-update</link>
+    <dc:date>2024-03-15T09:30:00Z</dc:date>
+    <dc:creator>Commander Jane Doe</dc:creator>
+    <dc:subject>Space</dc:subject>
+    <dc:subject>Exploration</dc:subject>
+    <content:encoded><![CDATA[
+      <p>The crew reports nominal operations aboard the station.</p>
+      <p><img src="https://cdn.example.com/images/station.jpg" alt="Station" /></p>
+    ]]></content:encoded>
+    <description>Highlights from the latest orbital mission.</description>
+    <media:content url="https://cdn.example.com/videos/update.mp4" width="1920" height="1080" />
+    <media:thumbnail rdf:resource="https://cdn.example.com/images/thumb.jpg" width="640" height="360" />
+  </item>
+</rdf:RDF>

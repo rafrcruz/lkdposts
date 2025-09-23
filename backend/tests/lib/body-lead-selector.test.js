@@ -23,6 +23,11 @@ const getFirstItem = (parsed) => {
       ? parsed.rss.channel.item[0]
       : parsed.rss.channel.item;
   }
+  if (parsed['rdf:RDF']?.item) {
+    return Array.isArray(parsed['rdf:RDF'].item)
+      ? parsed['rdf:RDF'].item[0]
+      : parsed['rdf:RDF'].item;
+  }
   if (parsed.channel?.item) {
     return Array.isArray(parsed.channel.item) ? parsed.channel.item[0] : parsed.channel.item;
   }
