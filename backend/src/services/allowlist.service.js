@@ -12,10 +12,10 @@ const ensureSuperAdmin = async () => {
 
   if (!email) {
     console.warn('SUPERADMIN_EMAIL is not defined; skipping super admin ensure step.');
-    return;
+    return null;
   }
 
-  await allowlistRepository.upsertSuperAdmin({
+  return allowlistRepository.upsertSuperAdmin({
     email,
     role: ROLES.ADMIN,
   });
@@ -26,7 +26,26 @@ const findAllowedUserByEmail = async (email) => {
     return null;
   }
 
-  return allowlistRepository.findByEmail(normalizeEmail(email));
+  const normalizedEmail = normalizeEmail(email);
+  const existing = await allowlistRepository.findByEmail(normalizedEmail);
+
+  if (existing) {
+    return existing;
+  }
+
+  const normalizedSuperAdmin = normalizeEmail(config.auth.superAdminEmail);
+
+  if (normalizedEmail !== normalizedSuperAdmin) {
+    return null;
+  }
+
+  const superAdmin = await ensureSuperAdmin();
+
+  if (superAdmin) {
+    return superAdmin;
+  }
+
+  return allowlistRepository.findByEmail(normalizedEmail);
 };
 
 const listAllowedUsers = async ({ cursor, limit } = {}) => {
