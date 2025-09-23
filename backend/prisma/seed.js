@@ -1,8 +1,10 @@
 const { PrismaClient } = require('@prisma/client');
+const config = require('../src/config');
+const { ROLES } = require('../src/constants/roles');
 
 const prisma = new PrismaClient();
 
-async function main() {
+const ensureHelloMessage = async () => {
   const defaultMessage = 'hello mundo';
 
   const existing = await prisma.helloMessage.findFirst({
@@ -16,11 +18,27 @@ async function main() {
       },
     });
   }
-}
+};
+
+const ensureSuperAdmin = async () => {
+  const email = config.auth?.superAdminEmail?.trim().toLowerCase();
+
+  if (!email) {
+    console.warn('SUPERADMIN_EMAIL is not defined; skipping super admin seed step.');
+    return;
+  }
+
+  await prisma.allowedUser.upsert({
+    where: { email },
+    update: { role: ROLES.ADMIN },
+    create: { email, role: ROLES.ADMIN },
+  });
+};
 
 const run = async () => {
   try {
-    await main();
+    await ensureHelloMessage();
+    await ensureSuperAdmin();
   } catch (error) {
     console.error('Failed to seed database:', error);
     process.exitCode = 1;
