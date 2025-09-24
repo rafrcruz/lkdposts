@@ -113,8 +113,10 @@ const FeedsPage = () => {
   const [editFeedback, setEditFeedback] = useState<FeedbackMessage | null>(null);
 
   const [listFeedback, setListFeedback] = useState<FeedbackMessage | null>(null);
+  const [shouldRefreshFeeds, setShouldRefreshFeeds] = useState(false);
 
   const feedList = useFeedList({ cursor, limit: PAGE_SIZE });
+  const { refetch: refetchFeedList } = feedList;
   const createFeed = useCreateFeed();
   const bulkCreate = useBulkCreateFeeds();
   const updateFeedMutation = useUpdateFeed();
@@ -142,7 +144,17 @@ const FeedsPage = () => {
   const resetPagination = () => {
     setCursor(null);
     setPreviousCursors([]);
+    setShouldRefreshFeeds(true);
   };
+
+  useEffect(() => {
+    if (!shouldRefreshFeeds) {
+      return;
+    }
+
+    setShouldRefreshFeeds(false);
+    void refetchFeedList();
+  }, [shouldRefreshFeeds, refetchFeedList]);
 
   const resolveErrorMessage = (error: unknown): string => {
     if (error instanceof HttpError) {
@@ -435,7 +447,7 @@ const FeedsPage = () => {
         },
       );
       setListFeedback({ type: 'success', message });
-    } catch (_error) {
+    } catch {
       setListFeedback({
         type: 'error',
         message: t(
@@ -802,7 +814,9 @@ const FeedsPage = () => {
               <button
                 type="button"
                 className="inline-flex items-center justify-center rounded-md border border-destructive px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={handleResetFeeds}
+                onClick={() => {
+                  void handleResetFeeds();
+                }}
                 disabled={isResettingFeeds}
               >
                 {isResettingFeeds

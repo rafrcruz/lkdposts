@@ -52,7 +52,6 @@ afterAll(() => {
     scenarios: scenarioReports,
   };
 
-  // eslint-disable-next-line no-console
   console.info('[posts-page] validation summary', JSON.stringify(reportPayload, null, 2));
 });
 
@@ -339,8 +338,7 @@ describe('PostsPage NOTICIA rendering (E2E with API mocks)', () => {
       restoreFetch();
       throw new Error('NOTICIA missing expected links');
     }
-
-    const image = images[0] as HTMLImageElement;
+    const image = images[0];
     expect(image.getAttribute('loading')).toBe('lazy');
     expect(image.style.maxWidth).toBe('100%');
     expect(image.style.height).toBe('auto');
@@ -464,8 +462,7 @@ describe('PostsPage NOTICIA rendering (E2E with API mocks)', () => {
       expect(anchor).toHaveAttribute('target', '_blank');
       expect(anchor.getAttribute('rel') ?? '').toContain('noopener');
     });
-
-    const img = images[0] as HTMLImageElement;
+    const img = images[0];
     expect(img.getAttribute('loading')).toBe('lazy');
     expect(img.style.maxWidth).toBe('100%');
 
