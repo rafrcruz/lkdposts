@@ -7,9 +7,8 @@ import { vi } from 'vitest';
 
 import PostsPage from './PostsPage';
 import i18n from '@/config/i18n';
-import type { PostListItem } from '@/features/posts/types/post';
+import type { PostListItem, RefreshSummary, CleanupResult } from '@/features/posts/types/post';
 import type { Feed } from '@/features/feeds/types/feed';
-import type { RefreshSummary, CleanupResult } from '@/features/posts/types/post';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { AuthContextValue } from '@/features/auth/context/AuthContext';
 
@@ -103,7 +102,14 @@ const mockApi = (config: PostsApiMockConfig) => {
 
   const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = (init?.method ?? 'GET').toUpperCase();
-    const resource = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    let resource: string;
+    if (typeof input === 'string') {
+      resource = input;
+    } else if (input instanceof URL) {
+      resource = input.toString();
+    } else {
+      resource = input.url;
+    }
     const url = new URL(resource);
     const path = url.pathname;
 
@@ -344,14 +350,14 @@ describe('PostsPage NOTICIA rendering (E2E with API mocks)', () => {
     expect(image.style.height).toBe('auto');
 
     let linksWithTargetRel = 0;
-    anchors.forEach((anchor) => {
+    for (const anchor of anchors) {
       expect(anchor).toHaveAttribute('target', '_blank');
       const rel = anchor.getAttribute('rel') ?? '';
       expect(rel.split(/\s+/)).toEqual(expect.arrayContaining(['noopener', 'noreferrer']));
       if (anchor.getAttribute('target') === '_blank' && rel.includes('noopener') && rel.includes('noreferrer')) {
         linksWithTargetRel += 1;
       }
-    });
+    }
 
     expect(articleContent.innerHTML).not.toContain('&lt;');
     expect(articleContent.textContent).not.toContain('<p>');
@@ -456,12 +462,12 @@ describe('PostsPage NOTICIA rendering (E2E with API mocks)', () => {
 
     expect(figure).not.toBeNull();
 
-    anchors.forEach((anchor) => {
+    for (const anchor of anchors) {
       const href = anchor.getAttribute('href') ?? '';
       expect(href).not.toMatch(/utm_|fbclid|ref=/i);
       expect(anchor).toHaveAttribute('target', '_blank');
       expect(anchor.getAttribute('rel') ?? '').toContain('noopener');
-    });
+    }
     const img = images[0];
     expect(img.getAttribute('loading')).toBe('lazy');
     expect(img.style.maxWidth).toBe('100%');
@@ -633,7 +639,7 @@ describe('PostsPage NOTICIA rendering (E2E with API mocks)', () => {
     setupDefaultAuth('user');
 
     const escapedHtml = '&lt;p&gt;Hello &lt;strong&gt;World&lt;/strong&gt;&lt;/p&gt;';
-    const sanitizedHtml = escapedHtml.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    const sanitizedHtml = escapedHtml.replaceAll('&lt;', '<').replaceAll('&gt;', '>');
 
     const escapedPost = buildPostItem({
       id: 8800,
@@ -707,8 +713,8 @@ describe('PostsPage NOTICIA rendering (E2E with API mocks)', () => {
         return container;
       });
 
-      expect(window).not.toHaveProperty('__noticiaScriptExecuted');
-      expect(window).not.toHaveProperty('__noticiaOnloadExecuted');
+      expect(globalThis).not.toHaveProperty('__noticiaScriptExecuted');
+      expect(globalThis).not.toHaveProperty('__noticiaOnloadExecuted');
     } finally {
       restoreFetch();
     }
