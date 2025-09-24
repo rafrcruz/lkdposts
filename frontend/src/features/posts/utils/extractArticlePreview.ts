@@ -78,26 +78,29 @@ const parseHtml = (html: string): ParsedRoot | null => {
 const removeFooterElements = (root: HTMLElement) => {
   const selectors = FOOTER_CLASS_KEYWORDS.map((keyword) => `[class*="${keyword}"]`).join(',');
   if (selectors) {
-    root.querySelectorAll(selectors).forEach((element) => {
+    const elements = root.querySelectorAll(selectors);
+    for (const element of elements) {
       if (element instanceof HTMLElement) {
         element.remove();
       }
-    });
+    }
   }
 
-  root.querySelectorAll('footer').forEach((element) => {
+  const footers = root.querySelectorAll('footer');
+  for (const element of footers) {
     element.remove();
-  });
+  }
 };
 
 const sanitizeRoot = (root: HTMLElement) => {
-  root.querySelectorAll('script, style, noscript').forEach((element) => {
+  const removable = root.querySelectorAll('script, style, noscript');
+  for (const element of removable) {
     element.remove();
-  });
+  }
   removeFooterElements(root);
 };
 
-const normalizeWhitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
+const normalizeWhitespace = (value: string) => value.replaceAll(/\s+/g, ' ').trim();
 
 const findTruncationPoint = (text: string, preferred: number, fallback: number) => {
   const clamp = (limit: number) => {
