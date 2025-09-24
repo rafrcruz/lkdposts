@@ -152,6 +152,30 @@ describe('assembleArticle', () => {
     expect(result.diagnostics.imageSource).toBe('enclosure');
   });
 
+  it('avoids injecting duplicate hero image when body already contains it', () => {
+    const normalized = {
+      canonicalUrl: 'https://example.com/story',
+      media: {
+        enclosureImage: { url: 'https://cdn.example.com/hero.jpg' },
+      },
+      rawHtmlCandidates: {},
+    };
+    const choice = {
+      leadHtmlRaw: null,
+      bodyHtmlRaw:
+        '<p>Opening paragraph.</p>' +
+        '<figure><img src="https://cdn.example.com/hero.jpg" alt="Hero" /></figure>' +
+        '<p>Continuation.</p>',
+    };
+
+    const result = assembleArticle(normalized, choice);
+
+    const occurrences = [...result.articleHtml.matchAll(/<img src="https:\/\/cdn\.example\.com\/hero\.jpg"/g)];
+    expect(occurrences).toHaveLength(1);
+    expect(result.mainImageUrl).toBe('https://cdn.example.com/hero.jpg');
+    expect(result.diagnostics.imageSource).toBe('enclosure');
+  });
+
   it('truncates very large html payloads and marks diagnostics', () => {
     const normalized = {
       canonicalUrl: 'https://example.com/big',
