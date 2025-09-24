@@ -179,11 +179,11 @@ const sanitizeIdentifier = (value) => {
 
 const escapeHtml = (value) =>
   String(value ?? '')
-    .replaceAll(/&/g, '&amp;')
-    .replaceAll(/</g, '&lt;')
-    .replaceAll(/>/g, '&gt;')
-    .replaceAll(/"/g, '&quot;')
-    .replaceAll(/'/g, '&#39;');
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 
 const buildFallbackArticleHtml = ({ title, link }) => {
   const safeTitle = escapeHtml(title ?? '');
@@ -235,14 +235,14 @@ const isHtmlEmpty = (value) => {
   if (typeof value !== 'string') {
     return true;
   }
-  return value.replace(/\s+/g, '').length === 0;
+  return value.replaceAll(/\s+/g, '').length === 0;
 };
 
 const normalizeHtmlForDiff = (value) => {
   if (typeof value !== 'string') {
     return '';
   }
-  return value.replace(/\s+/g, ' ').trim();
+  return value.replaceAll(/\s+/g, ' ').trim();
 };
 
 const hasSubstantialHtmlChange = (currentHtml, newHtml) => {

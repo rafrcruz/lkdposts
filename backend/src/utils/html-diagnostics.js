@@ -7,7 +7,7 @@ const hasBlockTags = (html) => BLOCK_TAG_REGEX.test(ensureString(html));
 
 const looksEscapedHtml = (html) => ESCAPED_BLOCK_TAG_REGEX.test(ensureString(html));
 
-const collapseWhitespace = (value) => value.replace(/\s+/g, ' ').trim();
+const collapseWhitespace = (value) => value.replaceAll(/\s+/g, ' ').trim();
 
 const computeWeakContent = ({ html }) => {
   const content = ensureString(html);
