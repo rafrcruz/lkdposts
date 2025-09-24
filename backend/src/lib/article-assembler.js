@@ -75,12 +75,15 @@ const isHttpUrl = (value) => {
   if (typeof value !== 'string') {
     return false;
   }
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch (error) {
+  const trimmed = value.trim();
+  if (!trimmed) {
     return false;
   }
+  if (typeof URL.canParse === 'function' && !URL.canParse(trimmed)) {
+    return false;
+  }
+  const lower = trimmed.toLowerCase();
+  return lower.startsWith('http://') || lower.startsWith('https://');
 };
 
 const normalizeAllowedHosts = (hosts) => {
@@ -135,7 +138,7 @@ const addLeadClass = (leadHtmlRaw) => {
     const attrsRaw = paragraphMatch[1] ?? '';
     const inner = paragraphMatch[2] ?? '';
     const classMatch = attrsRaw.match(/\bclass\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/i);
-    let updatedAttrs = attrsRaw;
+    let updatedAttrs;
     if (classMatch) {
       const classValue = classMatch[2] ?? classMatch[3] ?? classMatch[4] ?? '';
       const existingClasses = classValue
@@ -150,7 +153,7 @@ const addLeadClass = (leadHtmlRaw) => {
     } else {
       updatedAttrs = `${attrsRaw} class="lead"`;
     }
-    const normalizedAttrs = updatedAttrs.replace(/\s+/g, ' ').trim();
+    const normalizedAttrs = updatedAttrs.replaceAll(/\s+/g, ' ').trim();
     const attrPart = normalizedAttrs ? ` ${normalizedAttrs}` : '';
     return `<p${attrPart}>${inner}</p>`;
   }
@@ -229,8 +232,13 @@ const normalizeUrlValue = (rawValue, context, { allowedSchemes, record = true } 
         if (resolved) {
           return;
         }
-      } catch (error) {
+      } catch (parseError) {
         resolved = null;
+        if (context?.diagnostics) {
+          context.diagnostics.urlParseErrors += 1;
+          context.diagnostics.lastUrlParseError =
+            parseError instanceof Error ? parseError.message : String(parseError);
+        }
       }
     }
   };
@@ -354,6 +362,10 @@ const createDiagnostics = () => ({
   trackerParamsRemoved: 0,
   truncated: false,
   keptEmbedsHosts: [],
+  urlParseErrors: 0,
+  lastUrlParseError: null,
+  htmlParseErrorCount: 0,
+  lastHtmlParseError: null,
 });
 
 const htmlFragmentContainsImageUrl = (html, context, targetUrl) => {
@@ -373,7 +385,12 @@ const htmlFragmentContainsImageUrl = (html, context, targetUrl) => {
         return true;
       }
     }
-  } catch (error) {
+  } catch (parseError) {
+    if (context?.diagnostics) {
+      context.diagnostics.htmlParseErrorCount += 1;
+      context.diagnostics.lastHtmlParseError =
+        parseError instanceof Error ? parseError.message : String(parseError);
+    }
     return html.includes(targetUrl);
   }
 
@@ -515,8 +532,7 @@ const sanitizeAnchor = (node, context) => {
   }
 
   if (normalized.protocol === 'http:' || normalized.protocol === 'https:') {
-    attrs.push('target="_blank"');
-    attrs.push('rel="noopener noreferrer"');
+    attrs.push('target="_blank"', 'rel="noopener noreferrer"');
     attributesObject.target = '_blank';
     attributesObject.rel = 'noopener noreferrer';
   }
@@ -587,8 +603,7 @@ const sanitizeImage = (node, context) => {
     }
   }
 
-  attrs.push('loading="lazy"');
-  attrs.push('decoding="async"');
+  attrs.push('loading="lazy"', 'decoding="async"');
   attributesObject.loading = 'lazy';
   attributesObject.decoding = 'async';
 
@@ -704,7 +719,7 @@ const sanitizeIframe = (node, context) => {
 
 const stripTrailingWhitespace = (nodes) => {
   while (nodes.length > 0) {
-    const last = nodes[nodes.length - 1];
+    const last = nodes.at(-1);
     if (last.type === 'text' && !last.textContent.trim()) {
       nodes.pop();
       continue;
@@ -717,8 +732,8 @@ const isIsolatedReadMoreParagraph = (node) => {
   if (node.type !== 'element' || node.tagName !== 'p') {
     return false;
   }
-  const rawText = node.textContent.replace(/\s+/g, ' ').trim().toLowerCase();
-  const normalized = rawText.replace(/[.!?…›»→-]+$/g, '').trim();
+  const rawText = node.textContent.replaceAll(/\s+/g, ' ').trim().toLowerCase();
+  const normalized = rawText.replaceAll(/[.!?…›»→-]+$/g, '').trim();
   return READ_MORE_PHRASES.has(normalized);
 };
 
@@ -805,7 +820,7 @@ const generateExcerptText = (nodes, maxChars) => {
   const combined = parts.join(' ');
   const normalized = he
     .decode(combined)
-    .replace(/\s+/g, ' ')
+    .replaceAll(/\s+/g, ' ')
     .trim();
   if (!normalized) {
     return '';
