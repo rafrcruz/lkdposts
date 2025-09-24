@@ -195,100 +195,148 @@ const buildTrackerParamNames = (overrideList) => {
   return normalized.size > 0 ? normalized : new Set(DEFAULT_TRACKING_PARAM_NAMES);
 };
 
-const normalizeUrlValue = (rawValue, context, { allowedSchemes, record = true } = {}) => {
+const isDangerousScheme = (lower) =>
+  lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:');
+
+const ensureAllowedSchemes = (allowedSchemes) => (allowedSchemes instanceof Set ? allowedSchemes : new Set());
+
+const recordUrlParseError = (context, parseError) => {
+  if (!context?.diagnostics) {
+    return;
+  }
+  context.diagnostics.urlParseErrors += 1;
+  context.diagnostics.lastUrlParseError =
+    parseError instanceof Error ? parseError.message : String(parseError);
+};
+
+const getResolutionBases = (context) => {
+  const bases = Array.isArray(context?.baseUrls) ? context.baseUrls : [];
+  return [null, ...bases];
+};
+
+const tryResolveCandidateWithBases = (value, context) => {
+  for (const base of getResolutionBases(context)) {
+    try {
+      return base ? new URL(value, base) : new URL(value);
+    } catch (parseError) {
+      recordUrlParseError(context, parseError);
+    }
+  }
+  return null;
+};
+
+const buildUrlCandidates = (trimmed) => {
+  if (!trimmed.startsWith('//')) {
+    return [trimmed];
+  }
+  return [`https:${trimmed}`, trimmed, `http:${trimmed}`];
+};
+
+const attemptResolveCandidates = (candidates, context) => {
+  for (const candidate of candidates) {
+    const resolved = tryResolveCandidateWithBases(candidate, context);
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return null;
+};
+
+const resolveUrlUsingCandidates = (trimmed, context) => {
+  const candidates = buildUrlCandidates(trimmed);
+  const resolved = attemptResolveCandidates(candidates, context);
+  if (resolved) {
+    return resolved;
+  }
+  return candidates.includes(trimmed) ? null : attemptResolveCandidates([trimmed], context);
+};
+
+const isHttpProtocol = (protocol) => protocol === 'http:' || protocol === 'https:';
+
+const isAllowedProtocol = (protocol, allowedSchemes, resolved) => {
+  const normalizedProtocol = protocol.endsWith(':') ? protocol.slice(0, -1) : protocol;
+  if (!allowedSchemes.has(normalizedProtocol)) {
+    return false;
+  }
+  return !isHttpProtocol(protocol) || Boolean(resolved.hostname);
+};
+
+const getTrackerParamNames = (context) => context.trackerParamNames || DEFAULT_TRACKING_PARAM_NAMES;
+
+const removeTrackerParams = (protocol, resolved, context) => {
+  if (!isHttpProtocol(protocol)) {
+    return 0;
+  }
+  let removedParams = 0;
+  const params = resolved.searchParams;
+  const trackerParamNames = getTrackerParamNames(context);
+  for (const key of Array.from(params.keys())) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey.startsWith('utm_') || trackerParamNames.has(lowerKey)) {
+      const occurrences = params.getAll(key).length || 1;
+      removedParams += occurrences;
+      params.delete(key);
+    }
+  }
+  return removedParams;
+};
+
+const recordLinkNormalization = (context, shouldRecord, removedParams) => {
+  if (!shouldRecord || !context?.diagnostics) {
+    return;
+  }
+  context.diagnostics.linkFixes += 1;
+  if (removedParams > 0) {
+    context.diagnostics.trackerParamsRemoved += removedParams;
+  }
+};
+
+const normalizeUrlInput = (rawValue) => {
   if (typeof rawValue !== 'string') {
-    return { ok: false };
+    return null;
   }
   const trimmed = rawValue.trim();
   if (!trimmed) {
-    return { ok: false };
+    return null;
   }
-  const lower = trimmed.toLowerCase();
-  if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) {
+  return { trimmed, lower: trimmed.toLowerCase() };
+};
+
+const normalizeUrlValue = (rawValue, context, { allowedSchemes, record = true } = {}) => {
+  const normalizedInput = normalizeUrlInput(rawValue);
+  if (!normalizedInput) {
     return { ok: false };
   }
 
+  const { trimmed, lower } = normalizedInput;
+  if (isDangerousScheme(lower)) {
+    return { ok: false };
+  }
+
+  const allowed = ensureAllowedSchemes(allowedSchemes);
+
   if (lower.startsWith('mailto:')) {
-    if (!allowedSchemes.has('mailto')) {
+    if (!allowed.has('mailto')) {
       return { ok: false };
     }
-    if (record) {
-      context.diagnostics.linkFixes += 1;
-    }
+    recordLinkNormalization(context, record, 0);
     return { ok: true, value: trimmed, protocol: 'mailto:' };
   }
 
-  const candidates = [trimmed];
-  if (trimmed.startsWith('//')) {
-    candidates.unshift(`https:${trimmed}`);
-    candidates.push(`http:${trimmed}`);
-  }
-
-  let resolved = null;
-  const attemptWithBases = (value) => {
-    for (const base of [null, ...context.baseUrls]) {
-      try {
-        resolved = base ? new URL(value, base) : new URL(value);
-        if (resolved) {
-          return;
-        }
-      } catch (parseError) {
-        resolved = null;
-        if (context?.diagnostics) {
-          context.diagnostics.urlParseErrors += 1;
-          context.diagnostics.lastUrlParseError =
-            parseError instanceof Error ? parseError.message : String(parseError);
-        }
-      }
-    }
-  };
-
-  for (const candidate of candidates) {
-    attemptWithBases(candidate);
-    if (resolved) {
-      break;
-    }
-  }
-
-  if (!resolved) {
-    attemptWithBases(trimmed);
-  }
-
+  const resolved = resolveUrlUsingCandidates(trimmed, context);
   if (!resolved) {
     return { ok: false };
   }
 
   const protocol = resolved.protocol.toLowerCase();
-  const normalizedProtocol = protocol.endsWith(':') ? protocol.slice(0, -1) : protocol;
-  if (!allowedSchemes.has(normalizedProtocol)) {
-    return { ok: false };
-  }
-  if ((protocol === 'http:' || protocol === 'https:') && !resolved.hostname) {
+  if (!isAllowedProtocol(protocol, allowed, resolved)) {
     return { ok: false };
   }
 
-  let removedParams = 0;
-  if (protocol === 'http:' || protocol === 'https:') {
-    const params = resolved.searchParams;
-    const trackerParamNames = context.trackerParamNames || DEFAULT_TRACKING_PARAM_NAMES;
-    for (const key of Array.from(params.keys())) {
-      const lowerKey = key.toLowerCase();
-      if (lowerKey.startsWith('utm_') || trackerParamNames.has(lowerKey)) {
-        const occurrences = params.getAll(key).length || 1;
-        removedParams += occurrences;
-        params.delete(key);
-      }
-    }
-  }
+  const removedParams = removeTrackerParams(protocol, resolved, context);
+  recordLinkNormalization(context, record, removedParams);
 
-  if (record) {
-    context.diagnostics.linkFixes += 1;
-    if (removedParams > 0) {
-      context.diagnostics.trackerParamsRemoved += removedParams;
-    }
-  }
-
-  const value = protocol === 'http:' || protocol === 'https:' ? resolved.toString() : trimmed;
+  const value = isHttpProtocol(protocol) ? resolved.toString() : trimmed;
   return { ok: true, value, protocol, removedParams, urlObject: resolved };
 };
 
@@ -550,6 +598,73 @@ const sanitizeAnchor = (node, context) => {
   ];
 };
 
+const normalizePositiveInteger = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const appendClassAttribute = (node, attrs, attributesObject) => {
+  const classValue = sanitizeClassValue(node.getAttribute('class'));
+  if (!classValue) {
+    return;
+  }
+  attrs.push(`class="${escapeHtml(classValue)}"`);
+  attributesObject.class = classValue;
+};
+
+const appendAltAttribute = (node, attrs, attributesObject) => {
+  const altAttr = node.getAttribute('alt');
+  const altValue = typeof altAttr === 'string' ? altAttr : '';
+  attrs.push(`alt="${escapeHtml(altValue)}"`);
+  attributesObject.alt = altValue;
+};
+
+const appendTitleAttribute = (node, attrs, attributesObject) => {
+  const titleAttr = node.getAttribute('title');
+  const trimmedTitle = typeof titleAttr === 'string' ? titleAttr.trim() : '';
+  if (!trimmedTitle) {
+    return;
+  }
+  attrs.push(`title="${escapeHtml(trimmedTitle)}"`);
+  attributesObject.title = trimmedTitle;
+};
+
+const appendNumericDimension = (node, attrs, attributesObject, attributeName) => {
+  const normalizedValue = normalizePositiveInteger(node.getAttribute(attributeName));
+  if (!normalizedValue) {
+    return;
+  }
+  attrs.push(`${attributeName}="${normalizedValue}"`);
+  attributesObject[attributeName] = String(normalizedValue);
+};
+
+const buildImageAttributes = (node, normalizedSrc) => {
+  const attrs = [`src="${escapeHtml(normalizedSrc)}"`];
+  const attributesObject = { src: normalizedSrc };
+  appendClassAttribute(node, attrs, attributesObject);
+  appendAltAttribute(node, attrs, attributesObject);
+  appendTitleAttribute(node, attrs, attributesObject);
+  appendNumericDimension(node, attrs, attributesObject, 'width');
+  appendNumericDimension(node, attrs, attributesObject, 'height');
+  attrs.push('loading="lazy"', 'decoding="async"');
+  attributesObject.loading = 'lazy';
+  attributesObject.decoding = 'async';
+  return { attrs, attributesObject };
+};
+
+const updateImageContext = (context, normalizedValue) => {
+  if (context.expectedTopImageUrl && normalizedValue === context.expectedTopImageUrl) {
+    context.sanitizedTopImageUrl = normalizedValue;
+    return;
+  }
+  if (!context.inlineImageCandidate && normalizedValue !== context.expectedTopImageUrl) {
+    context.inlineImageCandidate = normalizedValue;
+  }
+};
+
 const sanitizeImage = (node, context) => {
   const srcRaw = node.getAttribute('src');
   const normalized = normalizeUrlValue(srcRaw, context, {
@@ -559,62 +674,10 @@ const sanitizeImage = (node, context) => {
     return [];
   }
 
-  const attrs = [];
-  const attributesObject = {};
-  attrs.push(`src="${escapeHtml(normalized.value)}"`);
-  attributesObject.src = normalized.value;
-
-  const classValue = sanitizeClassValue(node.getAttribute('class'));
-  if (classValue) {
-    attrs.push(`class="${escapeHtml(classValue)}"`);
-    attributesObject.class = classValue;
-  }
-
-  const altAttr = node.getAttribute('alt');
-  if (typeof altAttr === 'string') {
-    attrs.push(`alt="${escapeHtml(altAttr)}"`);
-    attributesObject.alt = altAttr;
-  } else {
-    attrs.push('alt=""');
-    attributesObject.alt = '';
-  }
-
-  const titleAttr = node.getAttribute('title');
-  if (typeof titleAttr === 'string' && titleAttr.trim()) {
-    attrs.push(`title="${escapeHtml(titleAttr.trim())}"`);
-    attributesObject.title = titleAttr.trim();
-  }
-
-  const widthAttr = node.getAttribute('width');
-  if (typeof widthAttr === 'string') {
-    const normalizedWidth = Number.parseInt(widthAttr, 10);
-    if (Number.isFinite(normalizedWidth) && normalizedWidth > 0) {
-      attrs.push(`width="${normalizedWidth}"`);
-      attributesObject.width = String(normalizedWidth);
-    }
-  }
-
-  const heightAttr = node.getAttribute('height');
-  if (typeof heightAttr === 'string') {
-    const normalizedHeight = Number.parseInt(heightAttr, 10);
-    if (Number.isFinite(normalizedHeight) && normalizedHeight > 0) {
-      attrs.push(`height="${normalizedHeight}"`);
-      attributesObject.height = String(normalizedHeight);
-    }
-  }
-
-  attrs.push('loading="lazy"', 'decoding="async"');
-  attributesObject.loading = 'lazy';
-  attributesObject.decoding = 'async';
-
+  const { attrs, attributesObject } = buildImageAttributes(node, normalized.value);
   const html = `<img ${attrs.join(' ')}>`;
 
-  if (context.expectedTopImageUrl && normalized.value === context.expectedTopImageUrl) {
-    context.sanitizedTopImageUrl = normalized.value;
-  }
-  if (!context.inlineImageCandidate && normalized.value !== context.expectedTopImageUrl) {
-    context.inlineImageCandidate = normalized.value;
-  }
+  updateImageContext(context, normalized.value);
 
   return [
     createDescriptor({ type: 'element', tagName: 'img', html, textContent: '', attributes: attributesObject }),
@@ -789,52 +852,82 @@ const truncateHtmlIfNeeded = (html, maxHtmlKB, diagnostics) => {
   return { html: `${truncatedHtml}${truncatedHtml ? '\n' : ''}${notice}`, truncated: true };
 };
 
-const generateExcerptText = (nodes, maxChars) => {
-  if (!nodes || nodes.length === 0) {
-    return '';
+const hasArticleMetaClass = (classValue) => {
+  if (typeof classValue !== 'string') {
+    return false;
+  }
+  return classValue
+    .split(/\s+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .some((entry) => entry.startsWith('article-meta'));
+};
+
+const shouldSkipNodeForExcerpt = (node) => {
+  if (!node || node.type !== 'element') {
+    return false;
+  }
+  if (node.tagName === 'figure') {
+    return true;
+  }
+  return hasArticleMetaClass(node.attributes?.class ?? '');
+};
+
+const collectExcerptParts = (nodes) => {
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    return [];
   }
   const parts = [];
   for (const node of nodes) {
-    if (node.type === 'element') {
-      if (node.tagName === 'figure') {
-        continue;
-      }
-      const classValue = node.attributes?.class ?? '';
-      const hasMetaClass = classValue
-        .split(/\s+/)
-        .map((entry) => entry.trim())
-        .filter(Boolean)
-        .some((entry) => entry.startsWith('article-meta'));
-      if (hasMetaClass) {
-        continue;
-      }
+    if (shouldSkipNodeForExcerpt(node)) {
+      continue;
     }
-    const text = node.textContent;
+    const text = node?.textContent;
     if (typeof text === 'string' && text.trim()) {
       parts.push(text);
     }
   }
+  return parts;
+};
+
+const normalizeExcerptContent = (parts) => {
   if (parts.length === 0) {
     return '';
   }
-  const combined = parts.join(' ');
-  const normalized = he
-    .decode(combined)
+  return he
+    .decode(parts.join(' '))
     .replaceAll(/\s+/g, ' ')
     .trim();
-  if (!normalized) {
-    return '';
+};
+
+const resolveExcerptLimit = (maxChars) =>
+  Number.isFinite(maxChars) && maxChars > 0 ? maxChars : DEFAULT_OPTIONS.excerptMaxChars;
+
+const applyExcerptLimit = (text, limit) => {
+  if (text.length <= limit) {
+    return text;
   }
-  const limit = Number.isFinite(maxChars) && maxChars > 0 ? maxChars : DEFAULT_OPTIONS.excerptMaxChars;
-  if (normalized.length <= limit) {
-    return normalized;
-  }
-  let truncated = normalized.slice(0, limit);
+  let truncated = text.slice(0, limit);
   const lastSpace = truncated.lastIndexOf(' ');
   if (lastSpace > Math.floor(limit * 0.6)) {
     truncated = truncated.slice(0, lastSpace);
   }
   return `${truncated.trimEnd()}…`;
+};
+
+const generateExcerptText = (nodes, maxChars) => {
+  const parts = collectExcerptParts(nodes);
+  if (parts.length === 0) {
+    return '';
+  }
+
+  const normalized = normalizeExcerptContent(parts);
+  if (!normalized) {
+    return '';
+  }
+
+  const limit = resolveExcerptLimit(maxChars);
+  return applyExcerptLimit(normalized, limit);
 };
 
 const buildMetaHtml = (normalized) => {
