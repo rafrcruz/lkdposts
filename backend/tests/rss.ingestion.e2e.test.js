@@ -111,7 +111,7 @@ describe('RSS ingestion end-to-end', () => {
       allowedIframeHosts: ['open.spotify.com'],
       trackerParamsRemoveList: ['custom'],
     });
-    const feed = await createFeed({ url: 'https://newsletter.example.com/rss' });
+    await createFeed({ url: 'https://newsletter.example.com/rss' });
     const fetcher = buildFetchMock(loadFixture('rss-substack.xml'));
 
     const result = await refreshUserFeeds({ ownerKey: '1', now: new Date('2025-02-05T09:00:00Z'), fetcher });
@@ -123,7 +123,7 @@ describe('RSS ingestion end-to-end', () => {
   });
 
   it('renders Atom HTML entries and preserves inline images', async () => {
-    const feed = await createFeed({ url: 'https://example.com/atom.xml' });
+    await createFeed({ url: 'https://example.com/atom.xml' });
     const fetcher = buildFetchMock(loadFixture('atom-example.xml'));
 
     await refreshUserFeeds({ ownerKey: '1', now: new Date('2025-02-11T08:00:00Z'), fetcher });
@@ -134,7 +134,7 @@ describe('RSS ingestion end-to-end', () => {
   });
 
   it('wraps Atom text entries in paragraphs', async () => {
-    const feed = await createFeed({ url: 'https://example.com/status.xml' });
+    await createFeed({ url: 'https://example.com/status.xml' });
     const fetcher = buildFetchMock(loadFixture('atom-text.xml'));
 
     await refreshUserFeeds({ ownerKey: '1', now: new Date('2025-02-11T09:00:00Z'), fetcher });
@@ -161,7 +161,7 @@ describe('RSS ingestion end-to-end', () => {
   });
 
   it('truncates overly long content and appends a truncation notice', async () => {
-    const feed = await createFeed({ url: 'https://example.com/huge.xml' });
+    await createFeed({ url: 'https://example.com/huge.xml' });
     const fetcher = buildFetchMock(loadFixture('rss-large.xml'));
 
     await refreshUserFeeds({ ownerKey: '1', now: new Date('2025-02-06T12:00:00Z'), fetcher });
@@ -174,7 +174,7 @@ describe('RSS ingestion end-to-end', () => {
 
   it('skips overwriting articles when reprocess policy is set to never', async () => {
     config.rss.reprocessPolicy = 'never';
-    const feed = await createFeed({ url: 'https://example.com/policy.xml' });
+    await createFeed({ url: 'https://example.com/policy.xml' });
     const fixtureA = loadFixture('rss-minimal.xml');
     const fixtureB = fixtureA.replace('Just a short entry.', 'Updated entry content.');
     const fetcher = jest
@@ -199,7 +199,7 @@ describe('RSS ingestion end-to-end', () => {
 
   it('updates stored HTML when content changes under if-empty-or-changed policy', async () => {
     config.rss.reprocessPolicy = 'if-empty-or-changed';
-    const feed = await createFeed({ url: 'https://example.com/update.xml' });
+    await createFeed({ url: 'https://example.com/update.xml' });
     const fixtureA = loadFixture('rss-minimal.xml');
     const fixtureB = fixtureA.replace('Just a short entry.', 'A brand new entry body.');
     const fetcher = jest

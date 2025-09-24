@@ -106,10 +106,10 @@ const NewsDetailPage = () => {
     }
 
     const anchors = container.querySelectorAll('a');
-    anchors.forEach((anchor) => {
+    for (const anchor of anchors) {
       anchor.setAttribute('target', '_blank');
       anchor.setAttribute('rel', 'noopener noreferrer');
-    });
+    }
   }, [cachedPost?.html]);
 
   if (!postId) {
@@ -125,7 +125,7 @@ const NewsDetailPage = () => {
     );
   }
 
-  if (!cachedPost || !cachedPost.html) {
+  if (!cachedPost?.html) {
     return (
       <section className="space-y-4">
         <p className="text-lg font-semibold text-foreground">
@@ -138,7 +138,8 @@ const NewsDetailPage = () => {
     );
   }
 
-  const publishedDate = formatDate(cachedPost.publishedAt);
+  const post = cachedPost;
+  const publishedDate = formatDate(post.publishedAt);
 
   return (
     <section className="space-y-6">
@@ -151,17 +152,17 @@ const NewsDetailPage = () => {
       </button>
 
       <header className="space-y-2">
-        <h1 className="text-3xl font-display font-semibold leading-tight text-foreground">{cachedPost.title}</h1>
-        {(publishedDate || cachedPost.author) && (
+        <h1 className="text-3xl font-display font-semibold leading-tight text-foreground">{post.title}</h1>
+        {(publishedDate || post.author) && (
           <p className="text-sm text-muted-foreground">
             {publishedDate ? t('news.detail.publishedAt', 'Publicado em {{date}}', { date: publishedDate }) : null}
-            {publishedDate && cachedPost.author ? ' • ' : null}
-            {cachedPost.author ?? ''}
+            {publishedDate && post.author ? ' • ' : null}
+            {post.author ?? ''}
           </p>
         )}
-        {cachedPost.link ? (
+        {post.link ? (
           <a
-            href={cachedPost.link}
+            href={post.link}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center text-sm font-medium text-primary hover:underline"
@@ -174,7 +175,7 @@ const NewsDetailPage = () => {
       <div
         ref={articleRef}
         className="space-y-4 text-base leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_figure]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg [&_p]:my-4"
-        dangerouslySetInnerHTML={{ __html: cachedPost.html }}
+        dangerouslySetInnerHTML={{ __html: post.html }}
       />
     </section>
   );
