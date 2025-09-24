@@ -38,7 +38,7 @@ const list = asyncHandler(async (req, res) => {
     },
     {
       meta: {
-        nextCursor: nextCursor != null ? String(nextCursor) : null,
+        nextCursor: nextCursor == null ? null : String(nextCursor),
         total,
         limit: appliedLimit,
       },
@@ -92,7 +92,7 @@ const remove = asyncHandler(async (req, res) => {
 });
 
 const reset = asyncHandler(async (req, res) => {
-  const adminId = req.user?.id != null ? String(req.user.id) : null;
+  const adminId = req.user?.id == null ? null : String(req.user.id);
 
   const result = await feedService.resetAllFeeds({ requestedBy: adminId });
 

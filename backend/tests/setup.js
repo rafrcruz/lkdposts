@@ -124,7 +124,7 @@ jest.mock('../src/lib/prisma', () => {
     }
 
     if (typeof expected === 'object' && expected !== null) {
-      if (Object.prototype.hasOwnProperty.call(expected, 'not')) {
+      if (Object.hasOwn(expected, 'not')) {
         const negated = expected.not;
         return !matchNullableDateField(actual, negated);
       }
@@ -499,7 +499,7 @@ jest.mock('../src/lib/prisma', () => {
           feeds[index] = {
             ...feeds[index],
             ...data,
-            updatedAt: Object.prototype.hasOwnProperty.call(data, 'updatedAt') ? data.updatedAt : now,
+            updatedAt: Object.hasOwn(data, 'updatedAt') ? data.updatedAt : now,
           };
         }
 
@@ -749,7 +749,7 @@ jest.mock('../src/lib/prisma', () => {
           throw new Error('Record not found');
         }
 
-        if (Object.prototype.hasOwnProperty.call(data, 'articleHtml')) {
+        if (Object.hasOwn(data, 'articleHtml')) {
           article.articleHtml = data.articleHtml ?? null;
         }
 

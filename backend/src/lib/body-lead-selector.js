@@ -41,12 +41,12 @@ const wrapPlainText = (value) => {
 const removeTrivialBoilerplate = (html) => {
   let result = html;
 
-  result = result.replace(
+  result = result.replaceAll(
     /<div[^>]*class="[^"]*\boutpost-pub-container\b[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
     '',
   );
 
-  result = result.replace(
+  result = result.replaceAll(
     /(?:\s*<p[^>]*>\s*(?:<a[^>]*>\s*)?(?:read more|continue reading)[^<]*?(?:<\/a>)?\s*<\/p>\s*)+$/gim,
     '',
   );
@@ -189,7 +189,7 @@ const truncateHtmlByTextLength = (html, limit) => {
     return { html, truncated: false };
   }
 
-  result = result.replace(/\s+$/, '');
+  result = result.replaceAll(/\s+$/g, '');
   result += '…';
 
   for (let i = stack.length - 1; i >= 0; i -= 1) {
@@ -233,9 +233,9 @@ const normalizeForComparison = (html) => {
   if (!html) {
     return '';
   }
-  const withoutTags = html.replace(/<[^>]*>/g, ' ');
+  const withoutTags = html.replaceAll(/<[^>]*>/g, ' ');
   const decoded = he.decode(withoutTags, { isAttributeValue: false });
-  return decoded.replace(/\s+/g, ' ').trim().toLowerCase();
+  return decoded.replaceAll(/\s+/g, ' ').trim().toLowerCase();
 };
 
 const computeDedupeRatio = (a, b) => {

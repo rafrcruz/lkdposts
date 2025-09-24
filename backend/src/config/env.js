@@ -91,7 +91,7 @@ const envSchema = z.object({
     .default('if-empty-or-changed'),
   RSS_LOG_LEVEL: z
     .preprocess((value) => (typeof value === 'string' ? value.trim().toLowerCase() : value ?? 'info'), z.string())
-    .transform((value) => (value ? value : 'info')),
+    .transform((value) => value || 'info'),
   RSS_TRACKER_PARAMS_REMOVE_LIST: z
     .preprocess((value) => {
       const list = toList(value, []);
