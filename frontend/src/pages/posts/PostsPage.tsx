@@ -316,51 +316,69 @@ const ArticleContentComponent = ({
 
   const htmlContainerId = `${id}-html`;
 
-  let content: JSX.Element;
-
   if (isLoading) {
-    content = (
-      <div className="space-y-3" aria-busy="true">
-        <LoadingSkeleton className="h-4 w-1/3" />
-        <LoadingSkeleton className="h-4 w-full" />
-        <LoadingSkeleton className="h-4 w-5/6" />
-        <LoadingSkeleton className="h-64 w-full" />
+    return (
+      <div
+        id={id}
+        data-post-id={postId}
+        className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
+      >
+        <div className="space-y-3" aria-busy="true">
+          <LoadingSkeleton className="h-4 w-1/3" />
+          <LoadingSkeleton className="h-4 w-full" />
+          <LoadingSkeleton className="h-4 w-5/6" />
+          <LoadingSkeleton className="h-64 w-full" />
+        </div>
       </div>
     );
-  } else if (shouldShowFallback) {
-    content = (
-      <div className="space-y-2">
-        {excerpt ? (
-          <p className="whitespace-pre-wrap text-sm text-foreground">{excerpt}</p>
-        ) : (
-          <p className="text-sm text-muted-foreground">{unavailableLabel}</p>
-        )}
-        {isAdmin ? <p className="text-xs text-muted-foreground">{partialAdminNotice}</p> : null}
+  }
+
+  if (shouldShowFallback) {
+    return (
+      <div
+        id={id}
+        data-post-id={postId}
+        className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
+      >
+        <div className="space-y-2">
+          {excerpt ? (
+            <p className="whitespace-pre-wrap text-sm text-foreground">{excerpt}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">{unavailableLabel}</p>
+          )}
+          {isAdmin ? <p className="text-xs text-muted-foreground">{partialAdminNotice}</p> : null}
+        </div>
       </div>
     );
-  } else {
-    const collapsedStyle =
-      shouldCollapse && isCollapsed
-        ? {
-            maxHeight: `${ARTICLE_COLLAPSED_MAX_HEIGHT}px`,
-          }
-        : undefined;
+  }
 
-    const toggleButton = shouldCollapse ? (
-      <div className="flex justify-end pt-2">
-        <button
-          type="button"
-          className="text-xs font-semibold uppercase tracking-wide text-primary transition hover:text-primary/80"
-          onClick={() => setIsCollapsed((current) => !current)}
-          aria-expanded={!isCollapsed}
-          aria-controls={htmlContainerId}
-        >
-          {isCollapsed ? readMoreLabel : readLessLabel}
-        </button>
-      </div>
-    ) : null;
+  const collapsedStyle =
+    shouldCollapse && isCollapsed
+      ? {
+          maxHeight: `${ARTICLE_COLLAPSED_MAX_HEIGHT}px`,
+        }
+      : undefined;
 
-    content = (
+  const toggleButton = shouldCollapse ? (
+    <div className="flex justify-end pt-2">
+      <button
+        type="button"
+        className="text-xs font-semibold uppercase tracking-wide text-primary transition hover:text-primary/80"
+        onClick={() => setIsCollapsed((current) => !current)}
+        aria-expanded={!isCollapsed}
+        aria-controls={htmlContainerId}
+      >
+        {isCollapsed ? readMoreLabel : readLessLabel}
+      </button>
+    </div>
+  ) : null;
+
+  return (
+    <div
+      id={id}
+      data-post-id={postId}
+      className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
+    >
       <div className="space-y-3">
         <div
           id={htmlContainerId}
@@ -373,16 +391,6 @@ const ArticleContentComponent = ({
         />
         {toggleButton}
       </div>
-    );
-  }
-
-  return (
-    <div
-      id={id}
-      data-post-id={postId}
-      className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
-    >
-      {content}
     </div>
   );
 };

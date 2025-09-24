@@ -174,58 +174,78 @@ const truncateHtmlByTextLength = (html, limit) => {
   }
 
   const tokens = tokenizeHtml(html);
-  let length = 0;
-  let truncated = false;
-  let result = '';
-  const stack = [];
-  let shouldStop = false;
+  const state = {
+    length: 0,
+    truncated: false,
+    result: '',
+    stack: [],
+    stop: false,
+  };
 
   for (const token of tokens) {
-    if (shouldStop) {
+    if (state.stop) {
       break;
     }
 
-    if (token.type === 'tag') {
-      result += token.value;
-      updateTagStack(token.value, stack);
-      continue;
-    }
-
-    if (token.type === 'entity') {
-      if (length >= limit) {
-        truncated = true;
-        break;
-      }
-      result += token.value;
-      length += 1;
-      continue;
-    }
-
-    const chars = Array.from(token.value);
-    for (const char of chars) {
-      if (length >= limit) {
-        truncated = true;
-        shouldStop = true;
-        break;
-      }
-      result += char;
-      length += 1;
-    }
+    processTokenForTruncation(token, limit, state);
   }
 
-  if (!truncated) {
+  if (!state.truncated) {
     return { html, truncated: false };
   }
 
-  result = result.replaceAll(/\s+$/g, '');
-  result += '…';
+  state.result = state.result.replaceAll(/\s+$/g, '');
+  state.result += '…';
 
-  for (let i = stack.length - 1; i >= 0; i -= 1) {
-    result += `</${stack[i]}>`;
+  for (let i = state.stack.length - 1; i >= 0; i -= 1) {
+    state.result += `</${state.stack[i]}>`;
   }
 
-  return { html: result, truncated: true };
+  return { html: state.result, truncated: true };
 };
+
+function processTokenForTruncation(token, limit, state) {
+  if (token.type === 'tag') {
+    handleTagToken(token, state);
+    return;
+  }
+
+  if (token.type === 'entity') {
+    handleEntityToken(limit, state, token);
+    return;
+  }
+
+  handleTextToken(limit, state, token);
+}
+
+function handleTagToken(token, state) {
+  state.result += token.value;
+  updateTagStack(token.value, state.stack);
+}
+
+function handleEntityToken(limit, state, token) {
+  if (state.length >= limit) {
+    state.truncated = true;
+    state.stop = true;
+    return;
+  }
+
+  state.result += token.value;
+  state.length += 1;
+}
+
+function handleTextToken(limit, state, token) {
+  const chars = Array.from(token.value);
+  for (const char of chars) {
+    if (state.length >= limit) {
+      state.truncated = true;
+      state.stop = true;
+      break;
+    }
+    state.result += char;
+    state.length += 1;
+  }
+}
 
 const truncateBodyHtml = (html) => {
   if (!html || html.length <= BODY_SIZE_LIMIT) {
@@ -353,12 +373,40 @@ const selectBodyAndLead = (normalizedItem) => {
   }
 
   const candidates = normalizedItem.rawHtmlCandidates || {};
-  const evaluated = {};
   const reasons = [];
 
+  const {
+    evaluated,
+    bodyHtmlRaw,
+    chosenSource,
+    contentScore,
+  } = determineBodyCandidate(candidates, reasons);
+
+  const { leadHtmlRaw, leadUsed, dedupeRatio } = selectLeadCandidate({
+    evaluated,
+    chosenSource,
+    bodyHtmlRaw,
+    reasons,
+  });
+
+  return {
+    bodyHtmlRaw,
+    leadHtmlRaw,
+    diagnostics: {
+      chosenSource,
+      contentScore,
+      leadUsed,
+      dedupeRatio,
+      reasons,
+    },
+  };
+};
+
+const determineBodyCandidate = (candidates, reasons) => {
+  const evaluated = {};
   let chosen = null;
-  let chosenSource = 'empty';
   let fallback = null;
+  let chosenSource = 'empty';
 
   for (const source of SOURCE_PRIORITY) {
     const value = candidates[source];
@@ -385,77 +433,66 @@ const selectBodyAndLead = (normalizedItem) => {
     addReason(reasons, 'fallback-largest');
   }
 
-  let bodyHtmlRaw = '';
-  let contentScore = 0;
-
-  if (chosen) {
-    bodyHtmlRaw = chosen.html;
-    contentScore = chosen.metrics.contentScore;
-
-    if (chosen.metrics.hasBlocks) {
-      addReason(reasons, 'has-block-tags');
-    }
-    if (chosen.metrics.length > 300) {
-      addReason(reasons, 'length>300');
-    }
-    if (chosen.metrics.paragraphCount >= 2) {
-      addReason(reasons, 'p-count>=2');
-    }
-    if (chosen.usedPlainTextWrapper) {
-      addReason(reasons, 'wrapped-plaintext');
-    }
-    if (chosen.removedBoilerplate) {
-      addReason(reasons, 'boilerplate-removed');
-    }
+  if (!chosen) {
+    return { evaluated, bodyHtmlRaw: '', chosenSource, contentScore: 0 };
   }
 
-  const bodyTruncation = truncateBodyHtml(bodyHtmlRaw);
+  addBodyReasons(chosen, reasons);
+
+  const bodyTruncation = truncateBodyHtml(chosen.html);
+  const bodyHtmlRaw = bodyTruncation.truncated ? bodyTruncation.html : chosen.html;
   if (bodyTruncation.truncated) {
-    bodyHtmlRaw = bodyTruncation.html;
     addReason(reasons, 'truncated-150kb');
   }
 
-  let leadHtmlRaw = null;
-  let leadUsed = false;
-  let dedupeRatio = 0;
-
-  const descriptionCandidate = evaluated.descriptionOrSummary;
-  if (descriptionCandidate && chosenSource !== 'descriptionOrSummary') {
-    let leadCandidateHtml = descriptionCandidate.html;
-
-    const normalizedBody = normalizeForComparison(bodyHtmlRaw);
-    const normalizedLead = normalizeForComparison(leadCandidateHtml);
-    dedupeRatio = computeDedupeRatio(normalizedBody, normalizedLead);
-
-    if (dedupeRatio >= 0.9) {
-      addReason(reasons, 'description-similar-omitted');
-    } else {
-      const truncatedLead = truncateHtmlByTextLength(leadCandidateHtml, LEAD_TEXT_LIMIT);
-      leadCandidateHtml = truncatedLead.html.trim();
-      if (truncatedLead.truncated) {
-        addReason(reasons, 'lead-truncated-400');
-      }
-
-      leadHtmlRaw = leadCandidateHtml;
-      leadUsed = true;
-    }
-  }
-
-  if (!leadUsed) {
-    leadHtmlRaw = null;
-  }
-
   return {
+    evaluated,
     bodyHtmlRaw,
-    leadHtmlRaw,
-    diagnostics: {
-      chosenSource,
-      contentScore,
-      leadUsed,
-      dedupeRatio,
-      reasons,
-    },
+    chosenSource,
+    contentScore: chosen.metrics.contentScore,
   };
+};
+
+const addBodyReasons = (candidate, reasons) => {
+  if (candidate.metrics.hasBlocks) {
+    addReason(reasons, 'has-block-tags');
+  }
+  if (candidate.metrics.length > 300) {
+    addReason(reasons, 'length>300');
+  }
+  if (candidate.metrics.paragraphCount >= 2) {
+    addReason(reasons, 'p-count>=2');
+  }
+  if (candidate.usedPlainTextWrapper) {
+    addReason(reasons, 'wrapped-plaintext');
+  }
+  if (candidate.removedBoilerplate) {
+    addReason(reasons, 'boilerplate-removed');
+  }
+};
+
+const selectLeadCandidate = ({ evaluated, chosenSource, bodyHtmlRaw, reasons }) => {
+  const descriptionCandidate = evaluated.descriptionOrSummary;
+  if (!descriptionCandidate || chosenSource === 'descriptionOrSummary') {
+    return { leadHtmlRaw: null, leadUsed: false, dedupeRatio: 0 };
+  }
+
+  const normalizedBody = normalizeForComparison(bodyHtmlRaw);
+  const normalizedLead = normalizeForComparison(descriptionCandidate.html);
+  const dedupeRatio = computeDedupeRatio(normalizedBody, normalizedLead);
+
+  if (dedupeRatio >= 0.9) {
+    addReason(reasons, 'description-similar-omitted');
+    return { leadHtmlRaw: null, leadUsed: false, dedupeRatio };
+  }
+
+  const truncatedLead = truncateHtmlByTextLength(descriptionCandidate.html, LEAD_TEXT_LIMIT);
+  const leadHtmlRaw = truncatedLead.html.trim();
+  if (truncatedLead.truncated) {
+    addReason(reasons, 'lead-truncated-400');
+  }
+
+  return { leadHtmlRaw, leadUsed: true, dedupeRatio };
 };
 
 module.exports = {

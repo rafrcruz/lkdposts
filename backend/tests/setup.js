@@ -148,41 +148,65 @@ jest.mock('../src/lib/prisma', () => {
       return false;
     }
 
-    if (where.url) {
-      if (Array.isArray(where.url.in)) {
-        if (!where.url.in.includes(feed.url)) {
-          return false;
-        }
-      } else if (typeof where.url === 'string' && feed.url !== where.url) {
-        return false;
-      }
+    if (!matchesUrlCondition(feed, where.url)) {
+      return false;
     }
 
     if (!matchNullableDateField(feed.lastFetchedAt, where.lastFetchedAt)) {
       return false;
     }
 
-    if (Array.isArray(where.AND) && where.AND.length > 0) {
-      if (!where.AND.every((condition) => matchFeedWhere(feed, condition))) {
-        return false;
-      }
+    if (!matchesLogicalGroup(feed, where.AND, 'AND')) {
+      return false;
     }
 
-    if (Array.isArray(where.OR) && where.OR.length > 0) {
-      if (!where.OR.some((condition) => matchFeedWhere(feed, condition))) {
-        return false;
-      }
+    if (where.OR && !matchesLogicalGroup(feed, where.OR, 'OR')) {
+      return false;
     }
 
-    if (where.NOT !== undefined) {
-      const conditions = Array.isArray(where.NOT) ? where.NOT : [where.NOT];
-      if (conditions.some((condition) => matchFeedWhere(feed, condition))) {
-        return false;
-      }
+    if (!matchesNotGroup(feed, where.NOT)) {
+      return false;
     }
 
     return true;
   };
+
+  function matchesUrlCondition(feed, urlCondition) {
+    if (!urlCondition) {
+      return true;
+    }
+
+    if (Array.isArray(urlCondition.in)) {
+      return urlCondition.in.includes(feed.url);
+    }
+
+    if (typeof urlCondition === 'string') {
+      return feed.url === urlCondition;
+    }
+
+    return true;
+  }
+
+  function matchesLogicalGroup(feed, conditions, predicate) {
+    if (!Array.isArray(conditions) || conditions.length === 0) {
+      return true;
+    }
+
+    if (predicate === 'AND') {
+      return conditions.every((condition) => matchFeedWhere(feed, condition));
+    }
+
+    return conditions.some((condition) => matchFeedWhere(feed, condition));
+  }
+
+  function matchesNotGroup(feed, notConditions) {
+    if (notConditions === undefined) {
+      return true;
+    }
+
+    const conditions = Array.isArray(notConditions) ? notConditions : [notConditions];
+    return !conditions.some((condition) => matchFeedWhere(feed, condition));
+  }
 
   const filterFeeds = (where = {}) => feeds.filter((feed) => matchFeedWhere(feed, where));
 
