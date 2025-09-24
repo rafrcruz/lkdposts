@@ -24,6 +24,9 @@ const VOID_TAGS = new Set([
 const BODY_SIZE_LIMIT = 150 * 1024; // 150 KB approx.
 const LEAD_TEXT_LIMIT = 400;
 
+const READ_MORE_KEYWORDS = ['read more', 'continue reading'];
+const TRAILING_PARAGRAPH_REGEX = /\s*<p[^>]*>[\s\S]*<\/p>\s*$/i;
+
 const BLOCK_CLOSING_TAGS = ['</p>', '</div>', '</section>', '</article>', '</li>', '</ul>', '</ol>', '</figure>', '</pre>', '</code>', '</blockquote>'];
 
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
@@ -38,6 +41,28 @@ const wrapPlainText = (value) => {
   return `<p>${trimmed}</p>`;
 };
 
+const containsReadMoreKeyword = (value) =>
+  READ_MORE_KEYWORDS.some((keyword) => value.includes(keyword));
+
+const stripTrailingReadMoreParagraphs = (html) => {
+  let result = html;
+  let match = result.match(TRAILING_PARAGRAPH_REGEX);
+
+  while (match) {
+    const paragraph = match[0];
+    const normalizedText = paragraph.replace(TAG_OR_ENTITY_REGEX, ' ').toLowerCase();
+
+    if (!containsReadMoreKeyword(normalizedText)) {
+      break;
+    }
+
+    result = result.slice(0, result.length - paragraph.length);
+    match = result.match(TRAILING_PARAGRAPH_REGEX);
+  }
+
+  return result;
+};
+
 const removeTrivialBoilerplate = (html) => {
   let result = html;
 
@@ -46,10 +71,7 @@ const removeTrivialBoilerplate = (html) => {
     '',
   );
 
-  result = result.replaceAll(
-    /(?:\s*<p[^>]*>\s*(?:<a[^>]*>\s*)?(?:read more|continue reading)[^<]*?(?:<\/a>)?\s*<\/p>\s*)+$/gim,
-    '',
-  );
+  result = stripTrailingReadMoreParagraphs(result);
 
   return result;
 };
@@ -156,8 +178,13 @@ const truncateHtmlByTextLength = (html, limit) => {
   let truncated = false;
   let result = '';
   const stack = [];
+  let shouldStop = false;
 
-  outer: for (const token of tokens) {
+  for (const token of tokens) {
+    if (shouldStop) {
+      break;
+    }
+
     if (token.type === 'tag') {
       result += token.value;
       updateTagStack(token.value, stack);
@@ -178,7 +205,8 @@ const truncateHtmlByTextLength = (html, limit) => {
     for (const char of chars) {
       if (length >= limit) {
         truncated = true;
-        break outer;
+        shouldStop = true;
+        break;
       }
       result += char;
       length += 1;
@@ -411,8 +439,6 @@ const selectBodyAndLead = (normalizedItem) => {
       leadHtmlRaw = leadCandidateHtml;
       leadUsed = true;
     }
-  } else if (!descriptionCandidate) {
-    dedupeRatio = 0;
   }
 
   if (!leadUsed) {
