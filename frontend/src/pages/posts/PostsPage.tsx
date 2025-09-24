@@ -137,7 +137,7 @@ const EMPTY_ARTICLE_ANALYSIS: ArticleAnalysis = {
   isWeak: true,
 };
 
-const normaliseWhitespace = (input: string) => input.replace(/\s+/g, ' ').trim();
+const normaliseWhitespace = (input: string) => input.replaceAll(/\s+/g, ' ').trim();
 
 const analyseArticleHtml = (html: string): ArticleAnalysis => {
   if (!html.trim()) {
@@ -160,7 +160,7 @@ const analyseArticleHtml = (html: string): ArticleAnalysis => {
     };
   }
 
-  const textContent = normaliseWhitespace(html.replace(/<[^>]+>/g, ' '));
+  const textContent = normaliseWhitespace(html.replaceAll(/<[^>]+>/g, ' '));
   const blockMatches = html.match(ARTICLE_BLOCK_REGEX);
   const blockCount = blockMatches?.length ?? 0;
   const isWeak = blockCount === 0 || textContent.length < ARTICLE_WEAK_CONTENT_MIN_LENGTH;
@@ -199,8 +199,48 @@ type ArticleContentProps = {
   unavailableLabel: string;
 };
 
+const ensureAnchorAttributes = (anchor: HTMLAnchorElement) => {
+  if (!anchor.getAttribute('target')) {
+    anchor.setAttribute('target', '_blank');
+  }
+
+  const currentRel = anchor.getAttribute('rel') ?? '';
+  const relTokens = new Set(currentRel.split(/\s+/).filter(Boolean));
+  relTokens.add('noopener');
+  relTokens.add('noreferrer');
+  anchor.setAttribute('rel', Array.from(relTokens).join(' '));
+};
+
+const ensureImageAttributes = (image: HTMLImageElement) => {
+  if (!image.getAttribute('loading')) {
+    image.setAttribute('loading', 'lazy');
+  }
+
+  if (!image.getAttribute('decoding')) {
+    image.setAttribute('decoding', 'async');
+  }
+
+  if (!image.getAttribute('alt')) {
+    image.setAttribute('alt', '');
+  }
+
+  image.style.maxWidth = '100%';
+  image.style.height = 'auto';
+};
+
+const enhanceArticleContent = (element: HTMLDivElement) => {
+  for (const anchor of element.querySelectorAll<HTMLAnchorElement>('a')) {
+    ensureAnchorAttributes(anchor);
+  }
+
+  for (const image of element.querySelectorAll<HTMLImageElement>('img')) {
+    ensureImageAttributes(image);
+  }
+};
+
 const ArticleContentComponent = ({
   id,
+  postId,
   html,
   fallbackSnippet,
   isAdmin,
@@ -226,7 +266,7 @@ const ArticleContentComponent = ({
   }, [shouldCollapse, htmlValue]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const isLoading = typeof html === 'undefined';
+  const isLoading = html === undefined;
 
   useEffect(() => {
     if (shouldShowFallback || isLoading) {
@@ -238,91 +278,78 @@ const ArticleContentComponent = ({
       return;
     }
 
-    element.querySelectorAll('a').forEach((anchor) => {
-      if (!anchor.getAttribute('target')) {
-        anchor.setAttribute('target', '_blank');
-      }
-
-      const currentRel = anchor.getAttribute('rel') ?? '';
-      const relTokens = new Set(currentRel.split(/\s+/).filter(Boolean));
-      relTokens.add('noopener');
-      relTokens.add('noreferrer');
-      anchor.setAttribute('rel', Array.from(relTokens).join(' '));
-    });
-
-    element.querySelectorAll('img').forEach((image) => {
-      if (!image.getAttribute('loading')) {
-        image.setAttribute('loading', 'lazy');
-      }
-
-      if (!image.getAttribute('decoding')) {
-        image.setAttribute('decoding', 'async');
-      }
-
-      if (!image.getAttribute('alt')) {
-        image.setAttribute('alt', '');
-      }
-
-      image.style.maxWidth = '100%';
-      image.style.height = 'auto';
-    });
+    enhanceArticleContent(element);
   }, [htmlValue, isLoading, shouldShowFallback]);
 
   const htmlContainerId = `${id}-html`;
 
+  let content: JSX.Element;
+
+  if (isLoading) {
+    content = (
+      <div className="space-y-3" aria-busy="true">
+        <LoadingSkeleton className="h-4 w-1/3" />
+        <LoadingSkeleton className="h-4 w-full" />
+        <LoadingSkeleton className="h-4 w-5/6" />
+        <LoadingSkeleton className="h-64 w-full" />
+      </div>
+    );
+  } else if (shouldShowFallback) {
+    content = (
+      <div className="space-y-2">
+        {excerpt ? (
+          <p className="whitespace-pre-wrap text-sm text-foreground">{excerpt}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">{unavailableLabel}</p>
+        )}
+        {isAdmin ? <p className="text-xs text-muted-foreground">{partialAdminNotice}</p> : null}
+      </div>
+    );
+  } else {
+    const collapsedStyle =
+      shouldCollapse && isCollapsed
+        ? {
+            maxHeight: `${ARTICLE_COLLAPSED_MAX_HEIGHT}px`,
+          }
+        : undefined;
+
+    const toggleButton = shouldCollapse ? (
+      <div className="flex justify-end pt-2">
+        <button
+          type="button"
+          className="text-xs font-semibold uppercase tracking-wide text-primary transition hover:text-primary/80"
+          onClick={() => setIsCollapsed((current) => !current)}
+          aria-expanded={!isCollapsed}
+          aria-controls={htmlContainerId}
+        >
+          {isCollapsed ? readMoreLabel : readLessLabel}
+        </button>
+      </div>
+    ) : null;
+
+    content = (
+      <div className="space-y-3">
+        <div
+          id={htmlContainerId}
+          ref={containerRef}
+          className={clsx('article-content', {
+            'article-content--collapsed': shouldCollapse && isCollapsed,
+          })}
+          style={collapsedStyle}
+          dangerouslySetInnerHTML={{ __html: htmlValue }}
+        />
+        {toggleButton}
+      </div>
+    );
+  }
+
   return (
     <div
       id={id}
+      data-post-id={postId}
       className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
     >
-      {isLoading ? (
-        <div className="space-y-3" aria-busy="true">
-          <LoadingSkeleton className="h-4 w-1/3" />
-          <LoadingSkeleton className="h-4 w-full" />
-          <LoadingSkeleton className="h-4 w-5/6" />
-          <LoadingSkeleton className="h-64 w-full" />
-        </div>
-      ) : shouldShowFallback ? (
-        <div className="space-y-2">
-          {excerpt ? (
-            <p className="whitespace-pre-wrap text-sm text-foreground">{excerpt}</p>
-          ) : (
-            <p className="text-sm text-muted-foreground">{unavailableLabel}</p>
-          )}
-          {isAdmin ? <p className="text-xs text-muted-foreground">{partialAdminNotice}</p> : null}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div
-            id={htmlContainerId}
-            ref={containerRef}
-            className={clsx('article-content', {
-              'article-content--collapsed': shouldCollapse && isCollapsed,
-            })}
-            style={
-              shouldCollapse && isCollapsed
-                ? {
-                    maxHeight: `${ARTICLE_COLLAPSED_MAX_HEIGHT}px`,
-                  }
-                : undefined
-            }
-            dangerouslySetInnerHTML={{ __html: htmlValue }}
-          />
-          {shouldCollapse ? (
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                className="text-xs font-semibold uppercase tracking-wide text-primary transition hover:text-primary/80"
-                onClick={() => setIsCollapsed((current) => !current)}
-                aria-expanded={!isCollapsed}
-                aria-controls={htmlContainerId}
-              >
-                {isCollapsed ? readMoreLabel : readLessLabel}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      )}
+      {content}
     </div>
   );
 };
