@@ -25,6 +25,37 @@ const coerceToString = (value) => {
   return undefined;
 };
 
+const hasNonEmptyText = (text) => text != null && text !== '';
+
+const extractFirstTextFromArray = (entries) => {
+  for (const entry of entries) {
+    const text = extractFirstText(entry);
+    if (hasNonEmptyText(text)) {
+      return text;
+    }
+  }
+  return undefined;
+};
+
+const extractFirstTextFromObject = (value) => {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  for (const key of TEXT_NODE_KEYS) {
+    if (!Object.hasOwn(value, key)) {
+      continue;
+    }
+
+    const text = extractFirstText(value[key]);
+    if (hasNonEmptyText(text)) {
+      return text;
+    }
+  }
+
+  return undefined;
+};
+
 const extractFirstText = (value) => {
   const direct = coerceToString(value);
   if (direct != null) {
@@ -32,27 +63,10 @@ const extractFirstText = (value) => {
   }
 
   if (Array.isArray(value)) {
-    for (const entry of value) {
-      const text = extractFirstText(entry);
-      if (text != null && text !== '') {
-        return text;
-      }
-    }
-    return undefined;
+    return extractFirstTextFromArray(value);
   }
 
-  if (value && typeof value === 'object') {
-    for (const key of TEXT_NODE_KEYS) {
-      if (Object.hasOwn(value, key)) {
-        const text = extractFirstText(value[key]);
-        if (text != null && text !== '') {
-          return text;
-        }
-      }
-    }
-  }
-
-  return undefined;
+  return extractFirstTextFromObject(value);
 };
 
 const decodeAndTrim = (value) => {
@@ -220,45 +234,60 @@ const extractAuthor = (item) => {
   return author ?? undefined;
 };
 
-const collectCategoryStrings = (value) => {
+const collectCategoryStringsFromArray = (values) => {
+  const result = [];
+  for (const entry of values) {
+    result.push(...collectCategoryStrings(entry));
+  }
+  return result;
+};
+
+const collectCategoryStringsFromObject = (value) => {
   const result = [];
 
-  if (value == null) {
-    return result;
+  const term = value['@_term'];
+  if (typeof term === 'string') {
+    result.push(term);
   }
 
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    result.push(String(value));
-    return result;
+  const label = value['@_label'];
+  if (typeof label === 'string') {
+    result.push(label);
   }
 
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      result.push(...collectCategoryStrings(entry));
-    }
-    return result;
+  const scheme = value['@_scheme'];
+  if (typeof scheme === 'string') {
+    result.push(scheme);
   }
 
-  if (typeof value === 'object') {
-    if (typeof value['@_term'] === 'string') {
-      result.push(value['@_term']);
+  for (const [key, nested] of Object.entries(value)) {
+    if (key.startsWith('@_')) {
+      continue;
     }
-    if (typeof value['@_label'] === 'string') {
-      result.push(value['@_label']);
-    }
-    if (typeof value['@_scheme'] === 'string') {
-      result.push(value['@_scheme']);
-    }
-
-    for (const [key, nested] of Object.entries(value)) {
-      if (key.startsWith('@_')) {
-        continue;
-      }
-      result.push(...collectCategoryStrings(nested));
-    }
+    result.push(...collectCategoryStrings(nested));
   }
 
   return result;
+};
+
+const collectCategoryStrings = (value) => {
+  if (value == null) {
+    return [];
+  }
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return [String(value)];
+  }
+
+  if (Array.isArray(value)) {
+    return collectCategoryStringsFromArray(value);
+  }
+
+  if (typeof value === 'object') {
+    return collectCategoryStringsFromObject(value);
+  }
+
+  return [];
 };
 
 const normalizeCategories = (item) => {

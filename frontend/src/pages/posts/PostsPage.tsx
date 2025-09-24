@@ -454,6 +454,33 @@ const shouldRefetchPostsList = ({
   return previousCursor === null && previousCursorCount === 0;
 };
 
+const aggregateRefreshSummary = (summary: RefreshSummary | null): RefreshAggregates | null => {
+  if (!summary) {
+    return null;
+  }
+
+  return summary.feeds.reduce<RefreshAggregates>(
+    (accumulator, feedSummary) => ({
+      itemsRead: accumulator.itemsRead + feedSummary.itemsRead,
+      itemsWithinWindow: accumulator.itemsWithinWindow + feedSummary.itemsWithinWindow,
+      articlesCreated: accumulator.articlesCreated + feedSummary.articlesCreated,
+      duplicates: accumulator.duplicates + feedSummary.duplicates,
+      invalidItems: accumulator.invalidItems + feedSummary.invalidItems,
+      skippedFeeds: accumulator.skippedFeeds + (feedSummary.skippedByCooldown ? 1 : 0),
+      errorFeeds: accumulator.errorFeeds + (feedSummary.error ? 1 : 0),
+    }),
+    {
+      itemsRead: 0,
+      itemsWithinWindow: 0,
+      articlesCreated: 0,
+      duplicates: 0,
+      invalidItems: 0,
+      skippedFeeds: 0,
+      errorFeeds: 0,
+    },
+  );
+};
+
 const resolveOperationErrorMessage = (error: unknown, t: ReturnType<typeof useTranslation>['t']) => {
   if (error instanceof HttpError) {
     return error.message;
@@ -668,34 +695,10 @@ const PostsPage = () => {
     ? resolveOperationErrorMessage(postListQuery.error, t)
     : undefined;
 
-  const summaryAggregates = useMemo<RefreshAggregates | null>(() => {
-    if (!refreshSummary) {
-      return null;
-    }
-
-    return refreshSummary.feeds.reduce<RefreshAggregates>(
-      (accumulator, feedSummary) => {
-        return {
-          itemsRead: accumulator.itemsRead + feedSummary.itemsRead,
-          itemsWithinWindow: accumulator.itemsWithinWindow + feedSummary.itemsWithinWindow,
-          articlesCreated: accumulator.articlesCreated + feedSummary.articlesCreated,
-          duplicates: accumulator.duplicates + feedSummary.duplicates,
-          invalidItems: accumulator.invalidItems + feedSummary.invalidItems,
-          skippedFeeds: accumulator.skippedFeeds + (feedSummary.skippedByCooldown ? 1 : 0),
-          errorFeeds: accumulator.errorFeeds + (feedSummary.error ? 1 : 0),
-        };
-      },
-      {
-        itemsRead: 0,
-        itemsWithinWindow: 0,
-        articlesCreated: 0,
-        duplicates: 0,
-        invalidItems: 0,
-        skippedFeeds: 0,
-        errorFeeds: 0,
-      },
-    );
-  }, [refreshSummary]);
+  const summaryAggregates = useMemo<RefreshAggregates | null>(
+    () => aggregateRefreshSummary(refreshSummary),
+    [refreshSummary],
+  );
 
   const summaryFeeds = refreshSummary?.feeds ?? [];
   const summaryHasPartialErrors = (summaryAggregates?.errorFeeds ?? 0) > 0;
