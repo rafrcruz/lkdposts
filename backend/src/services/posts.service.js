@@ -591,6 +591,12 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
         truncated: false,
         removedEmbeds: 0,
         trackerParamsRemoved: 0,
+        linkFixes: 0,
+        keptEmbedsHosts: [],
+        urlParseErrors: 0,
+        lastUrlParseError: null,
+        htmlParseErrorCount: 0,
+        lastHtmlParseError: null,
       };
       let articleHtml = '';
       let usedFallback = false;
@@ -638,6 +644,12 @@ const fetchAndParseFeed = async (url, fetcher, timeoutMs) => {
           truncated: false,
           removedEmbeds: 0,
           trackerParamsRemoved: 0,
+          linkFixes: 0,
+          keptEmbedsHosts: [],
+          urlParseErrors: 0,
+          lastUrlParseError: null,
+          htmlParseErrorCount: 0,
+          lastHtmlParseError: null,
         };
       }
 
