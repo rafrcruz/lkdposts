@@ -1,4 +1,4 @@
-import type { ChangeEvent, JSX } from 'react';
+import type { ChangeEvent, Dispatch, JSX, SetStateAction } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
@@ -29,6 +29,8 @@ type RefreshOptions = {
   resetPagination?: boolean;
 };
 
+type SyncPostsHandler = (options?: RefreshOptions) => Promise<{ shouldRefetchList: boolean }>;
+
 type RefreshAggregates = {
   itemsRead: number;
   itemsWithinWindow: number;
@@ -40,6 +42,37 @@ type RefreshAggregates = {
 };
 
 type TranslateFunction = ReturnType<typeof useTranslation>['t'];
+
+const useDocumentTitle = (title: string) => {
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
+};
+
+const useInitialSync = (hasExecutedSequence: boolean, syncPosts: SyncPostsHandler) => {
+  useEffect(() => {
+    if (hasExecutedSequence) {
+      return;
+    }
+
+    syncPosts().catch(() => {
+      // state updates inside syncPosts handle errors
+    });
+  }, [hasExecutedSequence, syncPosts]);
+};
+
+const useRefreshSummaryReset = (
+  refreshSummary: RefreshSummary | null,
+  setIsSummaryDismissed: Dispatch<SetStateAction<boolean>>,
+) => {
+  useEffect(() => {
+    if (!refreshSummary) {
+      return;
+    }
+
+    setIsSummaryDismissed(false);
+  }, [refreshSummary, setIsSummaryDismissed]);
+};
 
 const resolveFeedLabel = (feed: Feed, t: ReturnType<typeof useTranslation>['t']) => {
   if (feed.title) {
@@ -443,13 +476,9 @@ const PostsPage = () => {
   const locale = useLocale();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  if (isAdmin) {
-    // admin-specific analytics can be hooked here in the future
-  }
+  const pageTitle = t('posts.meta.title', 'lkdposts - Posts');
 
-  useEffect(() => {
-    document.title = t('posts.meta.title', 'lkdposts - Posts');
-  }, [t]);
+  useDocumentTitle(pageTitle);
 
   const [selectedFeedId, setSelectedFeedId] = useState<number | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -558,21 +587,9 @@ const PostsPage = () => {
     ],
   );
 
-  useEffect(() => {
-    if (hasExecutedSequence) {
-      return;
-    }
+  useInitialSync(hasExecutedSequence, syncPosts);
 
-    syncPosts().catch(() => {
-      // state updates inside syncPosts handle errors
-    });
-  }, [hasExecutedSequence, syncPosts]);
-
-  useEffect(() => {
-    if (refreshSummary) {
-      setIsSummaryDismissed(false);
-    }
-  }, [refreshSummary]);
+  useRefreshSummaryReset(refreshSummary, setIsSummaryDismissed);
 
   const runSequence = ({ resetPagination = false }: RefreshOptions = {}) => {
     if (isSyncing) {

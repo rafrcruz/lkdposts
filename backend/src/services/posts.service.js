@@ -12,7 +12,7 @@ const { createLogger } = require('./rss-logger');
 const rssMetrics = require('./rss-metrics');
 const config = require('../config');
 const ingestionDiagnostics = require('./ingestion-diagnostics');
-const { hasBlockTags, looksEscapedHtml, computeWeakContent, buildPreview } = require('../utils/html-diagnostics');
+const { looksEscapedHtml, computeWeakContent, buildPreview } = require('../utils/html-diagnostics');
 
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const WINDOW_DAYS = 7;
