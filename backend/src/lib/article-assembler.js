@@ -356,6 +356,30 @@ const createDiagnostics = () => ({
   keptEmbedsHosts: [],
 });
 
+const htmlFragmentContainsImageUrl = (html, context, targetUrl) => {
+  if (typeof html !== 'string' || !html.trim() || typeof targetUrl !== 'string' || !targetUrl.trim()) {
+    return false;
+  }
+
+  try {
+    const root = parse(html, { comment: true });
+    const images = root.querySelectorAll('img');
+    for (const image of images) {
+      const normalized = normalizeUrlValue(image.getAttribute('src'), context, {
+        allowedSchemes: new Set(['http', 'https']),
+        record: false,
+      });
+      if (normalized.ok && normalized.value === targetUrl) {
+        return true;
+      }
+    }
+  } catch (error) {
+    return html.includes(targetUrl);
+  }
+
+  return false;
+};
+
 const createSanitizeContext = (baseUrls, diagnostics, options, trackerParamNames) => ({
   baseUrls,
   diagnostics,
@@ -895,12 +919,33 @@ const assembleArticle = (normalized, contentChoice, options = {}) => {
   const sanitizeContext = createSanitizeContext(baseUrls, diagnostics, mergedOptions, trackerParamNames);
 
   const imageCandidate = selectMainImageCandidate(normalized, sanitizeContext);
+  let shouldInjectTopImage = Boolean(mergedOptions.injectTopImage && imageCandidate?.normalizedUrl);
+
+  if (shouldInjectTopImage && imageCandidate?.normalizedUrl) {
+    const appearsInLead = htmlFragmentContainsImageUrl(
+      contentChoice.leadHtmlRaw,
+      sanitizeContext,
+      imageCandidate.normalizedUrl,
+    );
+    const appearsInBody = htmlFragmentContainsImageUrl(
+      contentChoice.bodyHtmlRaw,
+      sanitizeContext,
+      imageCandidate.normalizedUrl,
+    );
+
+    if (appearsInLead || appearsInBody) {
+      shouldInjectTopImage = false;
+    }
+  }
+
   if (imageCandidate?.normalizedUrl) {
     diagnostics.imageSource = imageCandidate.source;
-    if (mergedOptions.injectTopImage) {
+    if (shouldInjectTopImage) {
       sanitizeContext.expectedTopImageUrl = imageCandidate.normalizedUrl;
     }
   }
+
+  mergedOptions.injectTopImage = shouldInjectTopImage;
 
   const baseHtml = buildBaseHtml(normalized, contentChoice, imageCandidate, mergedOptions);
   const sanitized = sanitizeFragment(baseHtml, sanitizeContext);
