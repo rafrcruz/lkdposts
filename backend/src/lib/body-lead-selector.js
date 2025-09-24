@@ -50,7 +50,7 @@ const stripTrailingReadMoreParagraphs = (html) => {
 
   while (match) {
     const paragraph = match[0];
-    const normalizedText = paragraph.replace(TAG_OR_ENTITY_REGEX, ' ').toLowerCase();
+    const normalizedText = paragraph.replaceAll(TAG_OR_ENTITY_REGEX, ' ').toLowerCase();
 
     if (!containsReadMoreKeyword(normalizedText)) {
       break;
