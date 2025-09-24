@@ -153,7 +153,9 @@ const FeedsPage = () => {
     }
 
     setShouldRefreshFeeds(false);
-    void refetchFeedList();
+    Promise.resolve(refetchFeedList()).catch(() => {
+      // the query state already exposes fetch errors to the UI
+    });
   }, [shouldRefreshFeeds, refetchFeedList]);
 
   const resolveErrorMessage = (error: unknown): string => {

@@ -137,7 +137,7 @@ const EMPTY_ARTICLE_ANALYSIS: ArticleAnalysis = {
   isWeak: true,
 };
 
-const normaliseWhitespace = (input: string) => input.replace(/\s+/g, ' ').trim();
+const normaliseWhitespace = (input: string) => input.replaceAll(/\s+/g, ' ').trim();
 
 const analyseArticleHtml = (html: string): ArticleAnalysis => {
   if (!html.trim()) {
@@ -160,7 +160,7 @@ const analyseArticleHtml = (html: string): ArticleAnalysis => {
     };
   }
 
-  const textContent = normaliseWhitespace(html.replace(/<[^>]+>/g, ' '));
+  const textContent = normaliseWhitespace(html.replaceAll(/<[^>]+>/g, ' '));
   const blockMatches = html.match(ARTICLE_BLOCK_REGEX);
   const blockCount = blockMatches?.length ?? 0;
   const isWeak = blockCount === 0 || textContent.length < ARTICLE_WEAK_CONTENT_MIN_LENGTH;
@@ -199,8 +199,48 @@ type ArticleContentProps = {
   unavailableLabel: string;
 };
 
+const ensureAnchorAttributes = (anchor: HTMLAnchorElement) => {
+  if (!anchor.getAttribute('target')) {
+    anchor.setAttribute('target', '_blank');
+  }
+
+  const currentRel = anchor.getAttribute('rel') ?? '';
+  const relTokens = new Set(currentRel.split(/\s+/).filter(Boolean));
+  relTokens.add('noopener');
+  relTokens.add('noreferrer');
+  anchor.setAttribute('rel', Array.from(relTokens).join(' '));
+};
+
+const ensureImageAttributes = (image: HTMLImageElement) => {
+  if (!image.getAttribute('loading')) {
+    image.setAttribute('loading', 'lazy');
+  }
+
+  if (!image.getAttribute('decoding')) {
+    image.setAttribute('decoding', 'async');
+  }
+
+  if (!image.getAttribute('alt')) {
+    image.setAttribute('alt', '');
+  }
+
+  image.style.maxWidth = '100%';
+  image.style.height = 'auto';
+};
+
+const enhanceArticleContent = (element: HTMLDivElement) => {
+  for (const anchor of element.querySelectorAll<HTMLAnchorElement>('a')) {
+    ensureAnchorAttributes(anchor);
+  }
+
+  for (const image of element.querySelectorAll<HTMLImageElement>('img')) {
+    ensureImageAttributes(image);
+  }
+};
+
 const ArticleContentComponent = ({
   id,
+  postId,
   html,
   fallbackSnippet,
   isAdmin,
@@ -226,63 +266,36 @@ const ArticleContentComponent = ({
   }, [shouldCollapse, htmlValue]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const isLoading = typeof html === 'undefined';
+  const isLoading = html === undefined;
 
   useEffect(() => {
-    if (shouldShowFallback || isLoading) {
-      return;
-    }
-
     const element = containerRef.current;
-    if (!element) {
+    if (shouldShowFallback || isLoading || !element) {
       return;
     }
 
-    element.querySelectorAll('a').forEach((anchor) => {
-      if (!anchor.getAttribute('target')) {
-        anchor.setAttribute('target', '_blank');
-      }
-
-      const currentRel = anchor.getAttribute('rel') ?? '';
-      const relTokens = new Set(currentRel.split(/\s+/).filter(Boolean));
-      relTokens.add('noopener');
-      relTokens.add('noreferrer');
-      anchor.setAttribute('rel', Array.from(relTokens).join(' '));
-    });
-
-    element.querySelectorAll('img').forEach((image) => {
-      if (!image.getAttribute('loading')) {
-        image.setAttribute('loading', 'lazy');
-      }
-
-      if (!image.getAttribute('decoding')) {
-        image.setAttribute('decoding', 'async');
-      }
-
-      if (!image.getAttribute('alt')) {
-        image.setAttribute('alt', '');
-      }
-
-      image.style.maxWidth = '100%';
-      image.style.height = 'auto';
-    });
+    enhanceArticleContent(element);
   }, [htmlValue, isLoading, shouldShowFallback]);
 
-  const htmlContainerId = `${id}-html`;
+  const wrapperClassName =
+    'rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground';
 
-  return (
-    <div
-      id={id}
-      className="rounded-md border border-border bg-background px-4 py-4 text-sm leading-relaxed text-foreground"
-    >
-      {isLoading ? (
+  if (isLoading) {
+    return (
+      <div id={id} data-post-id={postId} className={wrapperClassName}>
         <div className="space-y-3" aria-busy="true">
           <LoadingSkeleton className="h-4 w-1/3" />
           <LoadingSkeleton className="h-4 w-full" />
           <LoadingSkeleton className="h-4 w-5/6" />
           <LoadingSkeleton className="h-64 w-full" />
         </div>
-      ) : shouldShowFallback ? (
+      </div>
+    );
+  }
+
+  if (shouldShowFallback) {
+    return (
+      <div id={id} data-post-id={postId} className={wrapperClassName}>
         <div className="space-y-2">
           {excerpt ? (
             <p className="whitespace-pre-wrap text-sm text-foreground">{excerpt}</p>
@@ -291,38 +304,46 @@ const ArticleContentComponent = ({
           )}
           {isAdmin ? <p className="text-xs text-muted-foreground">{partialAdminNotice}</p> : null}
         </div>
-      ) : (
-        <div className="space-y-3">
-          <div
-            id={htmlContainerId}
-            ref={containerRef}
-            className={clsx('article-content', {
-              'article-content--collapsed': shouldCollapse && isCollapsed,
-            })}
-            style={
-              shouldCollapse && isCollapsed
-                ? {
-                    maxHeight: `${ARTICLE_COLLAPSED_MAX_HEIGHT}px`,
-                  }
-                : undefined
-            }
-            dangerouslySetInnerHTML={{ __html: htmlValue }}
-          />
-          {shouldCollapse ? (
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                className="text-xs font-semibold uppercase tracking-wide text-primary transition hover:text-primary/80"
-                onClick={() => setIsCollapsed((current) => !current)}
-                aria-expanded={!isCollapsed}
-                aria-controls={htmlContainerId}
-              >
-                {isCollapsed ? readMoreLabel : readLessLabel}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      )}
+      </div>
+    );
+  }
+
+  const htmlContainerId = `${id}-html`;
+  const collapsedStyle =
+    shouldCollapse && isCollapsed
+      ? {
+          maxHeight: `${ARTICLE_COLLAPSED_MAX_HEIGHT}px`,
+        }
+      : undefined;
+
+  const toggleButton = shouldCollapse ? (
+    <div className="flex justify-end pt-2">
+      <button
+        type="button"
+        className="text-xs font-semibold uppercase tracking-wide text-primary transition hover:text-primary/80"
+        onClick={() => setIsCollapsed((current) => !current)}
+        aria-expanded={!isCollapsed}
+        aria-controls={htmlContainerId}
+      >
+        {isCollapsed ? readMoreLabel : readLessLabel}
+      </button>
+    </div>
+  ) : null;
+
+  return (
+    <div id={id} data-post-id={postId} className={wrapperClassName}>
+      <div className="space-y-3">
+        <div
+          id={htmlContainerId}
+          ref={containerRef}
+          className={clsx('article-content', {
+            'article-content--collapsed': shouldCollapse && isCollapsed,
+          })}
+          style={collapsedStyle}
+          dangerouslySetInnerHTML={{ __html: htmlValue }}
+        />
+        {toggleButton}
+      </div>
     </div>
   );
 };
@@ -342,6 +363,225 @@ const ArticleContent = memo(
 );
 
 ArticleContent.displayName = 'ArticleContent';
+
+type RefreshSummarySectionProps = {
+  summary: RefreshSummary | null;
+  isDismissed: boolean;
+  onDismiss: () => void;
+  locale: string;
+  t: TranslateFunction;
+};
+
+const RefreshSummarySection = ({
+  summary,
+  isDismissed,
+  onDismiss,
+  locale,
+  t,
+}: RefreshSummarySectionProps) => {
+  if (!summary || isDismissed) {
+    return null;
+  }
+
+  const summaryAggregates = summary.feeds.reduce<RefreshAggregates>(
+    (accumulator, feedSummary) => ({
+      itemsRead: accumulator.itemsRead + feedSummary.itemsRead,
+      itemsWithinWindow: accumulator.itemsWithinWindow + feedSummary.itemsWithinWindow,
+      articlesCreated: accumulator.articlesCreated + feedSummary.articlesCreated,
+      duplicates: accumulator.duplicates + feedSummary.duplicates,
+      invalidItems: accumulator.invalidItems + feedSummary.invalidItems,
+      skippedFeeds: accumulator.skippedFeeds + (feedSummary.skippedByCooldown ? 1 : 0),
+      errorFeeds: accumulator.errorFeeds + (feedSummary.error ? 1 : 0),
+    }),
+    {
+      itemsRead: 0,
+      itemsWithinWindow: 0,
+      articlesCreated: 0,
+      duplicates: 0,
+      invalidItems: 0,
+      skippedFeeds: 0,
+      errorFeeds: 0,
+    },
+  );
+
+  const summaryFeeds = summary.feeds;
+  const summaryHasPartialErrors = summaryAggregates.errorFeeds > 0;
+  const summaryMetricCards = [
+    {
+      key: 'feedsProcessed',
+      label: t('posts.summary.metrics.feedsProcessed', 'Feeds processed'),
+      value: formatNumber(summaryFeeds.length, locale),
+    },
+    {
+      key: 'feedsSkipped',
+      label: t('posts.summary.metrics.feedsSkipped', 'Feeds skipped'),
+      value: formatNumber(summaryAggregates.skippedFeeds, locale),
+    },
+    {
+      key: 'feedsWithErrors',
+      label: t('posts.summary.metrics.feedsWithErrors', 'Feeds with errors'),
+      value: formatNumber(summaryAggregates.errorFeeds, locale),
+    },
+    {
+      key: 'itemsRead',
+      label: t('posts.summary.itemsRead', 'Items read'),
+      value: formatNumber(summaryAggregates.itemsRead, locale),
+    },
+    {
+      key: 'itemsWithinWindow',
+      label: t('posts.summary.itemsWithinWindow', 'Items within < 7d'),
+      value: formatNumber(summaryAggregates.itemsWithinWindow, locale),
+    },
+    {
+      key: 'articlesCreated',
+      label: t('posts.summary.articlesCreated', 'Articles created'),
+      value: formatNumber(summaryAggregates.articlesCreated, locale),
+    },
+    {
+      key: 'duplicates',
+      label: t('posts.summary.duplicates', 'Duplicates'),
+      value: formatNumber(summaryAggregates.duplicates, locale),
+    },
+    {
+      key: 'invalidItems',
+      label: t('posts.summary.invalidItems', 'Invalid entries'),
+      value: formatNumber(summaryAggregates.invalidItems, locale),
+    },
+  ];
+
+  return (
+    <section className="card space-y-4 px-6 py-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">{t('posts.summary.title', 'Refresh summary')}</h2>
+          <p className="text-xs text-muted-foreground">
+            {t('posts.summary.executedAt', 'Executed at {{date}}', {
+              date: formatDate(summary.now, locale),
+            })}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
+          onClick={onDismiss}
+        >
+          {t('posts.summary.dismiss', 'Dismiss summary')}
+        </button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {summaryMetricCards.map((metric) => (
+          <div key={metric.key} className="rounded-md border border-border/70 bg-muted/30 px-3 py-3">
+            <p className="text-[0.6875rem] font-semibold uppercase tracking-wide text-muted-foreground">
+              {metric.label}
+            </p>
+            <p className="text-lg font-semibold text-foreground">{metric.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {summaryHasPartialErrors ? (
+        <p className="text-xs text-warning">
+          {t('posts.summary.partialError', 'Some feeds returned errors during the refresh.')}
+        </p>
+      ) : null}
+
+      {summaryFeeds.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {t('posts.summary.empty', 'No feed was processed during the latest refresh.')}
+        </p>
+      ) : (
+        <ul className="space-y-4">
+          {summaryFeeds.map((feedSummary) => {
+            let statusLabel: string;
+            let statusClassName: string;
+
+            if (feedSummary.error) {
+              statusLabel = t('posts.summary.feedStatus.error', 'Error');
+              statusClassName = 'border-danger/40 bg-danger/10 text-danger';
+            } else if (feedSummary.skippedByCooldown) {
+              statusLabel = t('posts.summary.feedStatus.skipped', 'Skipped');
+              statusClassName = 'border-warning/40 bg-warning/10 text-warning';
+            } else {
+              statusLabel = t('posts.summary.feedStatus.ok', 'Updated');
+              statusClassName = 'border-primary/40 bg-primary/10 text-primary';
+            }
+
+            const metrics = [
+              {
+                key: 'itemsRead',
+                label: t('posts.summary.itemsRead', 'Items read'),
+                value: formatNumber(feedSummary.itemsRead, locale),
+              },
+              {
+                key: 'itemsWithinWindow',
+                label: t('posts.summary.itemsWithinWindow', 'Items within < 7d'),
+                value: formatNumber(feedSummary.itemsWithinWindow, locale),
+              },
+              {
+                key: 'articlesCreated',
+                label: t('posts.summary.articlesCreated', 'Articles created'),
+                value: formatNumber(feedSummary.articlesCreated, locale),
+              },
+              {
+                key: 'duplicates',
+                label: t('posts.summary.duplicates', 'Duplicates'),
+                value: formatNumber(feedSummary.duplicates, locale),
+              },
+              {
+                key: 'invalidItems',
+                label: t('posts.summary.invalidItems', 'Invalid entries'),
+                value: formatNumber(feedSummary.invalidItems, locale),
+              },
+            ];
+
+            return (
+              <li key={feedSummary.feedId} className="rounded-md border border-border px-4 py-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-foreground">{buildSummaryTitle(feedSummary, t)}</h3>
+                    {feedSummary.skippedByCooldown ? (
+                      <p className="text-xs text-warning">
+                        {t('posts.summary.skippedByCooldown', 'Skipped by cooldown window.')}
+                        {feedSummary.cooldownSecondsRemaining === null || feedSummary.cooldownSecondsRemaining === undefined
+                          ? ''
+                          : ` ${t('posts.summary.cooldownRemaining', 'Cooldown remaining: {{time}}.', {
+                              time: formatCooldownTime({
+                                secondsRemaining: feedSummary.cooldownSecondsRemaining,
+                                locale,
+                                t,
+                              }),
+                            })}`}
+                      </p>
+                    ) : null}
+                  </div>
+                  <span
+                    className={`inline-flex items-center justify-center rounded-full border px-2 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide ${statusClassName}`}
+                  >
+                    {statusLabel}
+                  </span>
+                </div>
+                <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
+                  {metrics.map((metric) => (
+                    <div key={metric.key} className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
+                      <dt className="font-medium text-foreground">{metric.label}</dt>
+                      <dd>{metric.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {feedSummary.error ? (
+                  <p className="mt-2 text-xs text-danger">
+                    {t('posts.summary.error', 'Error: {{message}}', { message: feedSummary.error })}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+};
 
 const NETWORK_ERROR_KEYWORDS = ['network', 'timeout', 'failed to fetch', 'load failed'];
 
@@ -624,80 +864,6 @@ const PostsPage = () => {
     ? resolveOperationErrorMessage(postListQuery.error, t)
     : undefined;
 
-  const summaryAggregates = useMemo<RefreshAggregates | null>(() => {
-    if (!refreshSummary) {
-      return null;
-    }
-
-    return refreshSummary.feeds.reduce<RefreshAggregates>(
-      (accumulator, feedSummary) => {
-        return {
-          itemsRead: accumulator.itemsRead + feedSummary.itemsRead,
-          itemsWithinWindow: accumulator.itemsWithinWindow + feedSummary.itemsWithinWindow,
-          articlesCreated: accumulator.articlesCreated + feedSummary.articlesCreated,
-          duplicates: accumulator.duplicates + feedSummary.duplicates,
-          invalidItems: accumulator.invalidItems + feedSummary.invalidItems,
-          skippedFeeds: accumulator.skippedFeeds + (feedSummary.skippedByCooldown ? 1 : 0),
-          errorFeeds: accumulator.errorFeeds + (feedSummary.error ? 1 : 0),
-        };
-      },
-      {
-        itemsRead: 0,
-        itemsWithinWindow: 0,
-        articlesCreated: 0,
-        duplicates: 0,
-        invalidItems: 0,
-        skippedFeeds: 0,
-        errorFeeds: 0,
-      },
-    );
-  }, [refreshSummary]);
-
-  const summaryFeeds = refreshSummary?.feeds ?? [];
-  const summaryHasPartialErrors = (summaryAggregates?.errorFeeds ?? 0) > 0;
-  const summaryMetricCards = [
-    {
-      key: 'feedsProcessed',
-      label: t('posts.summary.metrics.feedsProcessed', 'Feeds processed'),
-      value: formatNumber(summaryFeeds.length, locale),
-    },
-    {
-      key: 'feedsSkipped',
-      label: t('posts.summary.metrics.feedsSkipped', 'Feeds skipped'),
-      value: formatNumber(summaryAggregates?.skippedFeeds ?? 0, locale),
-    },
-    {
-      key: 'feedsWithErrors',
-      label: t('posts.summary.metrics.feedsWithErrors', 'Feeds with errors'),
-      value: formatNumber(summaryAggregates?.errorFeeds ?? 0, locale),
-    },
-    {
-      key: 'itemsRead',
-      label: t('posts.summary.itemsRead', 'Items read'),
-      value: formatNumber(summaryAggregates?.itemsRead ?? 0, locale),
-    },
-    {
-      key: 'itemsWithinWindow',
-      label: t('posts.summary.itemsWithinWindow', 'Items within < 7d'),
-      value: formatNumber(summaryAggregates?.itemsWithinWindow ?? 0, locale),
-    },
-    {
-      key: 'articlesCreated',
-      label: t('posts.summary.articlesCreated', 'Articles created'),
-      value: formatNumber(summaryAggregates?.articlesCreated ?? 0, locale),
-    },
-    {
-      key: 'duplicates',
-      label: t('posts.summary.duplicates', 'Duplicates'),
-      value: formatNumber(summaryAggregates?.duplicates ?? 0, locale),
-    },
-    {
-      key: 'invalidItems',
-      label: t('posts.summary.invalidItems', 'Invalid entries'),
-      value: formatNumber(summaryAggregates?.invalidItems ?? 0, locale),
-    },
-  ];
-
   return (
     <div className="container-responsive space-y-6 py-10" id="conteudo">
       <div className="space-y-1">
@@ -797,140 +963,13 @@ const PostsPage = () => {
         </div>
       ) : null}
 
-      {refreshSummary && !isSummaryDismissed ? (
-        <section className="card space-y-4 px-6 py-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">{t('posts.summary.title', 'Refresh summary')}</h2>
-              <p className="text-xs text-muted-foreground">
-                {t('posts.summary.executedAt', 'Executed at {{date}}', {
-                  date: formatDate(refreshSummary.now, locale),
-                })}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
-              onClick={() => setIsSummaryDismissed(true)}
-            >
-              {t('posts.summary.dismiss', 'Dismiss summary')}
-            </button>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {summaryMetricCards.map((metric) => (
-              <div key={metric.key} className="rounded-md border border-border/70 bg-muted/30 px-3 py-3">
-                <p className="text-[0.6875rem] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {metric.label}
-                </p>
-                <p className="text-lg font-semibold text-foreground">{metric.value}</p>
-              </div>
-            ))}
-          </div>
-
-          {summaryHasPartialErrors ? (
-            <p className="text-xs text-warning">
-              {t('posts.summary.partialError', 'Some feeds returned errors during the refresh.')}
-            </p>
-          ) : null}
-
-          {summaryFeeds.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {t('posts.summary.empty', 'No feed was processed during the latest refresh.')}
-            </p>
-          ) : (
-            <ul className="space-y-4">
-              {summaryFeeds.map((summary) => {
-                let statusLabel: string;
-                let statusClassName: string;
-
-                if (summary.error) {
-                  statusLabel = t('posts.summary.feedStatus.error', 'Error');
-                  statusClassName = 'border-danger/40 bg-danger/10 text-danger';
-                } else if (summary.skippedByCooldown) {
-                  statusLabel = t('posts.summary.feedStatus.skipped', 'Skipped');
-                  statusClassName = 'border-warning/40 bg-warning/10 text-warning';
-                } else {
-                  statusLabel = t('posts.summary.feedStatus.ok', 'Updated');
-                  statusClassName = 'border-primary/40 bg-primary/10 text-primary';
-                }
-                const metrics = [
-                  {
-                    key: 'itemsRead',
-                    label: t('posts.summary.itemsRead', 'Items read'),
-                    value: formatNumber(summary.itemsRead, locale),
-                  },
-                  {
-                    key: 'itemsWithinWindow',
-                    label: t('posts.summary.itemsWithinWindow', 'Items within < 7d'),
-                    value: formatNumber(summary.itemsWithinWindow, locale),
-                  },
-                  {
-                    key: 'articlesCreated',
-                    label: t('posts.summary.articlesCreated', 'Articles created'),
-                    value: formatNumber(summary.articlesCreated, locale),
-                  },
-                  {
-                    key: 'duplicates',
-                    label: t('posts.summary.duplicates', 'Duplicates'),
-                    value: formatNumber(summary.duplicates, locale),
-                  },
-                  {
-                    key: 'invalidItems',
-                    label: t('posts.summary.invalidItems', 'Invalid entries'),
-                    value: formatNumber(summary.invalidItems, locale),
-                  },
-                ];
-
-                return (
-                  <li key={summary.feedId} className="rounded-md border border-border px-4 py-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="space-y-1">
-                        <h3 className="text-sm font-semibold text-foreground">{buildSummaryTitle(summary, t)}</h3>
-                {summary.skippedByCooldown ? (
-                  <p className="text-xs text-warning">
-                    {t('posts.summary.skippedByCooldown', 'Skipped by cooldown window.')}
-                    {summary.cooldownSecondsRemaining === null || summary.cooldownSecondsRemaining === undefined
-                      ? ''
-                      : ` ${t('posts.summary.cooldownRemaining', 'Cooldown remaining: {{time}}.', {
-                          time: formatCooldownTime({
-                            secondsRemaining: summary.cooldownSecondsRemaining,
-                            locale,
-                            t,
-                          }),
-                        })}`}
-                  </p>
-                ) : null}
-                      </div>
-                      <span
-                        className={`inline-flex items-center justify-center rounded-full border px-2 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide ${statusClassName}`}
-                      >
-                        {statusLabel}
-                      </span>
-                    </div>
-                    <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
-                      {metrics.map((metric) => (
-                        <div
-                          key={metric.key}
-                          className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2"
-                        >
-                          <dt className="font-medium text-foreground">{metric.label}</dt>
-                          <dd>{metric.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                    {summary.error ? (
-                      <p className="mt-2 text-xs text-danger">
-                        {t('posts.summary.error', 'Error: {{message}}', { message: summary.error })}
-                      </p>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ) : null}
+        <RefreshSummarySection
+          summary={refreshSummary}
+          isDismissed={isSummaryDismissed}
+          onDismiss={() => setIsSummaryDismissed(true)}
+          locale={locale}
+          t={t}
+        />
 
       <PostListContent
         expandedSections={expandedSections}
