@@ -1,8 +1,8 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { vi } from 'vitest';
-import type { Mock } from 'vitest';
+import type { Mock, MockedFunction } from 'vitest';
 import type { UseMutationResult, UseMutateAsyncFunction, UseQueryResult } from '@tanstack/react-query';
 
 import i18n from '@/config/i18n';
@@ -188,11 +188,11 @@ let bulkMutate: Mock<(variables: BulkVariables, options?: BulkOptions) => void>;
 let updateMutate: Mock<(variables: UpdateVariables, options?: UpdateOptions) => void>;
 let deleteMutate: Mock<(variables: number, options?: DeleteOptions) => void>;
 let resetMutate: Mock<(variables: void, options?: ResetOptions) => void>;
-let resetMutateAsync: Mock<
-  Parameters<UseMutateAsyncFunction<FeedResetSummary, HttpError, void, unknown>>,
-  ReturnType<UseMutateAsyncFunction<FeedResetSummary, HttpError, void, unknown>>
+let resetMutateAsync: MockedFunction<
+  UseMutateAsyncFunction<FeedResetSummary, HttpError, void, unknown>
 >;
 let confirmSpy: ReturnType<typeof vi.spyOn>;
+let feedListQueryResult: UseQueryResult<FeedListResponse, HttpError>;
 
 beforeEach(() => {
   const feeds = [
@@ -200,9 +200,11 @@ beforeEach(() => {
     buildFeed({ id: 2, title: 'Feed 2', url: 'https://example.com/2.xml', lastFetchedAt: '2024-01-01T12:00:00.000Z' }),
   ];
 
-  mockedUseFeedList.mockReturnValue(
-    createQueryResult({ items: feeds, meta: { nextCursor: null, total: feeds.length, limit: 10 } }),
-  );
+  feedListQueryResult = createQueryResult({
+    items: feeds,
+    meta: { nextCursor: null, total: feeds.length, limit: 10 },
+  });
+  mockedUseFeedList.mockReturnValue(feedListQueryResult);
 
   createMutate = vi.fn<(variables: CreateVariables, options?: CreateOptions) => void>();
   bulkMutate = vi.fn<(variables: BulkVariables, options?: BulkOptions) => void>();
@@ -296,6 +298,9 @@ describe('FeedsPage', () => {
     expect(screen.getByText('Feed adicionado com sucesso.')).toBeInTheDocument();
     expect(urlInput).toHaveValue('');
     expect(titleInput).toHaveValue('');
+    await waitFor(() => {
+      expect(feedListQueryResult.refetch).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('validates URL locally before creating feed', async () => {
@@ -374,6 +379,9 @@ describe('FeedsPage', () => {
 
     const successMessage = i18n.t('feeds.bulkForm.success', { count: 2 });
     expect(screen.getByText(successMessage)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(feedListQueryResult.refetch).toHaveBeenCalledTimes(1);
+    });
 
     const summaryTitle = i18n.t('feeds.bulkForm.summary.title', 'Resumo da operacao');
     const summary = screen.getByText(summaryTitle).closest('div');
@@ -466,6 +474,9 @@ describe('FeedsPage', () => {
 
     expect(deleteMutate).toHaveBeenCalledWith(1, expect.any(Object));
     expect(screen.getByText('Feed removido com sucesso.')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(feedListQueryResult.refetch).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('does not render the reset button for non-admin users', () => {
