@@ -431,4 +431,99 @@ describe('PromptsPage', () => {
       expect.objectContaining({ id: 1, position: 2 }),
     ]);
   });
+
+  it('disables export when no prompt is selected and enables after selection', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 1, title: 'First prompt', content: 'First content', position: 1 }),
+      buildPrompt({ id: 2, title: 'Second prompt', content: 'Second content', position: 2 }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const exportButton = screen.getByRole('button', { name: /export selected/i });
+    expect(exportButton).toBeDisabled();
+
+    const checkboxes = screen.getAllByRole('checkbox', { name: /select prompt/i });
+    await user.click(checkboxes[0]);
+
+    expect(exportButton).toBeEnabled();
+  });
+
+  it('shows export preview with prompts concatenated in the displayed order', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 1, title: 'Alpha prompt', content: 'Alpha content', position: 1 }),
+      buildPrompt({ id: 2, title: 'Beta prompt', content: 'Beta content', position: 2 }),
+      buildPrompt({ id: 3, title: 'Gamma prompt', content: 'Gamma content', position: 3 }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const checkboxes = screen.getAllByRole('checkbox', { name: /select prompt/i });
+    await user.click(checkboxes[1]);
+    await user.click(checkboxes[0]);
+
+    await user.click(screen.getByRole('button', { name: /export selected/i }));
+
+    const preview = await screen.findByLabelText(/preview/i);
+    expect(preview).toHaveValue('Alpha prompt\n\nAlpha content\n\n---\n\nBeta prompt\n\nBeta content');
+  });
+
+  it('copies the export content to the clipboard', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 1, title: 'Alpha prompt', content: 'Alpha content', position: 1 }),
+      buildPrompt({ id: 2, title: 'Beta prompt', content: 'Beta content', position: 2 }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = navigator.clipboard;
+    const navigatorWithClipboard = navigator as Navigator & { clipboard?: Clipboard };
+    Object.defineProperty(navigatorWithClipboard, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderPage();
+
+    const checkboxes = screen.getAllByRole('checkbox', { name: /select prompt/i });
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    await user.click(screen.getByRole('button', { name: /export selected/i }));
+    await user.click(screen.getByRole('button', { name: /copy/i }));
+
+    expect(writeText).toHaveBeenCalledWith(
+      'Alpha prompt\n\nAlpha content\n\n---\n\nBeta prompt\n\nBeta content',
+    );
+    expect(await screen.findByText(/copied successfully/i)).toBeInTheDocument();
+
+    if (originalClipboard) {
+      Object.defineProperty(navigatorWithClipboard, 'clipboard', {
+        configurable: true,
+        value: originalClipboard,
+      });
+    } else {
+      delete navigatorWithClipboard.clipboard;
+    }
+  });
 });
