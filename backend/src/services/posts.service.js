@@ -12,11 +12,11 @@ const { createLogger } = require('./rss-logger');
 const rssMetrics = require('./rss-metrics');
 const config = require('../config');
 const ingestionDiagnostics = require('./ingestion-diagnostics');
+const appParamsService = require('./app-params.service');
 const { looksEscapedHtml, computeWeakContent, buildPreview } = require('../utils/html-diagnostics');
 
-const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
-const WINDOW_DAYS = 7;
-const WINDOW_MS = WINDOW_DAYS * 24 * 60 * 60 * 1000;
+const MS_PER_SECOND = 1000;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_FETCH_TIMEOUT_MS = 5000;
 const MAX_PAGE_SIZE = 50;
 const MAX_ARTICLE_TITLE_LENGTH = 200;
@@ -33,6 +33,57 @@ const feedFetchCache = shouldCacheFeeds
       maxEntries: config.cache.feedFetchMaxEntries,
     })
   : null;
+
+const normalizeCooldownSeconds = (value) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return appParamsService.DEFAULT_APP_PARAMS.postsRefreshCooldownSeconds;
+  }
+
+  const normalized = Math.trunc(value);
+  return normalized < 0 ? 0 : normalized;
+};
+
+const normalizeWindowDays = (value) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return appParamsService.DEFAULT_APP_PARAMS.postsTimeWindowDays;
+  }
+
+  const normalized = Math.trunc(value);
+  return normalized < 1 ? 1 : normalized;
+};
+
+const buildOperationalParams = ({ cooldownSeconds, windowDays }) => {
+  const normalizedCooldownSeconds = normalizeCooldownSeconds(cooldownSeconds);
+  const normalizedWindowDays = normalizeWindowDays(windowDays);
+
+  return {
+    cooldownSeconds: normalizedCooldownSeconds,
+    cooldownMs: normalizedCooldownSeconds * MS_PER_SECOND,
+    windowDays: normalizedWindowDays,
+    windowMs: normalizedWindowDays * MS_PER_DAY,
+  };
+};
+
+const resolveOperationalParams = async (overrides) => {
+  if (overrides && (overrides.cooldownSeconds != null || overrides.windowDays != null)) {
+    return buildOperationalParams({
+      cooldownSeconds:
+        overrides.cooldownSeconds ?? appParamsService.DEFAULT_APP_PARAMS.postsRefreshCooldownSeconds,
+      windowDays: overrides.windowDays ?? appParamsService.DEFAULT_APP_PARAMS.postsTimeWindowDays,
+    });
+  }
+
+  const params = await appParamsService.getAppParams();
+  return buildOperationalParams({
+    cooldownSeconds: params.postsRefreshCooldownSeconds,
+    windowDays: params.postsTimeWindowDays,
+  });
+};
+
+const defaultOperationalParams = buildOperationalParams({
+  cooldownSeconds: appParamsService.DEFAULT_APP_PARAMS.postsRefreshCooldownSeconds,
+  windowDays: appParamsService.DEFAULT_APP_PARAMS.postsTimeWindowDays,
+});
 
 const POST_PLACEHOLDER_CONTENT = [
   'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
@@ -923,8 +974,8 @@ const createFeedSummary = (feed) => ({
   error: null,
 });
 
-const calculateCooldownState = (feed, currentTime) => {
-  if (!feed.lastFetchedAt) {
+const calculateCooldownState = (feed, currentTime, cooldownMs) => {
+  if (!feed.lastFetchedAt || cooldownMs <= 0) {
     return { active: false, secondsRemaining: 0 };
   }
 
@@ -932,11 +983,11 @@ const calculateCooldownState = (feed, currentTime) => {
   const lastFetchedTime = lastFetchedAt.valueOf();
   const elapsedMs = currentTime.valueOf() - lastFetchedTime;
 
-  if (Number.isNaN(lastFetchedTime) || elapsedMs >= COOLDOWN_MS) {
+  if (Number.isNaN(lastFetchedTime) || elapsedMs >= cooldownMs) {
     return { active: false, secondsRemaining: 0 };
   }
 
-  const remainingMs = COOLDOWN_MS - elapsedMs;
+  const remainingMs = cooldownMs - elapsedMs;
   return {
     active: true,
     secondsRemaining: Math.ceil(remainingMs / 1000),
@@ -1061,9 +1112,9 @@ const persistCandidates = async ({ feed, candidates }) => {
   return { created, duplicates };
 };
 
-const refreshSingleFeed = async ({ feed, fetchImpl, timeoutMs, useCache, currentTime, windowStart }) => {
+const refreshSingleFeed = async ({ feed, fetchImpl, timeoutMs, useCache, currentTime, windowStart, cooldownMs }) => {
   const summary = createFeedSummary(feed);
-  const cooldown = calculateCooldownState(feed, currentTime);
+  const cooldown = calculateCooldownState(feed, currentTime, cooldownMs);
 
   if (cooldown.active) {
     summary.skippedByCooldown = true;
@@ -1094,7 +1145,13 @@ const refreshSingleFeed = async ({ feed, fetchImpl, timeoutMs, useCache, current
   return summary;
 };
 
-const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS }) => {
+const performRefreshUserFeeds = async ({
+  ownerKey,
+  now = new Date(),
+  fetcher,
+  timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
+  operationalParams,
+}) => {
   if (!ownerKey) {
     throw new TypeError('ownerKey is required');
   }
@@ -1102,13 +1159,21 @@ const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, ti
   const fetchImpl = getFetchImplementation(fetcher);
   const useCache = !fetcher;
   const currentTime = ensureDate(now);
-  const windowStart = new Date(currentTime.valueOf() - WINDOW_MS);
+  const windowStart = new Date(currentTime.valueOf() - operationalParams.windowMs);
 
   const feeds = await feedRepository.findAllByOwner(ownerKey);
   const results = [];
 
   for (const feed of feeds) {
-    const summary = await refreshSingleFeed({ feed, fetchImpl, timeoutMs, useCache, currentTime, windowStart });
+    const summary = await refreshSingleFeed({
+      feed,
+      fetchImpl,
+      timeoutMs,
+      useCache,
+      currentTime,
+      windowStart,
+      cooldownMs: operationalParams.cooldownMs,
+    });
     results.push(summary);
   }
 
@@ -1118,7 +1183,7 @@ const performRefreshUserFeeds = async ({ ownerKey, now = new Date(), fetcher, ti
   };
 };
 
-const refreshUserFeeds = async ({ ownerKey, ...rest }) => {
+const refreshUserFeeds = async ({ ownerKey, operationalParams: overrides, ...rest }) => {
   if (!ownerKey) {
     throw new TypeError('ownerKey is required');
   }
@@ -1132,7 +1197,8 @@ const refreshUserFeeds = async ({ ownerKey, ...rest }) => {
   let activePromise;
   activePromise = (async () => {
     try {
-      return await performRefreshUserFeeds({ ownerKey, ...rest });
+      const operationalParams = await resolveOperationalParams(overrides);
+      return await performRefreshUserFeeds({ ownerKey, ...rest, operationalParams });
     } finally {
       if (refreshLocks.get(lockKey) === activePromise) {
         refreshLocks.delete(lockKey);
@@ -1144,13 +1210,14 @@ const refreshUserFeeds = async ({ ownerKey, ...rest }) => {
   return activePromise;
 };
 
-const cleanupOldArticles = async ({ ownerKey, now = new Date() }) => {
+const cleanupOldArticles = async ({ ownerKey, now = new Date(), operationalParams: overrides }) => {
   if (!ownerKey) {
     throw new TypeError('ownerKey is required');
   }
 
   const currentTime = ensureDate(now);
-  const threshold = new Date(currentTime.valueOf() - WINDOW_MS);
+  const operationalParams = await resolveOperationalParams(overrides);
+  const threshold = new Date(currentTime.valueOf() - operationalParams.windowMs);
 
   const articlesToRemove = await articleRepository.findIdsForCleanup({ ownerKey, olderThan: threshold });
 
@@ -1195,13 +1262,14 @@ const decodeCursor = (cursor) => {
   }
 };
 
-const listRecentArticles = async ({ ownerKey, cursor, limit, feedId, now = new Date() }) => {
+const listRecentArticles = async ({ ownerKey, cursor, limit, feedId, now = new Date(), operationalParams: overrides }) => {
   if (!ownerKey) {
     throw new TypeError('ownerKey is required');
   }
 
   const currentTime = ensureDate(now);
-  const windowStart = new Date(currentTime.valueOf() - WINDOW_MS);
+  const operationalParams = await resolveOperationalParams(overrides);
+  const windowStart = new Date(currentTime.valueOf() - operationalParams.windowMs);
 
   const safeLimit = Math.min(Math.max(limit ?? 20, 1), MAX_PAGE_SIZE);
 
@@ -1258,9 +1326,10 @@ module.exports = {
   InvalidCursorError,
   POST_PLACEHOLDER_CONTENT,
   constants: {
-    COOLDOWN_MS,
-    WINDOW_DAYS,
-    WINDOW_MS,
+    DEFAULT_COOLDOWN_SECONDS: defaultOperationalParams.cooldownSeconds,
+    DEFAULT_COOLDOWN_MS: defaultOperationalParams.cooldownMs,
+    DEFAULT_WINDOW_DAYS: defaultOperationalParams.windowDays,
+    DEFAULT_WINDOW_MS: defaultOperationalParams.windowMs,
     DEFAULT_FETCH_TIMEOUT_MS,
     MAX_PAGE_SIZE,
     MAX_ARTICLE_TITLE_LENGTH,

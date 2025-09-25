@@ -49,7 +49,9 @@ describe('NewsDetailPage', () => {
   it('falls back to cached data when available', () => {
     const queryClient = new QueryClient();
     const post = buildPost({ id: 2, title: 'Post em cache' });
-    queryClient.setQueryData([...POSTS_QUERY_KEY, { cursor: null, limit: 12, feedId: null }], { items: [post] });
+    queryClient.setQueryData([...POSTS_QUERY_KEY, { cursor: null, limit: 12, feedId: null, windowDays: null }], {
+      items: [post],
+    });
 
     wrapperWithProviders(
       <MemoryRouter initialEntries={['/news/2']}>

@@ -9,18 +9,22 @@ export type PostListParams = {
   cursor: string | null;
   limit: number;
   feedId: number | null;
+  windowDays?: number | null;
   enabled?: boolean;
 };
 
 export const usePostList = <TData = PostListResponse>(
-  { cursor, limit, feedId, enabled = true }: PostListParams,
+  { cursor, limit, feedId, windowDays, enabled = true }: PostListParams,
   options: { select?: (data: PostListResponse) => TData } = {},
 ): UseQueryResult<TData, HttpError> => {
   const { status } = useAuth();
   const isAuthenticated = status === 'authenticated';
 
   return useQuery<PostListResponse, HttpError, TData>({
-    queryKey: [...POSTS_QUERY_KEY, { cursor: cursor ?? null, limit, feedId: feedId ?? null }],
+    queryKey: [
+      ...POSTS_QUERY_KEY,
+      { cursor: cursor ?? null, limit, feedId: feedId ?? null, windowDays: windowDays ?? null },
+    ],
     queryFn: () => fetchPosts({ cursor: cursor ?? undefined, limit, feedId: feedId ?? undefined }),
     enabled: isAuthenticated && enabled,
     placeholderData: keepPreviousData,

@@ -10,6 +10,7 @@ const { prisma } = require('../src/lib/prisma');
 const rssMetrics = require('../src/services/rss-metrics');
 const config = require('../src/config');
 const ingestionDiagnostics = require('../src/services/ingestion-diagnostics');
+const appParamsService = require('../src/services/app-params.service');
 
 const toRssDate = (date) => new Date(date).toUTCString();
 
@@ -101,7 +102,7 @@ const createFeed = async ({ ownerKey = '1', url = 'https://example.com/feed.xml'
   prisma.feed.create({ data: { ownerKey, url, lastFetchedAt } });
 
 describe('posts.service', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     prisma.__reset();
     rssMetrics.resetMetrics();
     ingestionDiagnostics.reset();
@@ -116,6 +117,7 @@ describe('posts.service', () => {
       logLevel: 'info',
       trackerParamsRemoveList: null,
     });
+    await appParamsService.ensureDefaultAppParams();
   });
 
   describe('refreshUserFeeds', () => {
@@ -164,9 +166,32 @@ describe('posts.service', () => {
       const updatedFeed = await prisma.feed.findUnique({ where: { id: feed.id } });
       expect(updatedFeed.lastFetchedAt?.toISOString()).toBe(now.toISOString());
 
-      const storedArticles = await prisma.article.findMany();
-      expect(storedArticles).toHaveLength(1);
-      expect(storedArticles[0].articleHtml).toMatch(/<p>Sample description/);
+    const storedArticles = await prisma.article.findMany();
+    expect(storedArticles).toHaveLength(1);
+    expect(storedArticles[0].articleHtml).toMatch(/<p>Sample description/);
+  });
+
+    it('respects custom cooldown seconds from app parameters', async () => {
+      await appParamsService.updateAppParams({
+        updates: { posts_refresh_cooldown_seconds: 600 },
+        updatedBy: 'tester',
+      });
+
+      const now = new Date('2025-03-01T12:00:00Z');
+      const recent = new Date(now.getTime() - 2 * 60 * 1000);
+      const feed = await createFeed({ lastFetchedAt: recent });
+      const fetcher = jest.fn();
+
+      const result = await refreshUserFeeds({ ownerKey: '1', now, fetcher });
+
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(result.results[0]).toEqual(
+        expect.objectContaining({
+          feedId: feed.id,
+          skippedByCooldown: true,
+          cooldownSecondsRemaining: 480,
+        }),
+      );
     });
 
     it('ignores items published outside the 7-day window', async () => {
@@ -195,6 +220,38 @@ describe('posts.service', () => {
       expect(storedArticles).toHaveLength(1);
       expect(storedArticles[0].title).toBe('Recent');
       expect(storedArticles[0].articleHtml).toContain(recentDate.toISOString().slice(0, 10));
+    });
+
+    it('uses the configured time window from app parameters', async () => {
+      await appParamsService.updateAppParams({
+        updates: { posts_time_window_days: 2 },
+        updatedBy: 'tester',
+      });
+
+      const now = new Date('2025-03-08T12:00:00Z');
+      const feed = await createFeed({ lastFetchedAt: new Date('2025-03-05T00:00:00Z') });
+      const insideWindow = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
+      const outsideWindow = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+
+      const rss = buildRss([
+        makeRssItem({ title: 'Inside Window', guid: 'inside-guid', publishedAt: insideWindow }),
+        makeRssItem({ title: 'Outside Window', guid: 'outside-guid', publishedAt: outsideWindow }),
+      ]);
+
+      const fetcher = createFetchMock(new Map([[feed.url, rss]]));
+
+      const summary = await refreshUserFeeds({ ownerKey: '1', now, fetcher });
+
+      expect(summary.results[0]).toEqual(
+        expect.objectContaining({
+          articlesCreated: 1,
+          itemsWithinWindow: 1,
+        }),
+      );
+
+      const storedArticles = await prisma.article.findMany();
+      expect(storedArticles).toHaveLength(1);
+      expect(storedArticles[0].title).toBe('Inside Window');
     });
 
     it('reports summary indicators for read, windowed, duplicate and invalid items', async () => {
