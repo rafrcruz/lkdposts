@@ -36,6 +36,8 @@ type Feedback = {
   message: string;
 };
 
+type StatusFilter = 'all' | 'enabled' | 'disabled';
+
 const resolveErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof HttpError) {
     return error.message;
@@ -91,6 +93,8 @@ const PromptsPage = () => {
   const [selectedPromptIds, setSelectedPromptIds] = useState<Set<string>>(new Set());
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -98,13 +102,31 @@ const PromptsPage = () => {
   const exportTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastFetchErrorRef = useRef<unknown>(null);
 
-  const shouldVirtualize = prompts.length > VIRTUALIZATION_THRESHOLD;
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredPrompts = prompts.filter((prompt) => {
+    const matchesStatus =
+      statusFilter === 'all' || (statusFilter === 'enabled' ? prompt.enabled : !prompt.enabled);
+    if (!matchesStatus) {
+      return false;
+    }
+
+    if (normalizedSearch.length === 0) {
+      return true;
+    }
+
+    const titleMatch = prompt.title.toLowerCase().includes(normalizedSearch);
+    const contentMatch = prompt.content.toLowerCase().includes(normalizedSearch);
+
+    return titleMatch || contentMatch;
+  });
+
+  const shouldVirtualize = filteredPrompts.length > VIRTUALIZATION_THRESHOLD;
   const virtualizer = useVirtualizer({
-    count: shouldVirtualize ? prompts.length : 0,
+    count: shouldVirtualize ? filteredPrompts.length : 0,
     getScrollElement: () => listContainerRef.current,
     estimateSize: () => ESTIMATED_ITEM_HEIGHT,
     overscan: 8,
-    getItemKey: (index) => prompts[index]?.id ?? index,
+    getItemKey: (index) => filteredPrompts[index]?.id ?? index,
   });
 
   useEffect(() => {
@@ -136,18 +158,24 @@ const PromptsPage = () => {
       return;
     }
 
+    const isVisible = filteredPrompts.some((item) => item.id === pendingScrollId);
+    if (!isVisible) {
+      setPendingScrollId(null);
+      return;
+    }
+
     if (!shouldVirtualize) {
       return;
     }
 
-    const index = prompts.findIndex((item) => item.id === pendingScrollId);
+    const index = filteredPrompts.findIndex((item) => item.id === pendingScrollId);
     if (index >= 0) {
       virtualizer.scrollToIndex(index, { align: 'center' });
       return;
     }
 
     setPendingScrollId(null);
-  }, [pendingScrollId, prompts, shouldVirtualize, virtualizer]);
+  }, [pendingScrollId, normalizedSearch, filteredPrompts.length, shouldVirtualize, statusFilter, virtualizer]);
 
   useEffect(() => {
     if (!contentInputRef.current) {
@@ -165,7 +193,14 @@ const PromptsPage = () => {
     }
 
     virtualizer.measure();
-  }, [shouldVirtualize, virtualizer, expandedPromptIds, prompts]);
+  }, [
+    shouldVirtualize,
+    virtualizer,
+    expandedPromptIds,
+    filteredPrompts.length,
+    normalizedSearch,
+    statusFilter,
+  ]);
 
   useEffect(() => {
     setSelectedPromptIds((current) => {
@@ -807,6 +842,32 @@ const PromptsPage = () => {
     );
   };
 
+  const hasPrompts = prompts.length > 0;
+  const hasFilteredPrompts = filteredPrompts.length > 0;
+
+  const noResultsMessage = useMemo(() => {
+    const hasSearch = searchTerm.trim().length > 0;
+
+    if (statusFilter === 'all') {
+      return hasSearch
+        ? t('prompts.search.noResultsWithSearch', 'No prompts found for this search.')
+        : t('prompts.search.noResults', 'No prompts found.');
+    }
+
+    if (statusFilter === 'enabled') {
+      return hasSearch
+        ? t('prompts.search.noEnabledWithSearch', 'No enabled prompts found for this search.')
+        : t('prompts.search.noEnabled', 'No enabled prompts found.');
+    }
+
+    return hasSearch
+      ? t(
+          'prompts.search.noDisabledWithSearch',
+          'No disabled prompts found for this search.',
+        )
+      : t('prompts.search.noDisabled', 'No disabled prompts found.');
+  }, [searchTerm, statusFilter, t]);
+
   return (
     <section className="space-y-6" aria-labelledby="prompts-heading">
       <header className="space-y-2">
@@ -818,8 +879,37 @@ const PromptsPage = () => {
         </p>
       </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[220px] flex-1">
+          <label htmlFor="prompt-search" className="text-sm font-medium text-foreground">
+            {t('prompts.search.label', 'Search prompts')}
+          </label>
+          <input
+            id="prompt-search"
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-primary focus:ring-2 focus:ring-primary/40"
+            placeholder={t('prompts.search.placeholder', 'Search by title or content')}
+            autoComplete="off"
+          />
+        </div>
+        <div className="min-w-[180px]">
+          <label htmlFor="prompt-status-filter" className="text-sm font-medium text-foreground">
+            {t('prompts.filter.status.label', 'Status filter')}
+          </label>
+          <select
+            id="prompt-status-filter"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-primary focus:ring-2 focus:ring-primary/40"
+          >
+            <option value="all">{t('prompts.filter.status.all', 'All')}</option>
+            <option value="enabled">{t('prompts.filter.status.enabled', 'Enabled')}</option>
+            <option value="disabled">{t('prompts.filter.status.disabled', 'Disabled')}</option>
+          </select>
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handleOpenCreateForm}
@@ -982,7 +1072,7 @@ const PromptsPage = () => {
         />
       ) : null}
 
-      {!isLoading && !isError && prompts.length === 0 ? (
+      {!isLoading && !isError && !hasPrompts ? (
         <EmptyState
           title={t('prompts.empty.title', 'No prompt registered yet.')}
           description={t('prompts.empty.description', 'Create your first prompt to get started.')}
@@ -998,60 +1088,66 @@ const PromptsPage = () => {
         />
       ) : null}
 
-      {!isLoading && !isError && prompts.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">
-            {t('prompts.list.reorderHint', 'Drag the handle or card to change the order.')}
-          </p>
-          {shouldVirtualize ? (
-            <div
-              ref={(element) => {
-                listContainerRef.current = element;
-              }}
-              onDragOver={handleDragOver}
-              onDrop={handleDropOnList}
-              className="relative max-h-[65vh] overflow-auto"
-              role="list"
-              aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
-            >
+      {!isLoading && !isError && hasPrompts ? (
+        hasFilteredPrompts ? (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              {t('prompts.list.reorderHint', 'Drag the handle or card to change the order.')}
+            </p>
+            {shouldVirtualize ? (
               <div
-                style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
+                ref={(element) => {
+                  listContainerRef.current = element;
+                }}
+                onDragOver={handleDragOver}
+                onDrop={handleDropOnList}
+                className="relative max-h-[65vh] overflow-auto"
+                role="list"
+                aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
               >
-                {virtualizer.getVirtualItems().map((virtualItem) => {
-                  const prompt = prompts[virtualItem.index];
-                  if (!prompt) {
-                    return null;
-                  }
+                <div
+                  style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
+                >
+                  {virtualizer.getVirtualItems().map((virtualItem) => {
+                    const prompt = filteredPrompts[virtualItem.index];
+                    if (!prompt) {
+                      return null;
+                    }
 
-                  return (
-                    <div
-                      key={virtualItem.key}
-                      className="absolute inset-x-0 pb-3"
-                      style={{ transform: `translateY(${virtualItem.start}px)` }}
-                      ref={(element) => {
-                        if (element) {
-                          virtualizer.measureElement(element);
-                        }
-                      }}
-                    >
-                      {renderPromptCard(prompt)}
-                    </div>
-                  );
-                })}
+                    return (
+                      <div
+                        key={virtualItem.key}
+                        className="absolute inset-x-0 pb-3"
+                        style={{ transform: `translateY(${virtualItem.start}px)` }}
+                        ref={(element) => {
+                          if (element) {
+                            virtualizer.measureElement(element);
+                          }
+                        }}
+                      >
+                        {renderPromptCard(prompt)}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ) : (
-            <div
-              onDragOver={handleDragOver}
-              onDrop={handleDropOnList}
-              className="space-y-3"
-              role="list"
-              aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
-            >
-              {prompts.map((prompt) => renderPromptCard(prompt))}
-            </div>
-          )}
-        </div>
+            ) : (
+              <div
+                onDragOver={handleDragOver}
+                onDrop={handleDropOnList}
+                className="space-y-3"
+                role="list"
+                aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
+              >
+                {filteredPrompts.map((prompt) => renderPromptCard(prompt))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+            {noResultsMessage}
+          </div>
+        )
       ) : null}
       {isExportModalOpen && typeof document !== 'undefined'
         ? createPortal(
