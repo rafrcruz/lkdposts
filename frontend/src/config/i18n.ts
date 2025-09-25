@@ -11,6 +11,7 @@ const resources = {
         primary: 'Primary navigation',
         home: 'Home',
         posts: 'Posts',
+        prompts: 'Prompts',
         feeds: 'Feeds',
         allowlist: 'Allowlist',
         appParams: 'App parameters',
@@ -39,6 +40,56 @@ const resources = {
       },
       actions: {
         tryAgain: 'Try again',
+      },
+      prompts: {
+        meta: { title: 'lkdposts - Prompts' },
+        heading: 'Prompts',
+        subtitle: 'Manage the prompts used to generate your content.',
+        actions: {
+          new: 'New prompt',
+          createFirst: 'Create prompt',
+          cancel: 'Cancel',
+          edit: 'Edit',
+          delete: 'Delete',
+          deleting: 'Deleting...',
+          retry: 'Try again',
+        },
+        form: {
+          createTitle: 'Create prompt',
+          editTitle: 'Edit prompt',
+          titleLabel: 'Title',
+          contentLabel: 'Content',
+          save: 'Save prompt',
+          saving: 'Saving...',
+          errors: {
+            titleRequired: 'Enter a title.',
+            titleMax: 'Title must be 120 characters or fewer.',
+            contentRequired: 'Enter the prompt content.',
+          },
+        },
+        list: {
+          error: 'We could not load the prompts. Try again.',
+          reorderHint: 'Drag the handle or card to change the order.',
+          dragLabel: 'Drag to reposition this prompt.',
+        },
+        empty: {
+          title: 'No prompt registered yet.',
+          description: 'Create your first prompt to get started.',
+        },
+        feedback: {
+          created: 'Prompt created successfully.',
+          updated: 'Prompt updated successfully.',
+          deleted: 'Prompt deleted successfully.',
+          reordered: 'Prompt order updated.',
+          error: 'The operation failed. Try again.',
+        },
+        delete: {
+          confirm: 'Are you sure you want to delete this prompt?',
+        },
+        reorder: {
+          pending: 'Updating order...',
+          error: 'We could not reorder the prompts. Try again.',
+        },
       },
       feeds: {
         meta: { title: 'lkdposts - Feeds' },
@@ -357,6 +408,7 @@ const resources = {
         primary: 'Navegacao principal',
         home: 'Inicio',
         posts: 'Posts',
+        prompts: 'Prompts',
         feeds: 'Feeds',
         allowlist: 'Allowlist',
         appParams: 'Parametros',
@@ -385,6 +437,56 @@ const resources = {
       },
       actions: {
         tryAgain: 'Tentar novamente',
+      },
+      prompts: {
+        meta: { title: 'lkdposts - Prompts' },
+        heading: 'Prompts',
+        subtitle: 'Gerencie os prompts usados para gerar o conteudo.',
+        actions: {
+          new: 'Novo prompt',
+          createFirst: 'Criar prompt',
+          cancel: 'Cancelar',
+          edit: 'Editar',
+          delete: 'Excluir',
+          deleting: 'Excluindo...',
+          retry: 'Tentar novamente',
+        },
+        form: {
+          createTitle: 'Criar prompt',
+          editTitle: 'Editar prompt',
+          titleLabel: 'Titulo',
+          contentLabel: 'Conteudo',
+          save: 'Salvar prompt',
+          saving: 'Salvando...',
+          errors: {
+            titleRequired: 'Informe um titulo.',
+            titleMax: 'O titulo deve ter no maximo 120 caracteres.',
+            contentRequired: 'Informe o conteudo do prompt.',
+          },
+        },
+        list: {
+          error: 'Nao foi possivel carregar os prompts. Tente novamente.',
+          reorderHint: 'Arraste o card ou o manipulador para alterar a ordem.',
+          dragLabel: 'Arraste para reposicionar este prompt.',
+        },
+        empty: {
+          title: 'Nenhum prompt cadastrado ainda.',
+          description: 'Crie seu primeiro prompt para comecar.',
+        },
+        feedback: {
+          created: 'Prompt criado com sucesso.',
+          updated: 'Prompt atualizado com sucesso.',
+          deleted: 'Prompt excluido com sucesso.',
+          reordered: 'Ordem dos prompts atualizada.',
+          error: 'A operacao falhou. Tente novamente.',
+        },
+        delete: {
+          confirm: 'Tem certeza de que deseja excluir este prompt?',
+        },
+        reorder: {
+          pending: 'Atualizando ordem...',
+          error: 'Nao foi possivel reordenar os prompts. Tente novamente.',
+        },
       },
       feeds: {
         meta: { title: 'lkdposts - Feeds' },

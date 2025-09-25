@@ -16,6 +16,7 @@ export const TopNav = () => {
     status === 'authenticated'
       ? [
           { to: '/posts', label: t('navigation.posts', 'Posts') },
+          { to: '/prompts', label: t('navigation.prompts', 'Prompts') },
           { to: '/feeds', label: t('navigation.feeds', 'Feeds') },
           ...(user?.role === 'admin'
             ? [
