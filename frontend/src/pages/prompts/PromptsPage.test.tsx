@@ -627,4 +627,122 @@ describe('PromptsPage', () => {
       screen.getAllByText('Disabled prompts are not exported.').filter((element) => element.tagName === 'P')
     ).toHaveLength(2);
   });
+
+  it('filters prompts by the search query', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 'prompt-1', title: 'Welcome message', content: 'Draft a welcome post', position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Product update', content: 'Highlight the new product features', position: 2 }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const searchInput = screen.getByLabelText(/search prompts/i);
+    await user.type(searchInput, 'product');
+
+    expect(screen.getByText('Product update')).toBeInTheDocument();
+    expect(screen.queryByText('Welcome message')).not.toBeInTheDocument();
+  });
+
+  it('combines search and status filter when listing prompts', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 'prompt-1', title: 'Recruiting post', content: 'Invite people to join', enabled: true, position: 1 }),
+      buildPrompt({
+        id: 'prompt-2',
+        title: 'Event reminder',
+        content: 'Remind followers about the event',
+        enabled: false,
+        position: 2,
+      }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const searchInput = screen.getByLabelText(/search prompts/i);
+    await user.type(searchInput, 'event');
+
+    const statusSelect = screen.getByLabelText(/status filter/i);
+    await user.selectOptions(statusSelect, 'disabled');
+
+    expect(screen.getByText('Event reminder')).toBeInTheDocument();
+    expect(screen.queryByText('Recruiting post')).not.toBeInTheDocument();
+  });
+
+  it('shows only enabled prompts when the enabled filter is active', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 'prompt-1', title: 'Daily post', enabled: true, position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Weekend recap', enabled: false, position: 2 }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const statusSelect = screen.getByLabelText(/status filter/i);
+    await user.selectOptions(statusSelect, 'enabled');
+
+    expect(screen.getByText('Daily post')).toBeInTheDocument();
+    expect(screen.queryByText('Weekend recap')).not.toBeInTheDocument();
+  });
+
+  it('shows only disabled prompts when the disabled filter is active', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 'prompt-1', title: 'Daily post', enabled: true, position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Weekend recap', enabled: false, position: 2 }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const statusSelect = screen.getByLabelText(/status filter/i);
+    await user.selectOptions(statusSelect, 'disabled');
+
+    expect(screen.getByText('Weekend recap')).toBeInTheDocument();
+    expect(screen.queryByText('Daily post')).not.toBeInTheDocument();
+  });
+
+  it('shows an informative message when no prompts match the filters', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 'prompt-1', title: 'Daily post', enabled: true, position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Weekend recap', enabled: false, position: 2 }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const searchInput = screen.getByLabelText(/search prompts/i);
+    await user.type(searchInput, 'nonexistent');
+
+    expect(screen.getByText('No prompts found for this search.')).toBeInTheDocument();
+  });
 });
