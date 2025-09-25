@@ -13,6 +13,8 @@ const AllowlistPage = lazy(() => import('@/pages/allowlist/AllowlistPage'));
 const NotFoundPage = lazy(() => import('@/pages/not-found/NotFoundPage'));
 const NewsListPage = lazy(() => import('@/pages/news/NewsListPage'));
 const NewsDetailPage = lazy(() => import('@/pages/news/NewsDetailPage'));
+const AppParamsPage = lazy(() => import('@/pages/app-params/AppParamsPage'));
+const ForbiddenPage = lazy(() => import('@/pages/forbidden/ForbiddenPage'));
 
 const withSuspense = (node: ReactNode) => <Suspense fallback={<LoadingSplash />}>{node}</Suspense>;
 
@@ -62,6 +64,14 @@ export const router = createBrowserRouter([
         element: withSuspense(
           <RequireAdmin>
             <AllowlistPage />
+          </RequireAdmin>
+        ),
+      },
+      {
+        path: 'app-params',
+        element: withSuspense(
+          <RequireAdmin forbiddenElement={withSuspense(<ForbiddenPage />)}>
+            <AppParamsPage />
           </RequireAdmin>
         ),
       },

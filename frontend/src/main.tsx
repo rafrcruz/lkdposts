@@ -6,6 +6,7 @@ import { I18nextProvider } from 'react-i18next';
 
 import App from './app/App';
 import { AuthProvider } from './features/auth/context/AuthContext';
+import { AppParamsProvider } from './features/app-params/context/AppParamsContext';
 import { ENV } from './config/env';
 import i18n from './config/i18n';
 import { HttpError } from './lib/api/http';
@@ -105,7 +106,9 @@ ReactDOM.createRoot(rootElement).render(
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <App />
+            <AppParamsProvider>
+              <App />
+            </AppParamsProvider>
           </AuthProvider>
         </QueryClientProvider>
       </I18nextProvider>

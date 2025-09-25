@@ -13,6 +13,7 @@ const resources = {
         posts: 'Posts',
         feeds: 'Feeds',
         allowlist: 'Allowlist',
+        appParams: 'App parameters',
         skipToContent: 'Skip to content',
         signIn: 'Sign in',
         logout: 'Sign out',
@@ -156,6 +157,7 @@ const resources = {
         actions: {
           refresh: 'Refresh',
           refreshing: 'Refreshing...',
+          refreshCooldown: 'Wait {{time}} before refreshing again.',
         },
         errors: {
           generic: 'The operation failed. Try again.',
@@ -169,7 +171,7 @@ const resources = {
           syncing: 'Syncing...',
         },
         cleanup: {
-          description: 'Removed {{articles}} articles and {{posts}} posts older than seven days.',
+          description: 'Removed {{articles}} articles and {{posts}} posts older than {{days}} days.',
         },
         summary: {
           title: 'Refresh summary',
@@ -187,7 +189,7 @@ const resources = {
             seconds: '{{seconds}} s',
           },
           itemsRead: 'Items read',
-          itemsWithinWindow: 'Items within < 7d',
+          itemsWithinWindow: 'Items within < {{days}}d',
           articlesCreated: 'Articles created',
           duplicates: 'Duplicates',
           invalidItems: 'Invalid entries',
@@ -226,7 +228,7 @@ const resources = {
           empty: {
             default: {
               title: 'No recent posts.',
-              description: 'Posts from the last seven days will appear here after a refresh.',
+              description: 'Posts from the last {{days}} days will appear here after a refresh.',
             },
             filtered: {
               title: 'No posts for this feed.',
@@ -295,6 +297,46 @@ const resources = {
           },
         },
       },
+      appParams: {
+        heading: 'Application parameters',
+        subtitle: 'Adjust how posts are processed and presented across the app.',
+        fields: {
+          refreshCooldown: 'Refresh cooldown (seconds)',
+          timeWindow: 'Posts time window (days)',
+        },
+        validation: {
+          cooldownRequired: 'Enter an integer greater than or equal to zero.',
+          cooldownNegative: 'Cooldown cannot be negative.',
+          windowRequired: 'Enter an integer greater than or equal to one.',
+          windowTooSmall: 'The time window must be at least one day.',
+        },
+        feedback: {
+          successWithReset: 'Parameters updated successfully. Feeds reset based on the new configuration.',
+          successResetFailed:
+            'Parameters updated successfully, but we could not reset the feeds automatically. Try again from the feeds page.',
+          error: 'We could not update the parameters. Try again later.',
+        },
+        actions: {
+          save: 'Save',
+          saving: 'Saving...',
+          cancel: 'Cancel',
+          retry: 'Try again',
+          retrying: 'Retrying...',
+        },
+        status: {
+          refreshing: 'Syncing parameters...',
+        },
+        errors: {
+          loadFailed: 'We could not load the parameters.',
+          retry: 'Try again. If the issue persists, contact support.',
+        },
+      },
+      forbidden: {
+        title: '403 - Access denied',
+        description:
+          'You do not have permission to access this page. Contact an administrator if you need access.',
+        backToPosts: 'Back to Posts',
+      },
       notFound: {
         meta: { title: 'lkdposts - Not found' },
         title: 'Page not found',
@@ -311,6 +353,7 @@ const resources = {
         posts: 'Posts',
         feeds: 'Feeds',
         allowlist: 'Allowlist',
+        appParams: 'Parametros',
         skipToContent: 'Ir para o conteudo',
         signIn: 'Entrar',
         logout: 'Sair',
@@ -454,6 +497,7 @@ const resources = {
         actions: {
           refresh: 'Atualizar',
           refreshing: 'Atualizando...',
+          refreshCooldown: 'Aguarde {{time}} antes de atualizar novamente.',
         },
         errors: {
           generic: 'A operacao falhou. Tente novamente.',
@@ -467,7 +511,7 @@ const resources = {
           syncing: 'Sincronizando...',
         },
         cleanup: {
-          description: 'Removidos {{articles}} artigos e {{posts}} posts com mais de sete dias.',
+          description: 'Removidos {{articles}} artigos e {{posts}} posts com mais de {{days}} dias.',
         },
         summary: {
           title: 'Resumo da atualizacao',
@@ -485,7 +529,7 @@ const resources = {
             seconds: '{{seconds}} seg',
           },
           itemsRead: 'Itens lidos',
-          itemsWithinWindow: 'Itens dentro de < 7d',
+          itemsWithinWindow: 'Itens dentro de < {{days}}d',
           articlesCreated: 'Artigos criados',
           duplicates: 'Duplicatas',
           invalidItems: 'Entradas invalidas',
@@ -524,7 +568,7 @@ const resources = {
           empty: {
             default: {
               title: 'Nenhum post recente.',
-              description: 'Posts dos ultimos sete dias aparecerao aqui apos uma atualizacao.',
+              description: 'Posts dos ultimos {{days}} dias aparecerao aqui apos uma atualizacao.',
             },
             filtered: {
               title: 'Nenhum post para este feed.',
@@ -592,6 +636,46 @@ const resources = {
             actions: 'Acoes',
           },
         },
+      },
+      appParams: {
+        heading: 'Parametros da aplicacao',
+        subtitle: 'Ajuste os valores que controlam o processamento e a exibicao dos posts.',
+        fields: {
+          refreshCooldown: 'Cooldown de atualizacao (segundos)',
+          timeWindow: 'Janela de tempo dos posts (dias)',
+        },
+        validation: {
+          cooldownRequired: 'Informe um numero inteiro maior ou igual a zero.',
+          cooldownNegative: 'O cooldown nao pode ser negativo.',
+          windowRequired: 'Informe um numero inteiro maior ou igual a um.',
+          windowTooSmall: 'A janela de tempo deve ter pelo menos um dia.',
+        },
+        feedback: {
+          successWithReset: 'Parametros atualizados com sucesso. Feeds resetados com base nos novos parametros.',
+          successResetFailed:
+            'Parametros atualizados com sucesso, mas nao foi possivel resetar os feeds automaticamente. Tente novamente na tela de feeds.',
+          error: 'Nao foi possivel atualizar os parametros. Tente novamente mais tarde.',
+        },
+        actions: {
+          save: 'Salvar',
+          saving: 'Salvando...',
+          cancel: 'Cancelar',
+          retry: 'Tentar novamente',
+          retrying: 'Tentando novamente...',
+        },
+        status: {
+          refreshing: 'Sincronizando parametros...',
+        },
+        errors: {
+          loadFailed: 'Nao foi possivel carregar os parametros.',
+          retry: 'Tente novamente. Se o problema persistir, contate o suporte.',
+        },
+      },
+      forbidden: {
+        title: '403 - Acesso negado',
+        description:
+          'Voce nao tem permissao para acessar esta pagina. Verifique com um administrador se precisar de acesso.',
+        backToPosts: 'Voltar para Posts',
       },
       notFound: {
         meta: { title: 'lkdposts - Nao encontrado' },

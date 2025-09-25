@@ -18,7 +18,10 @@ export const TopNav = () => {
           { to: '/posts', label: t('navigation.posts', 'Posts') },
           { to: '/feeds', label: t('navigation.feeds', 'Feeds') },
           ...(user?.role === 'admin'
-            ? [{ to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') }]
+            ? [
+                { to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') },
+                { to: '/app-params', label: t('navigation.appParams', 'Parâmetros') },
+              ]
             : []),
         ]
       : [{ to: '/', label: t('navigation.home') }];

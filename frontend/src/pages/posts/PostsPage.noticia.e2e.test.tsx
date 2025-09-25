@@ -11,6 +11,8 @@ import type { PostListItem, RefreshSummary, CleanupResult } from '@/features/pos
 import type { Feed } from '@/features/feeds/types/feed';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { AuthContextValue } from '@/features/auth/context/AuthContext';
+import { useAppParams } from '@/features/app-params/hooks/useAppParams';
+import type { AppParams } from '@/features/app-params/types/appParams';
 
 type JsonEnvelope = {
   success: boolean;
@@ -165,8 +167,36 @@ const renderWithProviders = (ui: ReactElement, client: QueryClient) =>
   );
 
 vi.mock('@/features/auth/hooks/useAuth');
+vi.mock('@/features/app-params/hooks/useAppParams');
 
 const mockedUseAuth = vi.mocked(useAuth);
+const mockedUseAppParams = vi.mocked(useAppParams);
+
+const buildAppParams = (override: Partial<AppParams> = {}): AppParams => ({
+  posts_refresh_cooldown_seconds: override.posts_refresh_cooldown_seconds ?? 3600,
+  posts_time_window_days: override.posts_time_window_days ?? 7,
+  updated_at: override.updated_at ?? '2025-01-01T00:00:00.000Z',
+  updated_by: Object.hasOwn(override, 'updated_by') ? override.updated_by ?? null : 'admin@example.com',
+});
+
+const buildAppParamsContextValue = (
+  paramsOverride: Partial<AppParams> = {},
+  overrides: Partial<ReturnType<typeof useAppParams>> = {},
+): ReturnType<typeof useAppParams> => {
+  const params = buildAppParams(paramsOverride);
+
+  return {
+    params,
+    status: 'success',
+    error: null,
+    isFetching: false,
+    fetchedAt: Date.now(),
+    refresh: vi.fn(async () => params),
+    update: vi.fn(async () => params),
+    clearError: vi.fn(),
+    ...overrides,
+  };
+};
 
 const buildAuthContext = (override: Partial<AuthContextValue> = {}): AuthContextValue => ({
   status: override.status ?? 'authenticated',
@@ -266,8 +296,13 @@ const setupDefaultAuth = (role: 'user' | 'admin' = 'user') => {
 };
 
 describe('PostsPage NOTICIA rendering (E2E with API mocks)', () => {
+  beforeEach(() => {
+    mockedUseAppParams.mockReturnValue(buildAppParamsContextValue());
+  });
+
   afterEach(() => {
     mockedUseAuth.mockReset();
+    mockedUseAppParams.mockReset();
   });
 
   it('renders 404Media-like content with full HTML semantics and collapse controls', async () => {

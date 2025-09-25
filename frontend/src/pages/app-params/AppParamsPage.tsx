@@ -1,0 +1,409 @@
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import * as Sentry from '@sentry/react';
+
+import { useAppParams } from '@/features/app-params/hooks/useAppParams';
+import { useResetFeeds } from '@/features/feeds/hooks/useFeeds';
+import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
+import { ErrorState } from '@/components/feedback/ErrorState';
+import { HttpError } from '@/lib/api/http';
+
+const parseInteger = (value: string): number | null => {
+  if (value.trim() === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return null;
+  }
+
+  return parsed;
+};
+
+type Feedback = {
+  type: 'success' | 'error' | 'warning';
+  message: string;
+};
+
+const resolveErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof HttpError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return fallback;
+};
+
+const AppParamsPage = () => {
+  const { t } = useTranslation();
+  const appParams = useAppParams();
+  const resetFeedsMutation = useResetFeeds();
+
+  const [cooldownInput, setCooldownInput] = useState('');
+  const [timeWindowInput, setTimeWindowInput] = useState('');
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const params = appParams.params;
+  const isLoading = appParams.status === 'loading' || (appParams.status === 'idle' && appParams.isFetching);
+  const hasData = appParams.status === 'success' && params;
+
+  const getSuccessLoggedRef = useRef(false);
+  const lastErrorRef = useRef<unknown>(null);
+
+  useEffect(() => {
+    Sentry.addBreadcrumb({
+      category: 'app-params',
+      message: 'app-params:view_opened',
+      level: 'info',
+    });
+  }, []);
+
+  useEffect(() => {
+    if (appParams.status === 'success' && params && !getSuccessLoggedRef.current) {
+      Sentry.addBreadcrumb({
+        category: 'app-params',
+        message: 'app-params:get_success',
+        level: 'info',
+      });
+      getSuccessLoggedRef.current = true;
+    }
+  }, [appParams.status, params]);
+
+  useEffect(() => {
+    if (!appParams.error) {
+      lastErrorRef.current = null;
+      return;
+    }
+
+    if (lastErrorRef.current === appParams.error) {
+      return;
+    }
+
+    lastErrorRef.current = appParams.error;
+    Sentry.addBreadcrumb({
+      category: 'app-params',
+      message: 'app-params:get_error',
+      level: 'error',
+    });
+  }, [appParams.error]);
+
+  useEffect(() => {
+    if (!params) {
+      return;
+    }
+
+    setCooldownInput(String(params.posts_refresh_cooldown_seconds));
+    setTimeWindowInput(String(params.posts_time_window_days));
+  }, [params?.posts_refresh_cooldown_seconds, params?.posts_time_window_days]);
+
+  const cooldownValue = useMemo(() => parseInteger(cooldownInput), [cooldownInput]);
+  const timeWindowValue = useMemo(() => parseInteger(timeWindowInput), [timeWindowInput]);
+
+  const cooldownError = useMemo(() => {
+    if (cooldownValue === null) {
+      return t('appParams.validation.cooldownRequired', 'Informe um número inteiro maior ou igual a zero.');
+    }
+
+    if (cooldownValue < 0) {
+      return t('appParams.validation.cooldownNegative', 'O cooldown não pode ser negativo.');
+    }
+
+    return null;
+  }, [cooldownValue, t]);
+
+  const timeWindowError = useMemo(() => {
+    if (timeWindowValue === null) {
+      return t('appParams.validation.windowRequired', 'Informe um número inteiro maior ou igual a um.');
+    }
+
+    if (timeWindowValue < 1) {
+      return t('appParams.validation.windowTooSmall', 'A janela de tempo deve ser de pelo menos um dia.');
+    }
+
+    return null;
+  }, [timeWindowValue, t]);
+
+  const isDirty = useMemo(() => {
+    if (!params || cooldownValue === null || timeWindowValue === null) {
+      return false;
+    }
+
+    return (
+      cooldownValue !== params.posts_refresh_cooldown_seconds ||
+      timeWindowValue !== params.posts_time_window_days
+    );
+  }, [cooldownValue, params, timeWindowValue]);
+
+  const canSave = hasData && !cooldownError && !timeWindowError && isDirty && !isSaving;
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!params || cooldownValue === null || timeWindowValue === null || !isDirty) {
+      return;
+    }
+
+    const payload: Record<string, number> = {};
+    if (cooldownValue !== params.posts_refresh_cooldown_seconds) {
+      payload.posts_refresh_cooldown_seconds = cooldownValue;
+    }
+    if (timeWindowValue !== params.posts_time_window_days) {
+      payload.posts_time_window_days = timeWindowValue;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+
+    setFeedback(null);
+    setIsSaving(true);
+    Sentry.addBreadcrumb({
+      category: 'app-params',
+      message: 'app-params:save_clicked',
+      level: 'info',
+    });
+
+    try {
+      const updated = await appParams.update(payload);
+      Sentry.addBreadcrumb({
+        category: 'app-params',
+        message: 'app-params:update_success',
+        level: 'info',
+      });
+
+      setCooldownInput(String(updated.posts_refresh_cooldown_seconds));
+      setTimeWindowInput(String(updated.posts_time_window_days));
+
+      try {
+        await resetFeedsMutation.mutateAsync();
+        setFeedback({
+          type: 'success',
+          message: t('appParams.feedback.successWithReset', 'Parâmetros atualizados com sucesso. Feeds resetados com base nos novos parâmetros.'),
+        });
+      } catch (resetError) {
+        Sentry.addBreadcrumb({
+          category: 'app-params',
+          message: 'app-params:reset_error',
+          level: 'error',
+        });
+        setFeedback({
+          type: 'warning',
+          message: t(
+            'appParams.feedback.successResetFailed',
+            'Parâmetros atualizados com sucesso, mas não foi possível resetar os feeds automaticamente. Tente novamente pela tela de feeds.',
+          ),
+        });
+      }
+    } catch (error) {
+      Sentry.addBreadcrumb({
+        category: 'app-params',
+        message: 'app-params:update_error',
+        level: 'error',
+      });
+      setFeedback({
+        type: 'error',
+        message: resolveErrorMessage(
+          error,
+          t('appParams.feedback.error', 'Não foi possível atualizar os parâmetros. Tente novamente mais tarde.'),
+        ),
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRetry = () => {
+    setFeedback(null);
+    appParams
+      .refresh({ force: true })
+      .catch((error) => {
+        setFeedback({
+          type: 'error',
+          message: resolveErrorMessage(
+            error,
+            t('appParams.feedback.error', 'Não foi possível atualizar os parâmetros. Tente novamente mais tarde.'),
+          ),
+        });
+      });
+  };
+
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <LoadingSkeleton className="h-6 w-48" />
+            <LoadingSkeleton className="h-4 w-64" />
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <LoadingSkeleton className="h-4 w-36" />
+              <LoadingSkeleton className="h-10" />
+            </div>
+            <div className="space-y-2">
+              <LoadingSkeleton className="h-4 w-44" />
+              <LoadingSkeleton className="h-10" />
+            </div>
+          </div>
+          <LoadingSkeleton className="h-10 w-32" />
+        </div>
+      );
+    }
+
+    if (!params) {
+      return (
+        <ErrorState
+          title={t('appParams.errors.loadFailed', 'Não foi possível carregar os parâmetros.')}
+          description={t('appParams.errors.retry', 'Tente novamente. Se o problema persistir, contate o suporte.')}
+          action={
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+              disabled={appParams.isFetching}
+            >
+              {appParams.isFetching
+                ? t('appParams.actions.retrying', 'Tentando novamente...')
+                : t('appParams.actions.retry', 'Tentar novamente')}
+            </button>
+          }
+        />
+      );
+    }
+
+    return (
+      <form className="space-y-6" onSubmit={handleSubmit} noValidate>
+        <div className="grid gap-6 sm:grid-cols-2">
+          <label className="text-sm">
+            <span className="mb-1 block font-medium">
+              {t('appParams.fields.refreshCooldown', 'Cooldown de atualização (segundos)')}
+            </span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={cooldownInput}
+              onChange={(event) => {
+                setCooldownInput(event.target.value);
+                setFeedback(null);
+              }}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+            {cooldownError ? (
+              <span className="mt-1 block text-xs text-destructive" role="alert">
+                {cooldownError}
+              </span>
+            ) : null}
+          </label>
+
+          <label className="text-sm">
+            <span className="mb-1 block font-medium">
+              {t('appParams.fields.timeWindow', 'Janela de tempo dos posts (dias)')}
+            </span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={1}
+              value={timeWindowInput}
+              onChange={(event) => {
+                setTimeWindowInput(event.target.value);
+                setFeedback(null);
+              }}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+            {timeWindowError ? (
+              <span className="mt-1 block text-xs text-destructive" role="alert">
+                {timeWindowError}
+              </span>
+            ) : null}
+          </label>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <button
+            type="submit"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canSave}
+          >
+            {isSaving ? t('appParams.actions.saving', 'Salvando...') : t('appParams.actions.save', 'Salvar')}
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => {
+              if (!params) {
+                return;
+              }
+              setCooldownInput(String(params.posts_refresh_cooldown_seconds));
+              setTimeWindowInput(String(params.posts_time_window_days));
+              setFeedback(null);
+            }}
+            disabled={!isDirty || isSaving}
+          >
+            {t('appParams.actions.cancel', 'Cancelar')}
+          </button>
+          {appParams.isFetching ? (
+            <span className="text-xs text-muted-foreground">
+              {t('appParams.status.refreshing', 'Sincronizando parâmetros...')}
+            </span>
+          ) : null}
+        </div>
+      </form>
+    );
+  };
+
+  const inlineErrorMessage = appParams.error && params
+    ? resolveErrorMessage(
+        appParams.error,
+        t('appParams.feedback.error', 'Não foi possível atualizar os parâmetros. Tente novamente mais tarde.'),
+      )
+    : null;
+
+  return (
+    <div className="space-y-6">
+      <header className="space-y-2">
+        <h1 className="text-3xl font-semibold text-foreground">
+          {t('appParams.heading', 'Parâmetros da aplicação')}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {t('appParams.subtitle', 'Ajuste os valores que controlam o processamento e a exibição dos posts.')}
+        </p>
+      </header>
+
+      {feedback ? (
+        <div
+          role="alert"
+          className={
+            feedback.type === 'success'
+              ? 'rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700'
+              : feedback.type === 'warning'
+                ? 'rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800'
+                : 'rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive'
+          }
+        >
+          {feedback.message}
+        </div>
+      ) : null}
+
+      {inlineErrorMessage ? (
+        <div
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          {inlineErrorMessage}
+        </div>
+      ) : null}
+
+      <section className="card space-y-6 px-6 py-6">{renderContent()}</section>
+    </div>
+  );
+};
+
+export default AppParamsPage;

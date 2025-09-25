@@ -18,6 +18,7 @@ import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { HttpError } from '@/lib/api/http';
 import { formatDate, formatNumber, useLocale } from '@/utils/formatters';
+import { useAppParams } from '@/features/app-params/hooks/useAppParams';
 
 const PAGE_SIZE = 10;
 const FEED_OPTIONS_LIMIT = 50;
@@ -511,6 +512,9 @@ const PostsPage = () => {
   const locale = useLocale();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const { params: appParams } = useAppParams();
+  const postsTimeWindowDays = appParams?.posts_time_window_days ?? 7;
+  const refreshCooldownSeconds = appParams?.posts_refresh_cooldown_seconds ?? 3600;
   const pageTitle = t('posts.meta.title', 'lkdposts - Posts');
 
   useDocumentTitle(pageTitle);
@@ -526,6 +530,8 @@ const PostsPage = () => {
   const [refreshSummary, setRefreshSummary] = useState<RefreshSummary | null>(null);
   const [isSummaryDismissed, setIsSummaryDismissed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<ExpandedSections>({});
+  const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
+  const [cooldownRemainingSeconds, setCooldownRemainingSeconds] = useState(0);
 
   const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT });
   const feedListData = feedList.data;
@@ -626,6 +632,40 @@ const PostsPage = () => {
 
   useRefreshSummaryReset(refreshSummary, setIsSummaryDismissed);
 
+  useEffect(() => {
+    if (!refreshSummary?.now) {
+      return;
+    }
+
+    const timestamp = new Date(refreshSummary.now).getTime();
+    if (Number.isNaN(timestamp)) {
+      setLastRefreshAt(Date.now());
+      return;
+    }
+
+    setLastRefreshAt(timestamp);
+  }, [refreshSummary?.now]);
+
+  useEffect(() => {
+    if (!lastRefreshAt || refreshCooldownSeconds <= 0) {
+      setCooldownRemainingSeconds(0);
+      return;
+    }
+
+    const computeRemaining = () => {
+      const elapsedSeconds = (Date.now() - lastRefreshAt) / 1000;
+      const remaining = Math.ceil(refreshCooldownSeconds - elapsedSeconds);
+      setCooldownRemainingSeconds(remaining > 0 ? remaining : 0);
+    };
+
+    computeRemaining();
+
+    const intervalId = setInterval(computeRemaining, 1000);
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [lastRefreshAt, refreshCooldownSeconds]);
+
   const runSequence = ({ resetPagination = false }: RefreshOptions = {}) => {
     if (isSyncing) {
       return;
@@ -708,6 +748,37 @@ const PostsPage = () => {
     [refreshSummary],
   );
 
+  const formattedTimeWindowDays = useMemo(
+    () => formatNumber(postsTimeWindowDays, locale),
+    [locale, postsTimeWindowDays],
+  );
+
+  const itemsWithinWindowLabel = useMemo(
+    () =>
+      t('posts.summary.itemsWithinWindow', 'Items within < {{days}}d', {
+        days: formattedTimeWindowDays,
+      }),
+    [formattedTimeWindowDays, t],
+  );
+
+  const isCooldownActive = cooldownRemainingSeconds > 0;
+
+  const cooldownMessage = useMemo(() => {
+    if (!isCooldownActive) {
+      return null;
+    }
+
+    const time = formatCooldownTime({
+      secondsRemaining: cooldownRemainingSeconds,
+      locale,
+      t,
+    });
+
+    return t('posts.actions.refreshCooldown', 'Wait {{time}} before refreshing again.', {
+      time,
+    });
+  }, [cooldownRemainingSeconds, isCooldownActive, locale, t]);
+
   const summaryFeeds = refreshSummary?.feeds ?? [];
   const summaryHasPartialErrors = (summaryAggregates?.errorFeeds ?? 0) > 0;
   const summaryMetricCards = [
@@ -733,7 +804,7 @@ const PostsPage = () => {
     },
     {
       key: 'itemsWithinWindow',
-      label: t('posts.summary.itemsWithinWindow', 'Items within < 7d'),
+      label: itemsWithinWindowLabel,
       value: formatNumber(summaryAggregates?.itemsWithinWindow ?? 0, locale),
     },
     {
@@ -802,10 +873,13 @@ const PostsPage = () => {
             type="button"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={() => runSequence({ resetPagination: true })}
-            disabled={isSyncing}
+            disabled={isSyncing || isCooldownActive}
           >
             {isSyncing ? t('posts.actions.refreshing', 'Refreshing...') : t('posts.actions.refresh', 'Refresh')}
           </button>
+          {cooldownMessage ? (
+            <span className="text-xs text-muted-foreground">{cooldownMessage}</span>
+          ) : null}
         </div>
       </div>
 
@@ -818,7 +892,7 @@ const PostsPage = () => {
               type="button"
               className="mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => runSequence()}
-              disabled={isSyncing}
+              disabled={isSyncing || isCooldownActive}
             >
               {t('actions.tryAgain', 'Try again')}
             </button>
@@ -835,7 +909,7 @@ const PostsPage = () => {
               type="button"
               className="mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => runSequence()}
-              disabled={isSyncing}
+              disabled={isSyncing || isCooldownActive}
             >
               {t('actions.tryAgain', 'Try again')}
             </button>
@@ -845,9 +919,10 @@ const PostsPage = () => {
 
       {cleanupResult ? (
         <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-          {t('posts.cleanup.description', 'Removed {{articles}} articles and {{posts}} posts older than seven days.', {
+          {t('posts.cleanup.description', 'Removed {{articles}} articles and {{posts}} posts older than {{days}} days.', {
             articles: formatNumber(cleanupResult.removedArticles, locale),
             posts: formatNumber(cleanupResult.removedPosts, locale),
+            days: formattedTimeWindowDays,
           })}
         </div>
       ) : null}
@@ -917,7 +992,7 @@ const PostsPage = () => {
                   },
                   {
                     key: 'itemsWithinWindow',
-                    label: t('posts.summary.itemsWithinWindow', 'Items within < 7d'),
+                    label: itemsWithinWindowLabel,
                     value: formatNumber(summary.itemsWithinWindow, locale),
                   },
                   {
@@ -1008,6 +1083,7 @@ const PostsPage = () => {
         t={t}
         currentPage={currentPage}
         feedListIsSuccess={feedList.isSuccess}
+        formattedTimeWindowDays={formattedTimeWindowDays}
       />
     </div>
   );
@@ -1034,6 +1110,7 @@ type PostListContentProps = {
   t: TranslateFunction;
   currentPage: number;
   feedListIsSuccess: boolean;
+  formattedTimeWindowDays: string;
 };
 
 const PostListContent = ({
@@ -1057,6 +1134,7 @@ const PostListContent = ({
   t,
   currentPage,
   feedListIsSuccess,
+  formattedTimeWindowDays,
 }: PostListContentProps): JSX.Element => {
   if (!hasExecutedSequence) {
     return (
@@ -1132,7 +1210,8 @@ const PostListContent = ({
           emptyDescriptionKey,
           selectedFeedId
             ? 'Select another feed or refresh to get new posts.'
-            : 'Posts from the last seven days will appear here after a refresh.',
+            : 'Posts from the last {{days}} days will appear here after a refresh.',
+          selectedFeedId ? undefined : { days: formattedTimeWindowDays },
         )}
       />
     );

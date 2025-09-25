@@ -21,16 +21,20 @@ import type { Feed } from '@/features/feeds/types/feed';
 import { HttpError } from '@/lib/api/http';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { AuthContextValue } from '@/features/auth/context/AuthContext';
+import { useAppParams } from '@/features/app-params/hooks/useAppParams';
+import type { AppParams } from '@/features/app-params/types/appParams';
 
 vi.mock('@/features/posts/hooks/usePosts');
 vi.mock('@/features/feeds/hooks/useFeeds');
 vi.mock('@/features/auth/hooks/useAuth');
+vi.mock('@/features/app-params/hooks/useAppParams');
 
 const mockedUsePostList = vi.mocked(usePostList);
 const mockedUseRefreshPosts = vi.mocked(useRefreshPosts);
 const mockedUseCleanupPosts = vi.mocked(useCleanupPosts);
 const mockedUseFeedList = vi.mocked(useFeedList);
 const mockedUseAuth = vi.mocked(useAuth);
+const mockedUseAppParams = vi.mocked(useAppParams);
 
 const buildPost = (override: Partial<PostListItem> = {}): PostListItem => ({
   id: override.id ?? 1,
@@ -63,6 +67,32 @@ const buildFeed = (override: Partial<Feed> = {}): Feed => ({
   createdAt: override.createdAt ?? '2024-01-01T00:00:00.000Z',
   updatedAt: override.updatedAt ?? '2024-01-01T00:00:00.000Z',
 });
+
+const buildAppParams = (override: Partial<AppParams> = {}): AppParams => ({
+  posts_refresh_cooldown_seconds: override.posts_refresh_cooldown_seconds ?? 0,
+  posts_time_window_days: override.posts_time_window_days ?? 7,
+  updated_at: override.updated_at ?? '2024-01-01T00:00:00.000Z',
+  updated_by: Object.hasOwn(override, 'updated_by') ? override.updated_by ?? null : 'admin@example.com',
+});
+
+const buildAppParamsHook = (
+  paramsOverride: Partial<AppParams> = {},
+  overrides: Partial<ReturnType<typeof useAppParams>> = {},
+): ReturnType<typeof useAppParams> => {
+  const params = buildAppParams(paramsOverride);
+
+  return {
+    params,
+    status: 'success',
+    error: null,
+    isFetching: false,
+    fetchedAt: Date.now(),
+    refresh: vi.fn(async () => params),
+    update: vi.fn(async () => params),
+    clearError: vi.fn(),
+    ...overrides,
+  };
+};
 
 const buildAuthContext = (override: Partial<AuthContextValue> = {}): AuthContextValue => {
   const defaultUser: AuthContextValue['user'] =
@@ -185,6 +215,12 @@ const createFeedListQueryResult = (
   return { ...base, ...override };
 };
 
+const buildRefreshSummary = (override: Partial<RefreshSummary> = {}): RefreshSummary => ({
+  now: new Date().toISOString(),
+  feeds: [],
+  ...override,
+});
+
 const renderPage = () =>
   render(
     <I18nextProvider i18n={i18n}>
@@ -198,6 +234,7 @@ describe('PostsPage', () => {
 
   beforeEach(() => {
     mockedUseAuth.mockReturnValue(buildAuthContext());
+    mockedUseAppParams.mockReturnValue(buildAppParamsHook());
 
     const feeds: Feed[] = [buildFeed({ id: 1, title: 'Feed 1' }), buildFeed({ id: 2, title: 'Feed 2' })];
     const defaultPosts: PostListItem[] = [
@@ -217,12 +254,7 @@ describe('PostsPage', () => {
       }),
     );
 
-    refreshMutateAsync = vi.fn(() =>
-      Promise.resolve<RefreshSummary>({
-        now: '2024-01-02T00:00:00.000Z',
-        feeds: [],
-      }),
-    );
+    refreshMutateAsync = vi.fn(() => Promise.resolve<RefreshSummary>(buildRefreshSummary()));
 
     cleanupMutateAsync = vi.fn(() =>
       Promise.resolve<CleanupResult>({ removedArticles: 0, removedPosts: 0 }),
@@ -310,24 +342,25 @@ describe('PostsPage', () => {
     const user = userEvent.setup();
 
     refreshMutateAsync = vi.fn(() =>
-      Promise.resolve<RefreshSummary>({
-        now: '2024-01-02T00:00:00.000Z',
-        feeds: [
-          {
-            feedId: 1,
-            feedTitle: 'Feed 1',
-            feedUrl: null,
-            skippedByCooldown: false,
-            cooldownSecondsRemaining: null,
-            itemsRead: 4,
-            itemsWithinWindow: 2,
-            articlesCreated: 1,
-            duplicates: 0,
-            invalidItems: 0,
-            error: null,
-          },
-        ],
-      }),
+      Promise.resolve<RefreshSummary>(
+        buildRefreshSummary({
+          feeds: [
+            {
+              feedId: 1,
+              feedTitle: 'Feed 1',
+              feedUrl: null,
+              skippedByCooldown: false,
+              cooldownSecondsRemaining: null,
+              itemsRead: 4,
+              itemsWithinWindow: 2,
+              articlesCreated: 1,
+              duplicates: 0,
+              invalidItems: 0,
+              error: null,
+            },
+          ],
+        }),
+      ),
     );
     mockedUseRefreshPosts.mockReturnValue(createMutationResult(refreshMutateAsync));
 
@@ -401,26 +434,74 @@ describe('PostsPage', () => {
     expect(screen.getByText('Pagina 1')).toBeInTheDocument();
   });
 
+  it('disables refresh action during cooldown window', async () => {
+    mockedUseAppParams.mockReturnValue(buildAppParamsHook({ posts_refresh_cooldown_seconds: 120 }));
+    refreshMutateAsync = vi.fn(() => Promise.resolve<RefreshSummary>(buildRefreshSummary()));
+    mockedUseRefreshPosts.mockReturnValue(createMutationResult(refreshMutateAsync));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
+      expect(cleanupMutateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    const refreshButton = await screen.findByRole('button', { name: 'Atualizar' });
+    await waitFor(() => {
+      expect(refreshButton).toBeDisabled();
+    });
+    expect(await screen.findByText(/Aguarde/i)).toBeInTheDocument();
+  });
+
+  it('renders empty state using the configured time window', async () => {
+    mockedUseAppParams.mockReturnValue(buildAppParamsHook({ posts_time_window_days: 3 }));
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (!params.enabled) {
+        return createPostQueryResult();
+      }
+
+      return createPostQueryResult({
+        data: { items: [], meta: { nextCursor: null, limit: 10 } },
+        isSuccess: true,
+        isFetched: true,
+        status: 'success',
+      });
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
+      expect(cleanupMutateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    await screen.findByText('Nenhum post recente.');
+    expect(
+      screen.getByText('Posts dos ultimos 3 dias aparecerao aqui apos uma atualizacao.'),
+    ).toBeInTheDocument();
+  });
+
   it('keeps posts visible when the refresh summary reports partial errors', async () => {
     refreshMutateAsync = vi.fn(() =>
-      Promise.resolve<RefreshSummary>({
-        now: '2024-01-02T00:00:00.000Z',
-        feeds: [
-          {
-            feedId: 1,
-            feedTitle: 'Feed 1',
-            feedUrl: null,
-            skippedByCooldown: false,
-            cooldownSecondsRemaining: null,
-            itemsRead: 2,
-            itemsWithinWindow: 1,
-            articlesCreated: 0,
-            duplicates: 0,
-            invalidItems: 0,
-            error: 'falha no feed',
-          },
-        ],
-      }),
+      Promise.resolve<RefreshSummary>(
+        buildRefreshSummary({
+          feeds: [
+            {
+              feedId: 1,
+              feedTitle: 'Feed 1',
+              feedUrl: null,
+              skippedByCooldown: false,
+              cooldownSecondsRemaining: null,
+              itemsRead: 2,
+              itemsWithinWindow: 1,
+              articlesCreated: 0,
+              duplicates: 0,
+              invalidItems: 0,
+              error: 'falha no feed',
+            },
+          ],
+        }),
+      ),
     );
     mockedUseRefreshPosts.mockReturnValue(createMutationResult(refreshMutateAsync));
 
@@ -825,6 +906,11 @@ describe('PostsPage', () => {
     });
 
     renderPage();
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
+      expect(cleanupMutateAsync).toHaveBeenCalledTimes(1);
+    });
 
     expect(await screen.findByText('Nenhum post recente.')).toBeInTheDocument();
   });
