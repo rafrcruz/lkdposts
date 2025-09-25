@@ -82,6 +82,8 @@ const resources = {
           deleted: 'Prompt deleted successfully.',
           reordered: 'Prompt order updated.',
           error: 'The operation failed. Try again.',
+          enabled: 'Prompt enabled.',
+          disabled: 'Prompt disabled.',
         },
         delete: {
           confirm: 'Are you sure you want to delete this prompt?',
@@ -89,6 +91,24 @@ const resources = {
         reorder: {
           pending: 'Updating order...',
           error: 'We could not reorder the prompts. Try again.',
+        },
+        status: {
+          enabled: 'Enabled',
+          disabled: 'Disabled',
+        },
+        toggle: {
+          enable: 'Enable prompt',
+          disable: 'Disable prompt',
+        },
+        export: {
+          title: 'Export selected prompts',
+          description: 'Copy the selected prompts to use them in other tools.',
+          close: 'Close',
+          previewLabel: 'Preview',
+          copy: 'Copy',
+          copySuccess: 'Copied successfully.',
+          copyError: 'Failed to copy. Copy manually.',
+          disabledWarning: 'Disabled prompts are not exported.',
         },
       },
       feeds: {
@@ -479,6 +499,8 @@ const resources = {
           deleted: 'Prompt excluido com sucesso.',
           reordered: 'Ordem dos prompts atualizada.',
           error: 'A operacao falhou. Tente novamente.',
+          enabled: 'Prompt habilitado.',
+          disabled: 'Prompt desabilitado.',
         },
         delete: {
           confirm: 'Tem certeza de que deseja excluir este prompt?',
@@ -486,6 +508,24 @@ const resources = {
         reorder: {
           pending: 'Atualizando ordem...',
           error: 'Nao foi possivel reordenar os prompts. Tente novamente.',
+        },
+        status: {
+          enabled: 'Habilitado',
+          disabled: 'Desabilitado',
+        },
+        toggle: {
+          enable: 'Habilitar prompt',
+          disable: 'Desabilitar prompt',
+        },
+        export: {
+          title: 'Exportar prompts selecionados',
+          description: 'Copie os prompts selecionados para usar em outras ferramentas.',
+          close: 'Fechar',
+          previewLabel: 'Previa',
+          copy: 'Copiar',
+          copySuccess: 'Copiado com sucesso.',
+          copyError: 'Falha ao copiar. Copie manualmente.',
+          disabledWarning: 'Itens desabilitados nao sao exportados.',
         },
       },
       feeds: {

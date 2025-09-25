@@ -104,6 +104,17 @@ describe('Prompts API', () => {
 
       expect(response.body.error.code).toBe('INVALID_INPUT');
     });
+
+    it('allows creating a disabled prompt when enabled=false is provided', async () => {
+      const response = await withAuth(TOKENS.user1, request(app).post('/api/v1/prompts'))
+        .send({ title: 'Temporário', content: 'Somente depois', enabled: false })
+        .expect('Content-Type', /json/)
+        .expect(201);
+
+      expect(response.body.data).toEqual(
+        expect.objectContaining({ title: 'Temporário', enabled: false })
+      );
+    });
   });
 
   describe('GET /api/v1/prompts', () => {
@@ -132,6 +143,30 @@ describe('Prompts API', () => {
       expect(secondPage.body.data.items).toHaveLength(1);
       expect(secondPage.body.data.items[0].title).toBe('Terceiro');
       expect(secondPage.body.meta.offset).toBe(2);
+    });
+
+    it('filters prompts by enabled state when requested', async () => {
+      await promptsService.createPrompt({ userId: 1, title: 'Ativo', content: 'C1' });
+      const disabled = await promptsService.createPrompt({ userId: 1, title: 'Inativo', content: 'C2' });
+
+      await withAuth(TOKENS.user1, request(app).patch(`/api/v1/prompts/${disabled.id}`))
+        .send({ enabled: false })
+        .expect(200);
+
+      const enabledOnly = await withAuth(TOKENS.user1, request(app).get('/api/v1/prompts'))
+        .query({ enabled: true })
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(enabledOnly.body.data.items.every((item) => item.enabled === true)).toBe(true);
+
+      const disabledOnly = await withAuth(TOKENS.user1, request(app).get('/api/v1/prompts'))
+        .query({ enabled: false })
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(disabledOnly.body.data.items).toHaveLength(1);
+      expect(disabledOnly.body.data.items[0]).toEqual(expect.objectContaining({ enabled: false }));
     });
   });
 
@@ -193,6 +228,48 @@ describe('Prompts API', () => {
 
       expect(response.body.error.code).toBe('INVALID_INPUT');
     });
+
+    it('moves the prompt to the end when disabling it', async () => {
+      const first = await promptsService.createPrompt({ userId: 1, title: 'Primeiro', content: '1' });
+      await promptsService.createPrompt({ userId: 1, title: 'Segundo', content: '2' });
+
+      const response = await withAuth(TOKENS.user1, request(app).patch(`/api/v1/prompts/${first.id}`))
+        .send({ enabled: false })
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data).toEqual(expect.objectContaining({ enabled: false }));
+
+      const list = await withAuth(TOKENS.user1, request(app).get('/api/v1/prompts'))
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      const lastPrompt = list.body.data.items[list.body.data.items.length - 1];
+      expect(lastPrompt.id).toBe(first.id);
+      expect(lastPrompt.enabled).toBe(false);
+    });
+
+    it('keeps the position when re-enabling a prompt', async () => {
+      const prompt = await promptsService.createPrompt({ userId: 1, title: 'Reativar', content: 'Teste' });
+
+      await withAuth(TOKENS.user1, request(app).patch(`/api/v1/prompts/${prompt.id}`))
+        .send({ enabled: false })
+        .expect(200);
+
+      const reenabled = await withAuth(TOKENS.user1, request(app).patch(`/api/v1/prompts/${prompt.id}`))
+        .send({ enabled: true })
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(reenabled.body.data.enabled).toBe(true);
+
+      const list = await withAuth(TOKENS.user1, request(app).get('/api/v1/prompts'))
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      const updated = list.body.data.items.find((item) => item.id === prompt.id);
+      expect(updated.position).toBe(reenabled.body.data.position);
+    });
   });
 
   describe('DELETE /api/v1/prompts/:id', () => {
@@ -231,6 +308,32 @@ describe('Prompts API', () => {
         ['Terceiro', 1],
         ['Primeiro', 2],
       ]);
+    });
+
+    it('accepts reorder payloads that mix enabled and disabled prompts', async () => {
+      const active = await promptsService.createPrompt({ userId: 1, title: 'Ativo', content: '1' });
+      const inactive = await promptsService.createPrompt({ userId: 1, title: 'Inativo', content: '2' });
+
+      await withAuth(TOKENS.user1, request(app).patch(`/api/v1/prompts/${inactive.id}`))
+        .send({ enabled: false })
+        .expect(200);
+
+      const response = await withAuth(TOKENS.user1, request(app).put('/api/v1/prompts/reorder'))
+        .send({
+          items: [
+            { id: inactive.id, position: 5 },
+            { id: active.id, position: 3 },
+          ],
+        })
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: inactive.id, enabled: false, position: 5 }),
+          expect.objectContaining({ id: active.id, enabled: true, position: 3 }),
+        ])
+      );
     });
 
     it('rejects reordering when an id belongs to another user', async () => {

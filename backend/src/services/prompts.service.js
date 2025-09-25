@@ -46,13 +46,13 @@ const normalizeOffset = (offset) => {
   return coerced;
 };
 
-const listPrompts = async ({ userId, limit, offset }) => {
+const listPrompts = async ({ userId, limit, offset, enabled }) => {
   const appliedLimit = normalizeLimit(limit);
   const appliedOffset = normalizeOffset(offset);
 
   const [items, total] = await Promise.all([
-    promptRepository.findManyByUser({ userId, take: appliedLimit, skip: appliedOffset }),
-    promptRepository.countByUser(userId),
+    promptRepository.findManyByUser({ userId, take: appliedLimit, skip: appliedOffset, enabled }),
+    promptRepository.countByUser({ userId, enabled }),
   ]);
 
   return {
@@ -93,7 +93,7 @@ const shiftPositionsForward = async ({ userId, startingAt }, client) => {
   }
 };
 
-const createPrompt = async ({ userId, title, content, position }) => {
+const createPrompt = async ({ userId, title, content, position, enabled = true }) => {
   return prisma.$transaction(async (tx) => {
     let targetPosition = position;
 
@@ -104,14 +104,17 @@ const createPrompt = async ({ userId, title, content, position }) => {
       await shiftPositionsForward({ userId, startingAt: targetPosition }, tx);
     }
 
-    const created = await promptRepository.create({ userId, title, content, position: targetPosition }, tx);
+    const created = await promptRepository.create(
+      { userId, title, content, position: targetPosition, enabled },
+      tx
+    );
 
     return created;
   });
 };
 
-const updatePrompt = async ({ userId, id, title, content }) => {
-  await ensurePromptOwnership({ userId, id });
+const updatePrompt = async ({ userId, id, title, content, enabled }) => {
+  const prompt = await ensurePromptOwnership({ userId, id });
 
   const data = {};
 
@@ -121,6 +124,24 @@ const updatePrompt = async ({ userId, id, title, content }) => {
 
   if (content !== undefined) {
     data.content = content;
+  }
+
+  if (enabled !== undefined) {
+    data.enabled = enabled;
+  }
+
+  if (prompt.enabled && enabled === false) {
+    return prisma.$transaction(async (tx) => {
+      const maxPosition = await promptRepository.findMaxPositionForUser({ userId }, tx);
+      const nextPosition = maxPosition == null ? 0 : maxPosition + 1;
+
+      const updatedPrompt = await promptRepository.update(
+        { id, data: { ...data, position: nextPosition } },
+        tx
+      );
+
+      return updatedPrompt;
+    });
   }
 
   const updated = await promptRepository.update({ id, data });

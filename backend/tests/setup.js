@@ -248,6 +248,10 @@ jest.mock('../src/lib/prisma', () => {
       return false;
     }
 
+    if (!matchesScalar(prompt.enabled, where.enabled)) {
+      return false;
+    }
+
     if (Array.isArray(where.AND) && where.AND.length > 0) {
       if (!where.AND.every((condition) => matchPromptWhere(prompt, condition))) {
         return false;
@@ -749,6 +753,7 @@ jest.mock('../src/lib/prisma', () => {
           title: data.title,
           content: data.content,
           position: data.position,
+          enabled: data.enabled ?? true,
           createdAt: now,
           updatedAt: now,
         };
@@ -784,6 +789,7 @@ jest.mock('../src/lib/prisma', () => {
         prompts[index] = {
           ...current,
           ...data,
+          enabled: Object.hasOwn(data, 'enabled') ? data.enabled : current.enabled,
           updatedAt: new Date(),
         };
 

@@ -38,6 +38,12 @@ const router = express.Router();
  *           minimum: 0
  *         required: false
  *         description: Number of prompts to skip before collecting the result set.
+ *       - in: query
+ *         name: enabled
+ *         schema:
+ *           type: boolean
+ *         required: false
+ *         description: Filter by enabled state when provided.
  *     responses:
  *       '200':
  *         description: List of prompts for the authenticated user
@@ -67,6 +73,7 @@ const router = express.Router();
  *                         title: Mensagem inicial
  *                         content: Conteúdo do prompt
  *                         position: 0
+ *                         enabled: true
  *                         createdAt: '2025-01-20T12:34:56.000Z'
  *                         updatedAt: '2025-01-20T12:34:56.000Z'
  *                   meta:
@@ -101,6 +108,7 @@ router.get('/prompts', validateRequest({ query: promptListQuerySchema }), prompt
  *               value:
  *                 title: Nova ideia
  *                 content: Texto do prompt
+ *                 enabled: true
  *     responses:
  *       '201':
  *         description: Prompt successfully created
@@ -187,6 +195,7 @@ router.get('/prompts/:id', validateRequest({ params: promptIdParamSchema }), pro
  *               value:
  *                 title: Título atualizado
  *                 content: Novo conteúdo
+ *                 enabled: true
  *     responses:
  *       '200':
  *         description: Prompt updated

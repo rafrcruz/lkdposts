@@ -84,16 +84,16 @@ const PromptsPage = () => {
   const [contentInput, setContentInput] = useState('');
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [draggingId, setDraggingId] = useState<number | null>(null);
-  const [pendingScrollId, setPendingScrollId] = useState<number | null>(null);
-  const [expandedPromptIds, setExpandedPromptIds] = useState<Set<number>>(new Set());
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
+  const [expandedPromptIds, setExpandedPromptIds] = useState<Set<string>>(new Set());
   const [isContentExpanded, setIsContentExpanded] = useState(false);
-  const [selectedPromptIds, setSelectedPromptIds] = useState<Set<number>>(new Set());
+  const [selectedPromptIds, setSelectedPromptIds] = useState<Set<string>>(new Set());
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   const listContainerRef = useRef<HTMLDivElement | null>(null);
-  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const contentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const exportTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastFetchErrorRef = useRef<unknown>(null);
@@ -169,7 +169,7 @@ const PromptsPage = () => {
 
   useEffect(() => {
     setSelectedPromptIds((current) => {
-      const next = new Set<number>();
+      const next = new Set<string>();
       prompts.forEach((prompt) => {
         if (current.has(prompt.id)) {
           next.add(prompt.id);
@@ -247,7 +247,7 @@ const PromptsPage = () => {
     resetForm();
   };
 
-  const registerItemRef = (id: number) => (element: HTMLDivElement | null) => {
+  const registerItemRef = (id: string) => (element: HTMLDivElement | null) => {
     if (!element) {
       itemRefs.current.delete(id);
       return;
@@ -256,7 +256,7 @@ const PromptsPage = () => {
     itemRefs.current.set(id, element);
   };
 
-  const togglePromptExpansion = (promptId: number) => {
+  const togglePromptExpansion = (promptId: string) => {
     setExpandedPromptIds((current) => {
       const next = new Set(current);
       if (next.has(promptId)) {
@@ -273,7 +273,7 @@ const PromptsPage = () => {
     setIsContentExpanded((previous) => !previous);
   };
 
-  const handleTogglePromptSelection = (promptId: number, checked: boolean) => {
+  const handleTogglePromptSelection = (promptId: string, checked: boolean) => {
     setSelectedPromptIds((current) => {
       const next = new Set(current);
 
@@ -285,6 +285,35 @@ const PromptsPage = () => {
 
       return next;
     });
+  };
+
+  const handleToggleEnabled = (prompt: Prompt, nextEnabled: boolean) => {
+    setFeedback(null);
+
+    updatePrompt.mutate(
+      { id: prompt.id, enabled: nextEnabled },
+      {
+        onSuccess: (updated) => {
+          setFeedback({
+            type: 'success',
+            message: nextEnabled
+              ? t('prompts.feedback.enabled', 'Prompt enabled.')
+              : t('prompts.feedback.disabled', 'Prompt disabled.'),
+          });
+          setPendingScrollId(updated.id);
+        },
+        onError: (error) => {
+          setFeedback({
+            type: 'error',
+            message: resolveErrorMessage(
+              error,
+              t('prompts.feedback.error', 'The operation failed. Try again.'),
+            ),
+          });
+          reportError('toggle', error, { promptId: prompt.id, enabled: nextEnabled });
+        },
+      },
+    );
   };
 
   const handleOpenExportModal = () => {
@@ -332,7 +361,7 @@ const PromptsPage = () => {
   };
 
   const reportError = (
-    action: 'create' | 'update' | 'delete' | 'reorder' | 'duplicate',
+    action: 'create' | 'update' | 'delete' | 'reorder' | 'duplicate' | 'toggle',
     error: unknown,
     extra: Record<string, unknown>,
   ) => {
@@ -502,7 +531,7 @@ const PromptsPage = () => {
     );
   };
 
-  const reorderById = (sourceId: number, targetId: number | null) => {
+  const reorderById = (sourceId: string, targetId: string | null) => {
     if (reorderPrompts.isPending) {
       return;
     }
@@ -552,7 +581,7 @@ const PromptsPage = () => {
     });
   };
 
-  const handleDragStart = (event: DragEvent<HTMLDivElement>, promptId: number) => {
+  const handleDragStart = (event: DragEvent<HTMLDivElement>, promptId: string) => {
     setDraggingId(promptId);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', String(promptId));
@@ -564,8 +593,7 @@ const PromptsPage = () => {
     }
 
     const data = event.dataTransfer.getData('text/plain');
-    const parsed = Number.parseInt(data, 10);
-    return Number.isNaN(parsed) ? null : parsed;
+    return data || null;
   };
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -573,7 +601,7 @@ const PromptsPage = () => {
     event.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDropOnItem = (event: DragEvent<HTMLDivElement>, targetId: number) => {
+  const handleDropOnItem = (event: DragEvent<HTMLDivElement>, targetId: string) => {
     event.preventDefault();
     const sourceId = resolveSourceId(event);
     if (!sourceId || sourceId === targetId) {
@@ -601,7 +629,14 @@ const PromptsPage = () => {
     setDraggingId(null);
   };
 
-  const isSaving = createPrompt.isPending || updatePrompt.isPending;
+  const updateVariables = updatePrompt.variables;
+  const isFormMutationPending =
+    updatePrompt.isPending &&
+    Boolean(
+      updateVariables &&
+        (updateVariables.title !== undefined || updateVariables.content !== undefined)
+    );
+  const isSaving = createPrompt.isPending || isFormMutationPending;
   const isDuplicating = createPrompt.isPending && typeof createPrompt.variables?.position === 'number';
   const isDeleting = deletePrompt.isPending;
   const deletingId = deletePrompt.variables ?? null;
@@ -610,12 +645,17 @@ const PromptsPage = () => {
     () => prompts.filter((prompt) => selectedPromptIds.has(prompt.id)),
     [prompts, selectedPromptIds],
   );
+  const exportablePrompts = useMemo(
+    () => selectedPrompts.filter((prompt) => prompt.enabled),
+    [selectedPrompts],
+  );
   const hasSelection = selectedPrompts.length > 0;
+  const hasDisabledSelected = selectedPrompts.length > exportablePrompts.length;
   const exportContent = useMemo(() => {
-    return selectedPrompts
+    return exportablePrompts
       .map((prompt) => `${prompt.title}\n\n${prompt.content}`)
       .join('\n\n---\n\n');
-  }, [selectedPrompts]);
+  }, [exportablePrompts]);
 
   const loadingSkeletons = useMemo(() => Array.from({ length: 3 }), []);
 
@@ -629,6 +669,19 @@ const PromptsPage = () => {
     const duplicatedTitle = `${prompt.title} (cópia)`;
     const isCurrentDuplicatePending =
       isDuplicating && createPrompt.variables?.title === duplicatedTitle;
+    const isEnabled = prompt.enabled;
+    const statusLabel = isEnabled
+      ? t('prompts.status.enabled', 'Enabled')
+      : t('prompts.status.disabled', 'Disabled');
+    const toggleAriaLabel = isEnabled
+      ? t('prompts.toggle.disable', 'Disable prompt')
+      : t('prompts.toggle.enable', 'Enable prompt');
+    const isTogglePending =
+      updatePrompt.isPending &&
+      updateVariables?.id === prompt.id &&
+      updateVariables.enabled !== undefined &&
+      updateVariables.title === undefined &&
+      updateVariables.content === undefined;
 
     return (
       <div
@@ -637,6 +690,7 @@ const PromptsPage = () => {
         className={clsx(
           'card flex flex-col gap-3 p-4 outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-primary',
           draggingId === prompt.id ? 'opacity-60 ring-2 ring-primary/40' : '',
+          !isEnabled ? 'border-dashed border-border/70 bg-muted/30' : '',
         )}
         draggable
         onDragStart={(event) => handleDragStart(event, prompt.id)}
@@ -686,34 +740,60 @@ const PromptsPage = () => {
                 </div>
               </div>
             </div>
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
+            <div className="flex flex-col items-stretch gap-3 sm:items-end">
               <button
                 type="button"
-                onClick={() => handleOpenEditForm(prompt)}
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+                role="switch"
+                aria-checked={isEnabled}
+                aria-label={toggleAriaLabel}
+                onClick={() => handleToggleEnabled(prompt, !isEnabled)}
+                disabled={isTogglePending}
+                className={clsx(
+                  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition',
+                  isEnabled
+                    ? 'border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                    : 'border-border text-muted-foreground hover:bg-muted',
+                  isTogglePending ? 'cursor-not-allowed opacity-60' : '',
+                )}
               >
-                {t('prompts.actions.edit', 'Edit')}
+                <span
+                  aria-hidden="true"
+                  className={clsx(
+                    'inline-flex h-2.5 w-2.5 rounded-full',
+                    isEnabled ? 'bg-emerald-500' : 'bg-muted-foreground',
+                  )}
+                />
+                {statusLabel}
               </button>
-              <button
-                type="button"
-                onClick={() => handleDuplicatePrompt(prompt)}
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
-                disabled={createPrompt.isPending}
-              >
-                {isCurrentDuplicatePending
-                  ? t('prompts.actions.duplicating', 'Duplicating...')
-                  : t('prompts.actions.duplicate', 'Duplicate')}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDeletePrompt(prompt)}
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10"
-                disabled={isDeleting}
-              >
-                {isDeleting && deletingId === prompt.id
-                  ? t('prompts.actions.deleting', 'Deleting...')
-                  : t('prompts.actions.delete', 'Delete')}
-              </button>
+              <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditForm(prompt)}
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+                >
+                  {t('prompts.actions.edit', 'Edit')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDuplicatePrompt(prompt)}
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+                  disabled={createPrompt.isPending}
+                >
+                  {isCurrentDuplicatePending
+                    ? t('prompts.actions.duplicating', 'Duplicating...')
+                    : t('prompts.actions.duplicate', 'Duplicate')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeletePrompt(prompt)}
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10"
+                  disabled={isDeleting}
+                >
+                  {isDeleting && deletingId === prompt.id
+                    ? t('prompts.actions.deleting', 'Deleting...')
+                    : t('prompts.actions.delete', 'Delete')}
+                </button>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -763,6 +843,11 @@ const PromptsPage = () => {
           </span>
         ) : null}
       </div>
+      {hasSelection && hasDisabledSelected ? (
+        <p className="text-sm font-medium text-amber-600">
+          {t('prompts.export.disabledWarning', 'Disabled prompts are not exported.')}
+        </p>
+      ) : null}
 
       {feedback ? (
         <div
@@ -1001,6 +1086,11 @@ const PromptsPage = () => {
                   <label htmlFor="export-preview" className="text-sm font-medium text-foreground">
                     {t('prompts.export.previewLabel', 'Preview')}
                   </label>
+                  {hasDisabledSelected ? (
+                    <p className="text-xs text-amber-600">
+                      {t('prompts.export.disabledWarning', 'Disabled prompts are not exported.')}
+                    </p>
+                  ) : null}
                   <textarea
                     id="export-preview"
                     ref={exportTextareaRef}

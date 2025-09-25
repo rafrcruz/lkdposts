@@ -90,6 +90,7 @@ model Prompt {
   title     String       @db.VarChar(120)
   content   String       @db.Text
   position  Int
+  enabled   Boolean      @default(true)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 

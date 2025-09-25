@@ -7,11 +7,13 @@ type CreatePromptPayload = {
   title: string;
   content: string;
   position?: number;
+  enabled?: boolean;
 };
 
 type UpdatePromptPayload = {
-  title: string;
-  content: string;
+  title?: string;
+  content?: string;
+  enabled?: boolean;
 };
 
 type ReorderPayload = {
@@ -26,11 +28,11 @@ export const createPrompt = (payload: CreatePromptPayload) => {
   return postJson<Prompt, CreatePromptPayload>('/api/prompts', payload, promptSchema);
 };
 
-export const updatePrompt = (id: number, payload: UpdatePromptPayload) => {
+export const updatePrompt = (id: string, payload: UpdatePromptPayload) => {
   return patchJson<Prompt, UpdatePromptPayload>(`/api/prompts/${id}`, payload, promptSchema);
 };
 
-export const deletePrompt = (id: number) => {
+export const deletePrompt = (id: string) => {
   return deleteJson<{ message?: string }>(`/api/prompts/${id}`);
 };
 
