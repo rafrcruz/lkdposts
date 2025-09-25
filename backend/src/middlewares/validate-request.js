@@ -27,13 +27,15 @@ const validateRequest = ({ body, query, params } = {}) => {
       req.validated = req.validated ? { ...req.validated, ...validated } : validated;
       next();
     } catch (error) {
-      if (error?.errors && Array.isArray(error.errors)) {
+      const issues = Array.isArray(error?.issues) ? error.issues : error?.errors;
+
+      if (Array.isArray(issues)) {
         return next(
           new ApiError({
             statusCode: 400,
             code: 'INVALID_INPUT',
             message: 'Invalid input data',
-            details: { errors: formatZodIssues(error.errors) },
+            details: { errors: formatZodIssues(issues) },
           })
         );
       }

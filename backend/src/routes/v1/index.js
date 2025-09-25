@@ -3,6 +3,7 @@ const authRoutes = require('./auth.routes');
 const helloRoutes = require('./hello.routes');
 const feedRoutes = require('./feed.routes');
 const postsRoutes = require('./posts.routes');
+const appParamsRoutes = require('./app-params.routes');
 const allowlistRoutes = require('./allowlist.routes');
 const diagnosticsRoutes = require('./diagnostics.routes');
 const { requireAuth } = require('../../middlewares/authentication');
@@ -15,6 +16,7 @@ router.use(requireAuth);
 router.use(helloRoutes);
 router.use(feedRoutes);
 router.use(postsRoutes);
+router.use('/app-params', appParamsRoutes);
 router.use('/allowlist', requireRole(ROLES.ADMIN), allowlistRoutes);
 router.use('/diagnostics', requireRole(ROLES.ADMIN), diagnosticsRoutes);
 

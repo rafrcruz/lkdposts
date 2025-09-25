@@ -35,10 +35,27 @@ const ensureSuperAdmin = async () => {
   });
 };
 
+const ensureAppParams = async () => {
+  const existing = await prisma.appParams.findFirst();
+
+  if (existing) {
+    return existing;
+  }
+
+  return prisma.appParams.create({
+    data: {
+      id: 1,
+      postsRefreshCooldownSeconds: 3600,
+      postsTimeWindowDays: 7,
+    },
+  });
+};
+
 const run = async () => {
   try {
     await ensureHelloMessage();
     await ensureSuperAdmin();
+    await ensureAppParams();
   } catch (error) {
     console.error('Failed to seed database:', error);
     process.exitCode = 1;
