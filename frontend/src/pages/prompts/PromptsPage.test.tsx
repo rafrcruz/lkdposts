@@ -138,8 +138,11 @@ describe('PromptsPage', () => {
       buildPrompt({
         id: 2,
         title: 'Launch announcement',
-        content:
-          'Write an enthusiastic LinkedIn post announcing our new product launch with key benefits and a call to action for demo requests.',
+        content: Array.from(
+          { length: 4 },
+          () =>
+            'Write an enthusiastic LinkedIn post announcing our new product launch with key benefits and a call to action for demo requests.',
+        ).join(' '),
         position: 2,
       }),
     ];
@@ -155,6 +158,36 @@ describe('PromptsPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: /prompts/i })).toBeInTheDocument();
     expect(screen.getByText('Welcome message')).toBeInTheDocument();
     expect(screen.getByText(/Write an enthusiastic LinkedIn post/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /expand/i })).toBeInTheDocument();
+  });
+
+  it('toggles prompt content expansion inline', async () => {
+    const user = userEvent.setup();
+    const longContent = ['Line 1 of the prompt', 'Line 2 adds more context', 'Line 3 continues details', 'Line 4 wraps up'].join(
+      '\n',
+    );
+    const prompts = [
+      buildPrompt({ id: 10, title: 'Detailed prompt', content: longContent, position: 1 }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const toggle = screen.getByRole('button', { name: /expand/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toHaveTextContent(/collapse/i);
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('creates a new prompt successfully', async () => {
@@ -182,6 +215,129 @@ describe('PromptsPage', () => {
     );
 
     expect(await screen.findByText('Prompt created successfully.')).toBeInTheDocument();
+  });
+
+  it('duplicates a prompt and appends copy suffix', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 1, title: 'Newsletter', content: 'Write the weekly newsletter.', position: 1 }),
+      buildPrompt({ id: 2, title: 'Launch teaser', content: 'Preview the next launch.', position: 3 }),
+    ];
+
+    const mutateMock = vi.fn(
+      (
+        variables: { title: string; content: string; position?: number },
+        options?: { onSuccess?: (prompt: Prompt) => void },
+      ) => {
+        options?.onSuccess?.(
+          buildPrompt({
+            id: 3,
+            title: variables.title,
+            content: variables.content,
+            position: variables.position ?? 0,
+          }),
+        );
+      },
+    );
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(mutateMock));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const duplicateButtons = screen.getAllByRole('button', { name: /duplicate/i });
+    await user.click(duplicateButtons[0]);
+
+    expect(mutateMock).toHaveBeenCalledWith(
+      {
+        title: 'Newsletter (cópia)',
+        content: 'Write the weekly newsletter.',
+        position: 4,
+      },
+      expect.any(Object),
+    );
+
+    expect(await screen.findByText('Prompt duplicated successfully.')).toBeInTheDocument();
+  });
+
+  it('allows reordering after duplicating a prompt', async () => {
+    const user = userEvent.setup();
+    const prompts: Prompt[] = [
+      buildPrompt({ id: 11, title: 'Primary prompt', position: 1 }),
+      buildPrompt({ id: 22, title: 'Secondary prompt', position: 2 }),
+    ];
+
+    const createMutateMock = vi.fn(
+      (
+        variables: { title: string; content: string; position?: number },
+        options?: { onSuccess?: (prompt: Prompt) => void },
+      ) => {
+        const duplicated = buildPrompt({
+          id: 33,
+          title: variables.title,
+          content: variables.content,
+          position: variables.position ?? 0,
+        });
+        prompts.push(duplicated);
+        options?.onSuccess?.(duplicated);
+      },
+    );
+    const reorderMutateMock = vi.fn();
+
+    mockedUsePromptList.mockImplementation(() => createQueryResult([...prompts]));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(createMutateMock));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(reorderMutateMock));
+
+    renderPage();
+
+    const duplicateButtons = screen.getAllByRole('button', { name: /duplicate/i });
+    await user.click(duplicateButtons[0]);
+
+    expect(createMutateMock).toHaveBeenCalledWith(
+      {
+        title: 'Primary prompt (cópia)',
+        content: prompts[0].content,
+        position: 3,
+      },
+      expect.any(Object),
+    );
+
+    expect(await screen.findByText('Prompt duplicated successfully.')).toBeInTheDocument();
+
+    const itemsAfterDuplicate = screen.getAllByRole('listitem');
+    expect(itemsAfterDuplicate).toHaveLength(3);
+
+    const dragData: Record<string, string> = {};
+    const eventData = {
+      dataTransfer: {
+        setData: (type: string, value: string) => {
+          dragData[type] = value;
+        },
+        getData: (type: string) => dragData[type] ?? '',
+        dropEffect: '',
+        effectAllowed: '',
+      },
+    } as unknown as DragEventInit;
+
+    fireEvent.dragStart(itemsAfterDuplicate[2], eventData);
+    fireEvent.dragOver(itemsAfterDuplicate[0], eventData);
+    fireEvent.drop(itemsAfterDuplicate[0], eventData);
+
+    expect(reorderMutateMock).toHaveBeenCalled();
+    const reorderPayload = reorderMutateMock.mock.calls[0]?.[0] as unknown;
+    expect(Array.isArray(reorderPayload)).toBe(true);
+    if (Array.isArray(reorderPayload)) {
+      expect(reorderPayload).toEqual([
+        expect.objectContaining({ id: 33, position: 1 }),
+        expect.objectContaining({ id: 11, position: 2 }),
+        expect.objectContaining({ id: 22, position: 3 }),
+      ]);
+    }
   });
 
   it('validates required title before submitting', async () => {
@@ -263,7 +419,7 @@ describe('PromptsPage', () => {
     const firstCall = mutateMock.mock.calls[0];
     expect(firstCall).toBeDefined();
 
-    const variables = firstCall?.[0];
+    const variables = firstCall?.[0] as unknown;
     expect(Array.isArray(variables)).toBe(true);
 
     if (!Array.isArray(variables)) {

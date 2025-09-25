@@ -30,8 +30,8 @@ export const usePromptList = () => {
 
 export const useCreatePrompt = () => {
   const queryClient = useQueryClient();
-  return useMutation<Prompt, HttpError, { title: string; content: string }>({
-    mutationFn: ({ title, content }) => createPrompt({ title, content }),
+  return useMutation<Prompt, HttpError, { title: string; content: string; position?: number }>({
+    mutationFn: ({ title, content, position }) => createPrompt({ title, content, position }),
     onSuccess: (created) => {
       queryClient.setQueryData<PromptList | undefined>(PROMPTS_QUERY_KEY, (current) => {
         if (!current) {

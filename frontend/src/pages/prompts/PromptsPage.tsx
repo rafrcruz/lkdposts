@@ -2,6 +2,7 @@ import type { DragEvent, FormEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Sentry from '@sentry/react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -18,7 +19,9 @@ import { HttpError } from '@/lib/api/http';
 import { clsx } from 'clsx';
 
 const TITLE_LIMIT = 120;
-const CONTENT_PREVIEW_LIMIT = 100;
+const CONTENT_PREVIEW_LIMIT = 240;
+const VIRTUALIZATION_THRESHOLD = 50;
+const ESTIMATED_ITEM_HEIGHT = 196;
 
 type FormMode = 'create' | 'edit';
 
@@ -30,16 +33,6 @@ type FormErrors = {
 type Feedback = {
   type: 'success' | 'error';
   message: string;
-};
-
-const truncateContent = (content: string) => {
-  const normalized = content.trim();
-
-  if (normalized.length <= CONTENT_PREVIEW_LIMIT) {
-    return normalized || '…';
-  }
-
-  return `${normalized.slice(0, CONTENT_PREVIEW_LIMIT).trimEnd()}…`;
 };
 
 const resolveErrorMessage = (error: unknown, fallback: string) => {
@@ -80,7 +73,7 @@ const PromptsPage = () => {
   const deletePrompt = useDeletePrompt();
   const reorderPrompts = useReorderPrompts();
 
-  const prompts = promptList.data ?? [];
+  const prompts = useMemo(() => promptList.data ?? [], [promptList.data]);
   const isLoading = promptList.isLoading && !promptList.isFetched;
   const isError = promptList.isError;
 
@@ -92,9 +85,22 @@ const PromptsPage = () => {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [pendingScrollId, setPendingScrollId] = useState<number | null>(null);
+  const [expandedPromptIds, setExpandedPromptIds] = useState<Set<number>>(new Set());
+  const [isContentExpanded, setIsContentExpanded] = useState(false);
 
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const contentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const lastFetchErrorRef = useRef<unknown>(null);
+
+  const shouldVirtualize = prompts.length > VIRTUALIZATION_THRESHOLD;
+  const virtualizer = useVirtualizer({
+    count: shouldVirtualize ? prompts.length : 0,
+    getScrollElement: () => listContainerRef.current,
+    estimateSize: () => ESTIMATED_ITEM_HEIGHT,
+    overscan: 8,
+    getItemKey: (index) => prompts[index]?.id ?? index,
+  });
 
   useEffect(() => {
     if (!promptList.error || !shouldReportError(promptList.error)) {
@@ -122,8 +128,39 @@ const PromptsPage = () => {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       element.focus({ preventScroll: true });
       setPendingScrollId(null);
+      return;
     }
-  }, [pendingScrollId, promptList.data]);
+
+    if (!shouldVirtualize) {
+      return;
+    }
+
+    const index = prompts.findIndex((item) => item.id === pendingScrollId);
+    if (index >= 0) {
+      virtualizer.scrollToIndex(index, { align: 'center' });
+      return;
+    }
+
+    setPendingScrollId(null);
+  }, [pendingScrollId, prompts, shouldVirtualize, virtualizer]);
+
+  useEffect(() => {
+    if (!contentInputRef.current) {
+      return;
+    }
+
+    const textarea = contentInputRef.current;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [contentInput, formMode, isContentExpanded]);
+
+  useEffect(() => {
+    if (!shouldVirtualize) {
+      return;
+    }
+
+    virtualizer.measure();
+  }, [shouldVirtualize, virtualizer, expandedPromptIds, prompts]);
 
   const resetForm = () => {
     setFormMode(null);
@@ -131,6 +168,7 @@ const PromptsPage = () => {
     setTitleInput('');
     setContentInput('');
     setFormErrors({});
+    setIsContentExpanded(false);
   };
 
   const handleOpenCreateForm = () => {
@@ -140,6 +178,7 @@ const PromptsPage = () => {
     setTitleInput('');
     setContentInput('');
     setFormErrors({});
+    setIsContentExpanded(false);
   };
 
   const handleOpenEditForm = (prompt: Prompt) => {
@@ -149,6 +188,7 @@ const PromptsPage = () => {
     setTitleInput(prompt.title);
     setContentInput(prompt.content);
     setFormErrors({});
+    setIsContentExpanded(false);
   };
 
   const handleCancelForm = () => {
@@ -162,6 +202,23 @@ const PromptsPage = () => {
     }
 
     itemRefs.current.set(id, element);
+  };
+
+  const togglePromptExpansion = (promptId: number) => {
+    setExpandedPromptIds((current) => {
+      const next = new Set(current);
+      if (next.has(promptId)) {
+        next.delete(promptId);
+      } else {
+        next.add(promptId);
+      }
+
+      return next;
+    });
+  };
+
+  const handleToggleContentFieldSize = () => {
+    setIsContentExpanded((previous) => !previous);
   };
 
   const validateForm = (): { errors: FormErrors; title: string; content: string } => {
@@ -184,7 +241,11 @@ const PromptsPage = () => {
     return { errors, title: trimmedTitle, content: trimmedContent };
   };
 
-  const reportError = (action: 'create' | 'update' | 'delete' | 'reorder', error: unknown, extra: Record<string, unknown>) => {
+  const reportError = (
+    action: 'create' | 'update' | 'delete' | 'reorder' | 'duplicate',
+    error: unknown,
+    extra: Record<string, unknown>,
+  ) => {
     if (!shouldReportError(error)) {
       return;
     }
@@ -291,6 +352,15 @@ const PromptsPage = () => {
           type: 'success',
           message: t('prompts.feedback.deleted', 'Prompt deleted successfully.'),
         });
+        setExpandedPromptIds((current) => {
+          if (!current.has(prompt.id)) {
+            return current;
+          }
+
+          const next = new Set(current);
+          next.delete(prompt.id);
+          return next;
+        });
         if (editingPrompt?.id === prompt.id) {
           resetForm();
         }
@@ -306,6 +376,40 @@ const PromptsPage = () => {
         reportError('delete', error, { promptId: prompt.id });
       },
     });
+  };
+
+  const handleDuplicatePrompt = (prompt: Prompt) => {
+    const duplicatedTitle = `${prompt.title} (cópia)`;
+    const nextPosition = prompts.reduce((max, item) => Math.max(max, item.position), -1) + 1;
+
+    setFeedback(null);
+
+    createPrompt.mutate(
+      { title: duplicatedTitle, content: prompt.content, position: nextPosition },
+      {
+        onSuccess: (created) => {
+          setFeedback({
+            type: 'success',
+            message: t('prompts.feedback.duplicated', 'Prompt duplicated successfully.'),
+          });
+          setPendingScrollId(created.id);
+        },
+        onError: (error) => {
+          setFeedback({
+            type: 'error',
+            message: resolveErrorMessage(
+              error,
+              t('prompts.feedback.error', 'The operation failed. Try again.'),
+            ),
+          });
+          reportError('duplicate', error, {
+            promptId: prompt.id,
+            titleLength: duplicatedTitle.length,
+            contentLength: prompt.content.length,
+          });
+        },
+      },
+    );
   };
 
   const reorderById = (sourceId: number, targetId: number | null) => {
@@ -408,11 +512,109 @@ const PromptsPage = () => {
   };
 
   const isSaving = createPrompt.isPending || updatePrompt.isPending;
+  const isDuplicating = createPrompt.isPending && typeof createPrompt.variables?.position === 'number';
   const isDeleting = deletePrompt.isPending;
   const deletingId = deletePrompt.variables ?? null;
   const isFormOpen = formMode !== null;
 
   const loadingSkeletons = useMemo(() => Array.from({ length: 3 }), []);
+
+  const renderPromptCard = (prompt: Prompt) => {
+    const normalizedContent = prompt.content.trim();
+    const displayContent = normalizedContent.length > 0 ? prompt.content : '…';
+    const shouldShowToggle =
+      normalizedContent.length > CONTENT_PREVIEW_LIMIT || normalizedContent.includes('\n');
+    const isExpanded = expandedPromptIds.has(prompt.id);
+    const contentElementId = `prompt-content-${prompt.id}`;
+    const duplicatedTitle = `${prompt.title} (cópia)`;
+    const isCurrentDuplicatePending =
+      isDuplicating && createPrompt.variables?.title === duplicatedTitle;
+
+    return (
+      <div
+        key={prompt.id}
+        role="listitem"
+        className={clsx(
+          'card flex flex-col gap-3 p-4 outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-primary',
+          draggingId === prompt.id ? 'opacity-60 ring-2 ring-primary/40' : '',
+        )}
+        draggable
+        onDragStart={(event) => handleDragStart(event, prompt.id)}
+        onDragOver={handleDragOver}
+        onDrop={(event) => handleDropOnItem(event, prompt.id)}
+        onDragEnd={handleDragEnd}
+        tabIndex={0}
+        ref={registerItemRef(prompt.id)}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-1 flex-col gap-3">
+              <h3 className="text-base font-semibold text-foreground">{prompt.title}</h3>
+              <div className="space-y-2">
+                <div
+                  id={contentElementId}
+                  className={clsx(
+                    'whitespace-pre-wrap break-words text-sm text-muted-foreground',
+                    !isExpanded && shouldShowToggle ? 'line-clamp-3' : '',
+                  )}
+                >
+                  {displayContent}
+                </div>
+                {shouldShowToggle ? (
+                  <button
+                    type="button"
+                    onClick={() => togglePromptExpansion(prompt.id)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary transition hover:text-primary/80"
+                    aria-expanded={isExpanded}
+                    aria-controls={contentElementId}
+                  >
+                    {isExpanded
+                      ? t('prompts.actions.collapse', 'Collapse')
+                      : t('prompts.actions.expand', 'Expand')}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
+              <button
+                type="button"
+                onClick={() => handleOpenEditForm(prompt)}
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+              >
+                {t('prompts.actions.edit', 'Edit')}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDuplicatePrompt(prompt)}
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+                disabled={createPrompt.isPending}
+              >
+                {isCurrentDuplicatePending
+                  ? t('prompts.actions.duplicating', 'Duplicating...')
+                  : t('prompts.actions.duplicate', 'Duplicate')}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeletePrompt(prompt)}
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10"
+                disabled={isDeleting}
+              >
+                {isDeleting && deletingId === prompt.id
+                  ? t('prompts.actions.deleting', 'Deleting...')
+                  : t('prompts.actions.delete', 'Delete')}
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span aria-hidden="true">⋮⋮</span>
+            <span className="sr-only">
+              {t('prompts.list.dragLabel', 'Drag to reposition this prompt.')}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <section className="space-y-6" aria-labelledby="prompts-heading">
@@ -493,15 +695,32 @@ const PromptsPage = () => {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="prompt-content" className="text-sm font-medium text-foreground">
-              {t('prompts.form.contentLabel', 'Content')}
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="prompt-content" className="text-sm font-medium text-foreground">
+                {t('prompts.form.contentLabel', 'Content')}
+              </label>
+              <button
+                type="button"
+                onClick={handleToggleContentFieldSize}
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary transition hover:text-primary/80"
+                aria-pressed={isContentExpanded}
+              >
+                {isContentExpanded
+                  ? t('prompts.form.collapseContent', 'Reduce editor height')
+                  : t('prompts.form.expandContent', 'Expand editor area')}
+              </button>
+            </div>
             <textarea
               id="prompt-content"
               name="content"
               value={contentInput}
               onChange={(event) => setContentInput(event.target.value)}
-              className="min-h-32 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-primary focus:ring-2 focus:ring-primary/40"
+              ref={contentInputRef}
+              className={clsx(
+                'w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:border-primary focus:ring-2 focus:ring-primary/40',
+                isContentExpanded ? 'min-h-64' : 'min-h-32',
+              )}
+              style={{ overflow: 'hidden' }}
               required
             />
             {formErrors.content ? (
@@ -578,62 +797,54 @@ const PromptsPage = () => {
           <p className="text-xs text-muted-foreground">
             {t('prompts.list.reorderHint', 'Drag the handle or card to change the order.')}
           </p>
-          <div
-            onDragOver={handleDragOver}
-            onDrop={handleDropOnList}
-            className="space-y-3"
-            role="list"
-          >
-            {prompts.map((prompt) => (
+          {shouldVirtualize ? (
+            <div
+              ref={(element) => {
+                listContainerRef.current = element;
+              }}
+              onDragOver={handleDragOver}
+              onDrop={handleDropOnList}
+              className="relative max-h-[65vh] overflow-auto"
+              role="list"
+              aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
+            >
               <div
-                key={prompt.id}
-                role="listitem"
-                className={clsx(
-                  'card flex flex-col gap-3 p-4 outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-primary',
-                  draggingId === prompt.id ? 'opacity-60 ring-2 ring-primary/40' : '',
-                )}
-                draggable
-                onDragStart={(event) => handleDragStart(event, prompt.id)}
-                onDragOver={handleDragOver}
-                onDrop={(event) => handleDropOnItem(event, prompt.id)}
-                onDragEnd={handleDragEnd}
-                tabIndex={0}
-                ref={registerItemRef(prompt.id)}
+                style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex flex-1 flex-col gap-1">
-                    <h3 className="text-base font-semibold text-foreground">{prompt.title}</h3>
-                    <p className="text-sm text-muted-foreground">{truncateContent(prompt.content)}</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEditForm(prompt)}
-                      className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+                {virtualizer.getVirtualItems().map((virtualItem) => {
+                  const prompt = prompts[virtualItem.index];
+                  if (!prompt) {
+                    return null;
+                  }
+
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      className="absolute inset-x-0 pb-3"
+                      style={{ transform: `translateY(${virtualItem.start}px)` }}
+                      ref={(element) => {
+                        if (element) {
+                          virtualizer.measureElement(element);
+                        }
+                      }}
                     >
-                      {t('prompts.actions.edit', 'Edit')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePrompt(prompt)}
-                      className="inline-flex items-center justify-center rounded-md border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10"
-                      disabled={isDeleting}
-                    >
-                      {isDeleting && deletingId === prompt.id
-                        ? t('prompts.actions.deleting', 'Deleting...')
-                        : t('prompts.actions.delete', 'Delete')}
-                    </button>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span aria-hidden="true">⋮⋮</span>
-                  <span className="sr-only">
-                    {t('prompts.list.dragLabel', 'Drag to reposition this prompt.')}
-                  </span>
-                </div>
+                      {renderPromptCard(prompt)}
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div
+              onDragOver={handleDragOver}
+              onDrop={handleDropOnList}
+              className="space-y-3"
+              role="list"
+              aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
+            >
+              {prompts.map((prompt) => renderPromptCard(prompt))}
+            </div>
+          )}
         </div>
       ) : null}
     </section>

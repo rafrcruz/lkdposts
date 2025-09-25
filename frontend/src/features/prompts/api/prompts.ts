@@ -6,6 +6,7 @@ export const PROMPTS_QUERY_KEY = ['prompts'] as const;
 type CreatePromptPayload = {
   title: string;
   content: string;
+  position?: number;
 };
 
 type UpdatePromptPayload = {
