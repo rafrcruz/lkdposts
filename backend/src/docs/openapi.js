@@ -91,6 +91,19 @@ const definition = {
           updatedAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
         },
       },
+      AppParams: {
+        type: 'object',
+        properties: {
+          posts_refresh_cooldown_seconds: { type: 'integer', minimum: 0, example: 3600 },
+          posts_time_window_days: { type: 'integer', minimum: 1, example: 7 },
+          updated_at: {
+            type: 'string',
+            format: 'date-time',
+            example: '2025-01-20T12:34:56.000Z',
+          },
+          updated_by: { type: ['string', 'null'], example: 'admin@example.com' },
+        },
+      },
       AllowlistListResponse: {
         type: 'object',
         properties: {
@@ -549,6 +562,24 @@ const definition = {
               error: {
                 code: 'PAYLOAD_TOO_LARGE',
                 message: 'A maximum of 25 feeds can be created per request',
+              },
+              meta: {
+                requestId: '00000000-0000-4000-8000-000000000000',
+              },
+            },
+          },
+        },
+      },
+      UnprocessableEntity: {
+        description: 'A requisição foi bem formada, mas viola regras de negócio.',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ErrorEnvelope' },
+            example: {
+              success: false,
+              error: {
+                code: 'POSTS_TIME_WINDOW_DAYS_TOO_LOW',
+                message: 'posts_time_window_days must be greater than or equal to 1',
               },
               meta: {
                 requestId: '00000000-0000-4000-8000-000000000000',

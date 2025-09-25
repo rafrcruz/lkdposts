@@ -4,7 +4,7 @@
     "title": "lkdposts API",
     "version": "1.0.0",
     "description": "API responsável por disponibilizar funcionalidades de automação de posts.",
-    "x-generated-at": "2025-09-22T00:36:05.136Z",
+    "x-generated-at": "2025-09-25T16:37:38.453Z",
     "x-environment": "development"
   },
   "servers": [
@@ -154,6 +154,179 @@
           }
         }
       },
+      "AppParams": {
+        "type": "object",
+        "properties": {
+          "posts_refresh_cooldown_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3600
+          },
+          "posts_time_window_days": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 7
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-20T12:34:56.000Z"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "admin@example.com"
+          }
+        }
+      },
+      "AllowlistListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllowedUser"
+            }
+          }
+        }
+      },
+      "AllowlistCreateRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "role"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "user"
+            ],
+            "example": "user"
+          }
+        }
+      },
+      "AllowlistUpdateRoleRequest": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "user"
+            ],
+            "example": "admin"
+          }
+        }
+      },
+      "AllowlistRemovalResult": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Allowlist entry removed"
+          }
+        }
+      },
+      "AuthGoogleLoginRequest": {
+        "type": "object",
+        "required": [
+          "idToken"
+        ],
+        "properties": {
+          "idToken": {
+            "type": "string",
+            "description": "Google ID token obtained from the client SDK.",
+            "example": "ya29.a0AfH6SMCg..."
+          }
+        }
+      },
+      "AuthSession": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "user"
+            ],
+            "example": "user"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-20T13:45:00.000Z"
+          }
+        }
+      },
+      "AuthLogoutResult": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Logged out"
+          }
+        }
+      },
+      "AuthDebugReport": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "https://app.example.com"
+          },
+          "hasCookie": {
+            "type": "boolean",
+            "example": true
+          },
+          "cookieNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "lkdposts_session"
+            ]
+          },
+          "authenticated": {
+            "type": "boolean",
+            "example": true
+          },
+          "userIdOrEmail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "user@example.com"
+          },
+          "release": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2025.01.20-abcdef"
+          }
+        }
+      },
       "FeedDuplicateEntry": {
         "type": "object",
         "properties": {
@@ -223,6 +396,27 @@
           "message": {
             "type": "string",
             "example": "Feed removed"
+          }
+        }
+      },
+      "FeedResetResult": {
+        "type": "object",
+        "properties": {
+          "feedsResetCount": {
+            "type": "integer",
+            "example": 12
+          },
+          "articlesDeletedCount": {
+            "type": "integer",
+            "example": 480
+          },
+          "postsDeletedCount": {
+            "type": "integer",
+            "example": 480
+          },
+          "durationMs": {
+            "type": "integer",
+            "example": 85
           }
         }
       },
@@ -422,6 +616,130 @@
             }
           }
         }
+      },
+      "IngestionDiagnosticEntry": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 101
+          },
+          "feedId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1
+          },
+          "feedTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Example Feed"
+          },
+          "itemTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Example item"
+          },
+          "canonicalUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "example": "https://example.com/item-101"
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2025-01-20T10:00:00.000Z"
+          },
+          "chosenSource": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "rss"
+          },
+          "rawDescriptionLength": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 240
+          },
+          "bodyHtmlRawLength": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1280
+          },
+          "articleHtmlLength": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1100
+          },
+          "hasBlockTags": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": true
+          },
+          "looksEscapedHtml": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": false
+          },
+          "weakContent": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": false
+          },
+          "articleHtmlPreview": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "<p>Example</p>"
+          },
+          "recordedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2025-01-20T10:01:30.000Z"
+          }
+        }
+      },
+      "IngestionDiagnosticsList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestionDiagnosticEntry"
+            }
+          }
+        }
       }
     },
     "securitySchemes": {
@@ -589,6 +907,26 @@
             }
           }
         }
+      },
+      "UnprocessableEntity": {
+        "description": "A requisição foi bem formada, mas viola regras de negócio.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "success": false,
+              "error": {
+                "code": "POSTS_TIME_WINDOW_DAYS_TOO_LOW",
+                "message": "posts_time_window_days must be greater than or equal to 1"
+              },
+              "meta": {
+                "requestId": "00000000-0000-4000-8000-000000000000"
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -637,6 +975,38 @@
         }
       }
     },
+    "/metrics": {
+      "get": {
+        "summary": "Export Prometheus metrics",
+        "description": "Retorna as métricas coletadas em formato texto compatível com Prometheus.",
+        "tags": [
+          "Observability"
+        ],
+        "responses": {
+          "200": {
+            "description": "Métricas atuais da aplicação",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "# HELP http_requests_total Total de requisições HTTP\n# TYPE http_requests_total counter\nhttp_requests_total{method=\"get\",route=\"/health/live\",status=\"200\"} 42\n"
+              }
+            }
+          },
+          "404": {
+            "description": "Coleta de métricas desabilitada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/allowlist": {
       "get": {
         "summary": "List allowed users with pagination",
@@ -656,7 +1026,8 @@
             "in": "query",
             "name": "cursor",
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "nullable": true
             },
             "description": "Cursor retornado em respostas anteriores para continuar a paginação."
           },
@@ -685,34 +1056,837 @@
                       "type": "object",
                       "properties": {
                         "data": {
-                          "type": "object",
-                          "properties": {
-                            "items": {
-                              "type": "array",
-                              "items": {
-                                "$ref": "#/components/schemas/AllowedUser"
-                              }
-                            }
-                          }
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "nextCursor": {
-                              "type": "integer",
-                              "nullable": true
-                            },
-                            "total": {
-                              "type": "integer"
-                            },
-                            "limit": {
-                              "type": "integer"
-                            }
-                          }
+                          "$ref": "#/components/schemas/AllowlistListResponse"
                         }
                       }
                     }
                   ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "items": [
+                          {
+                            "id": 1,
+                            "email": "admin@example.com",
+                            "role": "admin",
+                            "immutable": true,
+                            "createdAt": "2025-01-10T12:00:00.000Z",
+                            "updatedAt": "2025-01-11T09:30:00.000Z"
+                          }
+                        ]
+                      },
+                      "meta": {
+                        "requestId": "00000000-0000-4000-8000-000000000001",
+                        "nextCursor": null,
+                        "total": 1,
+                        "limit": 20
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a new user to the allowlist",
+        "tags": [
+          "Allowlist"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AllowlistCreateRequest"
+              },
+              "examples": {
+                "create": {
+                  "value": {
+                    "email": "editor@example.com",
+                    "role": "editor"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Usuário adicionado à allowlist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AllowedUser"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "created": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "id": 2,
+                        "email": "editor@example.com",
+                        "role": "editor",
+                        "immutable": false,
+                        "createdAt": "2025-01-20T12:30:00.000Z",
+                        "updatedAt": "2025-01-20T12:30:00.000Z"
+                      },
+                      "meta": {
+                        "requestId": "00000000-0000-4000-8000-000000000002"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/allowlist/{id}": {
+      "patch": {
+        "summary": "Update the role of an allowlisted user",
+        "tags": [
+          "Allowlist"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AllowlistUpdateRoleRequest"
+              },
+              "examples": {
+                "update": {
+                  "value": {
+                    "role": "admin"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Papel atualizado com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AllowedUser"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "updated": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "id": 2,
+                        "email": "editor@example.com",
+                        "role": "admin",
+                        "immutable": false,
+                        "createdAt": "2025-01-20T12:30:00.000Z",
+                        "updatedAt": "2025-01-21T08:15:00.000Z"
+                      },
+                      "meta": {
+                        "requestId": "00000000-0000-4000-8000-000000000003"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove an allowlisted user",
+        "tags": [
+          "Allowlist"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usuário removido da allowlist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AllowlistRemovalResult"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "removed": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "message": "Allowlist entry removed"
+                      },
+                      "meta": {
+                        "requestId": "00000000-0000-4000-8000-000000000004"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/app-params": {
+      "get": {
+        "summary": "Retrieve application-wide parameters",
+        "description": "Retorna parâmetros globais utilizados por toda a aplicação, independentes do usuário autenticado.",
+        "tags": [
+          "Application Parameters"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Parâmetros globais atuais",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AppParams"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "default": {
+                    "summary": "Valores padrão",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "posts_refresh_cooldown_seconds": 3600,
+                        "posts_time_window_days": 7,
+                        "updated_at": "2025-01-20T12:34:56.000Z"
+                      },
+                      "meta": {
+                        "requestId": "00000000-0000-4000-8000-000000000000"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update application-wide parameters",
+        "description": "Permite que administradores atualizem um ou mais parâmetros globais.",
+        "tags": [
+          "Application Parameters"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "posts_refresh_cooldown_seconds": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "posts_time_window_days": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              "examples": {
+                "updateCooldown": {
+                  "summary": "Ajuste de cooldown",
+                  "value": {
+                    "posts_refresh_cooldown_seconds": 1800
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Parâmetros atualizados com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AppParams"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "updated": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "posts_refresh_cooldown_seconds": 1800,
+                        "posts_time_window_days": 7,
+                        "updated_at": "2025-01-21T09:15:00.000Z",
+                        "updated_by": "admin@example.com"
+                      },
+                      "meta": {
+                        "requestId": "00000000-0000-4000-8000-000000000000"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Partially update application-wide parameters",
+        "tags": [
+          "Application Parameters"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "posts_refresh_cooldown_seconds": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "posts_time_window_days": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Parâmetros atualizados com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AppParams"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login/google": {
+      "post": {
+        "summary": "Authenticate using a Google ID token",
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthGoogleLoginRequest"
+              },
+              "examples": {
+                "login": {
+                  "value": {
+                    "idToken": "ya29.a0AfH6SMCg..."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login realizado com sucesso",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Cookie de sessão emitido após autenticação bem-sucedida."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AuthSession"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "email": "user@example.com",
+                        "role": "editor",
+                        "expiresAt": "2025-01-20T13:45:00.000Z"
+                      },
+                      "meta": {
+                        "requestId": "00000000-0000-4000-8000-000000000010"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "summary": "Invalidate the current session",
+        "tags": [
+          "Auth"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logout efetuado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AuthLogoutResult"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "message": "Logged out"
+                      },
+                      "meta": {
+                        "requestId": "00000000-0000-4000-8000-000000000011"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "summary": "Retrieve the authenticated user session",
+        "tags": [
+          "Auth"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessão válida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AuthSession"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "me": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "email": "user@example.com",
+                        "role": "editor",
+                        "expiresAt": "2025-01-20T13:45:00.000Z"
+                      },
+                      "meta": {
+                        "requestId": "00000000-0000-4000-8000-000000000012"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/debug": {
+      "get": {
+        "summary": "Inspect authentication cookies (feature flag controlled)",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalhes sobre o estado de autenticação detectado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AuthDebugReport"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/diagnostics/ingestion": {
+      "get": {
+        "summary": "List the most recent ingestion diagnostics",
+        "description": "Disponibiliza os últimos eventos registrados pelo pipeline de ingestão para análise operacional.",
+        "tags": [
+          "Diagnostics"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Quantidade máxima de eventos retornados (padrão 20)."
+          },
+          {
+            "in": "query",
+            "name": "feedId",
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            },
+            "description": "Filtra eventos associados ao feed informado."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Eventos recentes do pipeline de ingestão",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/IngestionDiagnosticsList"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "items": [
+                          {
+                            "itemId": 101,
+                            "feedId": 1,
+                            "feedTitle": "Example Feed",
+                            "itemTitle": "Example item",
+                            "canonicalUrl": "https://example.com/item-101",
+                            "publishedAt": "2025-01-20T10:00:00.000Z",
+                            "chosenSource": "rss",
+                            "rawDescriptionLength": 240,
+                            "bodyHtmlRawLength": 1280,
+                            "articleHtmlLength": 1100,
+                            "hasBlockTags": true,
+                            "looksEscapedHtml": false,
+                            "weakContent": false,
+                            "articleHtmlPreview": "<p>Example</p>",
+                            "recordedAt": "2025-01-20T10:01:30.000Z"
+                          }
+                        ]
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -1157,6 +2331,70 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/feeds/reset": {
+      "post": {
+        "summary": "Reset RSS feed ingestion state",
+        "description": "Remove todas as noticias e posts derivados dos feeds e reinicia o estado de processamento. Disponivel apenas para administradores.",
+        "tags": [
+          "Feeds"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado do reset dos feeds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FeedResetResult"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "summary": "Reset concluido",
+                    "value": {
+                      "success": true,
+                      "data": {
+                        "feedsResetCount": 12,
+                        "articlesDeletedCount": 480,
+                        "postsDeletedCount": 480,
+                        "durationMs": 85
+                      },
+                      "meta": {
+                        "requestId": "11111111-2222-4333-8444-555555555555"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }

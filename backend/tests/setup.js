@@ -7,6 +7,7 @@ jest.mock('../src/lib/prisma', () => {
   const articles = [];
   const posts = [];
   const allowedUsers = [];
+  const appParams = [];
 
   let feedIdCounter = 1;
   let articleIdCounter = 1;
@@ -232,6 +233,8 @@ jest.mock('../src/lib/prisma', () => {
 
   const filterAllowedUsers = (where = {}) => allowedUsers.filter((user) => matchAllowedUserWhere(user, where));
 
+  const getAppParamsRecord = () => (appParams.length > 0 ? appParams[0] : null);
+
   const matchesNullableField = (actual, expected) => {
     if (expected === undefined) {
       return true;
@@ -432,6 +435,67 @@ jest.mock('../src/lib/prisma', () => {
   };
 
   const prisma = {
+    appParams: {
+      findUnique: async ({ where, select } = {}) => {
+        const record = getAppParamsRecord();
+
+        if (!record) {
+          return null;
+        }
+
+        if (where?.id != null && record.id !== where.id) {
+          return null;
+        }
+
+        return select ? selectFields(record, select) : clone(record);
+      },
+      findFirst: async () => {
+        const record = getAppParamsRecord();
+        return record ? clone(record) : null;
+      },
+      create: async ({ data }) => {
+        const now = new Date();
+        const record = {
+          id: data.id ?? 1,
+          postsRefreshCooldownSeconds: data.postsRefreshCooldownSeconds,
+          postsTimeWindowDays: data.postsTimeWindowDays,
+          updatedBy: data.updatedBy ?? null,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        appParams[0] = record;
+
+        return clone(record);
+      },
+      update: async ({ where = {}, data = {} } = {}) => {
+        const record = getAppParamsRecord();
+
+        if (!record || (where.id != null && record.id !== where.id)) {
+          throw new Error('AppParams record not found');
+        }
+
+        const now = new Date();
+        const updated = { ...record };
+
+        if (data.postsRefreshCooldownSeconds !== undefined) {
+          updated.postsRefreshCooldownSeconds = data.postsRefreshCooldownSeconds;
+        }
+
+        if (data.postsTimeWindowDays !== undefined) {
+          updated.postsTimeWindowDays = data.postsTimeWindowDays;
+        }
+
+        if (data.updatedBy !== undefined) {
+          updated.updatedBy = data.updatedBy ?? null;
+        }
+
+        updated.updatedAt = now;
+        appParams[0] = updated;
+
+        return clone(updated);
+      },
+    },
     feed: {
       findMany: async ({ where = {}, orderBy, take, skip, cursor } = {}) => {
         let result = filterFeeds(where);
@@ -857,6 +921,7 @@ jest.mock('../src/lib/prisma', () => {
       articles.splice(0, articles.length);
       posts.splice(0, posts.length);
       allowedUsers.splice(0, allowedUsers.length);
+      appParams.splice(0, appParams.length);
       feedIdCounter = 1;
       articleIdCounter = 1;
       postIdCounter = 1;
