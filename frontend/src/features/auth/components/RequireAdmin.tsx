@@ -6,9 +6,10 @@ import { useAuth } from '../hooks/useAuth';
 
 type RequireAdminProps = {
   children: React.ReactElement;
+  forbiddenElement?: React.ReactElement;
 };
 
-export const RequireAdmin: React.FC<RequireAdminProps> = ({ children }) => {
+export const RequireAdmin: React.FC<RequireAdminProps> = ({ children, forbiddenElement }) => {
   const { status, user } = useAuth();
   const location = useLocation();
 
@@ -21,6 +22,9 @@ export const RequireAdmin: React.FC<RequireAdminProps> = ({ children }) => {
   }
 
   if (!user || user.role !== 'admin') {
+    if (forbiddenElement) {
+      return forbiddenElement;
+    }
     return <Navigate to="/posts" replace />;
   }
 

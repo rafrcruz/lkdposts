@@ -10,6 +10,7 @@ import {
   type AuthSession,
 } from '../api/auth';
 import { ALLOWLIST_QUERY_KEY } from '@/features/allowlist/api/allowlist';
+import { clearAppParamsCache } from '@/features/app-params/storage/appParamsStorage';
 import { onUnauthorized } from '@/lib/api/http';
 
 const GUEST_SESSION: AuthSession = { authenticated: false, user: null };
@@ -51,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     queryClient.invalidateQueries({ queryKey: ALLOWLIST_QUERY_KEY }).catch(() => {
       // ignore cache errors
     });
+    clearAppParamsCache();
   }, [queryClient]);
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       applySession(GUEST_SESSION);
       setIsAuthenticating(false);
       setAuthError(null);
+      clearAppParamsCache();
       queryClient.clear();
     });
 
@@ -146,6 +149,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsAuthenticating(false);
       setAuthError(null);
       applySession(GUEST_SESSION);
+      clearAppParamsCache();
       queryClient.clear();
     }
   }, [applySession, queryClient]);
