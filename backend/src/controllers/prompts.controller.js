@@ -17,15 +17,16 @@ const mapPrompt = (prompt) => ({
   title: prompt.title,
   content: prompt.content,
   position: prompt.position,
+  enabled: prompt.enabled,
   createdAt: prompt.createdAt instanceof Date ? prompt.createdAt.toISOString() : prompt.createdAt,
   updatedAt: prompt.updatedAt instanceof Date ? prompt.updatedAt.toISOString() : prompt.updatedAt,
 });
 
 const list = asyncHandler(async (req, res) => {
   const userId = getUserId(req);
-  const { limit, offset } = req.validated?.query ?? {};
+  const { limit, offset, enabled } = req.validated?.query ?? {};
 
-  const result = await promptsService.listPrompts({ userId, limit, offset });
+  const result = await promptsService.listPrompts({ userId, limit, offset, enabled });
 
   return res.success(
     { items: result.items.map(mapPrompt) },
@@ -41,9 +42,9 @@ const list = asyncHandler(async (req, res) => {
 
 const create = asyncHandler(async (req, res) => {
   const userId = getUserId(req);
-  const { title, content, position } = req.validated?.body ?? {};
+  const { title, content, position, enabled } = req.validated?.body ?? {};
 
-  const prompt = await promptsService.createPrompt({ userId, title, content, position });
+  const prompt = await promptsService.createPrompt({ userId, title, content, position, enabled });
 
   return res.success(mapPrompt(prompt), { statusCode: 201 });
 });
@@ -60,9 +61,9 @@ const getById = asyncHandler(async (req, res) => {
 const update = asyncHandler(async (req, res) => {
   const userId = getUserId(req);
   const { id } = req.validated?.params ?? {};
-  const { title, content } = req.validated?.body ?? {};
+  const { title, content, enabled } = req.validated?.body ?? {};
 
-  const prompt = await promptsService.updatePrompt({ userId, id, title, content });
+  const prompt = await promptsService.updatePrompt({ userId, id, title, content, enabled });
 
   return res.success(mapPrompt(prompt));
 });

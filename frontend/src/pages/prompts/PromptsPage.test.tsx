@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { vi } from 'vitest';
@@ -25,6 +25,19 @@ vi.mock('@/features/prompts/hooks/usePrompts', () => ({
   useReorderPrompts: vi.fn(),
 }));
 
+vi.mock(
+  '@tanstack/react-virtual',
+  () => ({
+    useVirtualizer: vi.fn(() => ({
+      getVirtualItems: () => [],
+      getTotalSize: () => 0,
+      measure: vi.fn(),
+      scrollToIndex: vi.fn(),
+    })),
+  }),
+  { virtual: true },
+);
+
 vi.mock('@sentry/react', () => ({
   addBreadcrumb: vi.fn(),
   captureException: vi.fn(),
@@ -44,11 +57,14 @@ type MutationMock<TVariables> = Mock<
   (variables: TVariables, options?: Parameters<UseMutationResult<unknown, HttpError, TVariables>['mutate']>[1]) => void
 >;
 
+let promptCounter = 1;
+
 const buildPrompt = (override: Partial<Prompt> = {}): Prompt => ({
-  id: override.id ?? 1,
+  id: override.id ?? `prompt-${promptCounter++}`,
   title: override.title ?? 'Sample prompt',
   content: override.content ?? 'Provide a summary of the latest company news.',
   position: override.position ?? 1,
+  enabled: override.enabled ?? true,
   createdAt: override.createdAt ?? '2024-01-01T00:00:00.000Z',
   updatedAt: override.updatedAt ?? '2024-01-01T00:00:00.000Z',
 });
@@ -130,13 +146,19 @@ describe('PromptsPage', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     await i18n.changeLanguage('en');
+    promptCounter = 1;
   });
 
   it('renders the prompt list with preview', () => {
     const prompts = [
-      buildPrompt({ id: 1, title: 'Welcome message', content: 'Draft a welcome message for new followers.', position: 1 }),
       buildPrompt({
-        id: 2,
+        id: 'prompt-1',
+        title: 'Welcome message',
+        content: 'Draft a welcome message for new followers.',
+        position: 1,
+      }),
+      buildPrompt({
+        id: 'prompt-2',
         title: 'Launch announcement',
         content: Array.from(
           { length: 4 },
@@ -167,7 +189,7 @@ describe('PromptsPage', () => {
       '\n',
     );
     const prompts = [
-      buildPrompt({ id: 10, title: 'Detailed prompt', content: longContent, position: 1 }),
+      buildPrompt({ id: 'prompt-10', title: 'Detailed prompt', content: longContent, position: 1 }),
     ];
 
     mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
@@ -193,7 +215,7 @@ describe('PromptsPage', () => {
   it('creates a new prompt successfully', async () => {
     const user = userEvent.setup();
     const mutateMock = vi.fn((variables: { title: string; content: string }, options?: { onSuccess?: (prompt: Prompt) => void }) => {
-      options?.onSuccess?.(buildPrompt({ id: 3, title: variables.title, content: variables.content }));
+      options?.onSuccess?.(buildPrompt({ id: 'prompt-3', title: variables.title, content: variables.content }));
     });
 
     mockedUsePromptList.mockReturnValue(createQueryResult([]));
@@ -220,8 +242,8 @@ describe('PromptsPage', () => {
   it('duplicates a prompt and appends copy suffix', async () => {
     const user = userEvent.setup();
     const prompts = [
-      buildPrompt({ id: 1, title: 'Newsletter', content: 'Write the weekly newsletter.', position: 1 }),
-      buildPrompt({ id: 2, title: 'Launch teaser', content: 'Preview the next launch.', position: 3 }),
+      buildPrompt({ id: 'prompt-1', title: 'Newsletter', content: 'Write the weekly newsletter.', position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Launch teaser', content: 'Preview the next launch.', position: 3 }),
     ];
 
     const mutateMock = vi.fn(
@@ -231,7 +253,7 @@ describe('PromptsPage', () => {
       ) => {
         options?.onSuccess?.(
           buildPrompt({
-            id: 3,
+            id: 'prompt-3',
             title: variables.title,
             content: variables.content,
             position: variables.position ?? 0,
@@ -266,8 +288,8 @@ describe('PromptsPage', () => {
   it('allows reordering after duplicating a prompt', async () => {
     const user = userEvent.setup();
     const prompts: Prompt[] = [
-      buildPrompt({ id: 11, title: 'Primary prompt', position: 1 }),
-      buildPrompt({ id: 22, title: 'Secondary prompt', position: 2 }),
+      buildPrompt({ id: 'prompt-11', title: 'Primary prompt', position: 1 }),
+      buildPrompt({ id: 'prompt-22', title: 'Secondary prompt', position: 2 }),
     ];
 
     const createMutateMock = vi.fn(
@@ -276,7 +298,7 @@ describe('PromptsPage', () => {
         options?: { onSuccess?: (prompt: Prompt) => void },
       ) => {
         const duplicated = buildPrompt({
-          id: 33,
+          id: 'prompt-33',
           title: variables.title,
           content: variables.content,
           position: variables.position ?? 0,
@@ -333,9 +355,9 @@ describe('PromptsPage', () => {
     expect(Array.isArray(reorderPayload)).toBe(true);
     if (Array.isArray(reorderPayload)) {
       expect(reorderPayload).toEqual([
-        expect.objectContaining({ id: 33, position: 1 }),
-        expect.objectContaining({ id: 11, position: 2 }),
-        expect.objectContaining({ id: 22, position: 3 }),
+        expect.objectContaining({ id: 'prompt-33', position: 1 }),
+        expect.objectContaining({ id: 'prompt-11', position: 2 }),
+        expect.objectContaining({ id: 'prompt-22', position: 3 }),
       ]);
     }
   });
@@ -363,7 +385,7 @@ describe('PromptsPage', () => {
   it('deletes a prompt after confirmation', async () => {
     const user = userEvent.setup();
     const mutateMock = vi.fn();
-    const prompts = [buildPrompt({ id: 5, title: 'Weekly digest', position: 1 })];
+    const prompts = [buildPrompt({ id: 'prompt-5', title: 'Weekly digest', position: 1 })];
 
     mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
     mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
@@ -378,7 +400,7 @@ describe('PromptsPage', () => {
     await user.click(screen.getByRole('button', { name: /delete/i }));
 
     expect(confirmSpy).toHaveBeenCalledWith('Are you sure you want to delete this prompt?');
-    expect(mutateMock).toHaveBeenCalledWith(5, expect.any(Object));
+    expect(mutateMock).toHaveBeenCalledWith('prompt-5', expect.any(Object));
 
     confirmSpy.mockRestore();
   });
@@ -386,8 +408,8 @@ describe('PromptsPage', () => {
   it('reorders prompts when dragged', () => {
     const mutateMock = vi.fn();
     const prompts = [
-      buildPrompt({ id: 1, title: 'First prompt', position: 1 }),
-      buildPrompt({ id: 2, title: 'Second prompt', position: 2 }),
+      buildPrompt({ id: 'prompt-1', title: 'First prompt', position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Second prompt', position: 2 }),
     ];
 
     mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
@@ -427,16 +449,59 @@ describe('PromptsPage', () => {
     }
 
     expect(variables).toEqual([
-      expect.objectContaining({ id: 2, position: 1 }),
-      expect.objectContaining({ id: 1, position: 2 }),
+      expect.objectContaining({ id: 'prompt-2', position: 1 }),
+      expect.objectContaining({ id: 'prompt-1', position: 2 }),
     ]);
+  });
+
+  it('toggles prompt enabled state via the switch', async () => {
+    const user = userEvent.setup();
+    const prompts: Prompt[] = [
+      buildPrompt({ id: 'prompt-1', title: 'Primary prompt', enabled: true, position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Secondary prompt', enabled: true, position: 2 }),
+    ];
+
+    const mutateMock = vi.fn(
+      (
+        variables: { id: string; enabled?: boolean },
+        options?: { onSuccess?: (prompt: Prompt) => void },
+      ) => {
+        prompts[0] = {
+          ...prompts[0],
+          enabled: variables.enabled ?? false,
+          position: 5,
+        };
+        options?.onSuccess?.(prompts[0]);
+      },
+    );
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(mutateMock));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const promptItems = screen.getAllByRole('listitem');
+    const toggle = within(promptItems[0]).getByRole('switch', { name: /disable prompt/i });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(toggle);
+
+    expect(mutateMock).toHaveBeenCalledWith({ id: 'prompt-1', enabled: false }, expect.any(Object));
+    expect(await screen.findByText('Prompt disabled.')).toBeInTheDocument();
+    expect(await screen.findByRole('switch', { name: /enable prompt/i })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
   });
 
   it('disables export when no prompt is selected and enables after selection', async () => {
     const user = userEvent.setup();
     const prompts = [
-      buildPrompt({ id: 1, title: 'First prompt', content: 'First content', position: 1 }),
-      buildPrompt({ id: 2, title: 'Second prompt', content: 'Second content', position: 2 }),
+      buildPrompt({ id: 'prompt-1', title: 'First prompt', content: 'First content', position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Second prompt', content: 'Second content', position: 2 }),
     ];
 
     mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
@@ -459,9 +524,9 @@ describe('PromptsPage', () => {
   it('shows export preview with prompts concatenated in the displayed order', async () => {
     const user = userEvent.setup();
     const prompts = [
-      buildPrompt({ id: 1, title: 'Alpha prompt', content: 'Alpha content', position: 1 }),
-      buildPrompt({ id: 2, title: 'Beta prompt', content: 'Beta content', position: 2 }),
-      buildPrompt({ id: 3, title: 'Gamma prompt', content: 'Gamma content', position: 3 }),
+      buildPrompt({ id: 'prompt-1', title: 'Alpha prompt', content: 'Alpha content', position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Beta prompt', content: 'Beta content', position: 2 }),
+      buildPrompt({ id: 'prompt-3', title: 'Gamma prompt', content: 'Gamma content', position: 3 }),
     ];
 
     mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
@@ -485,8 +550,8 @@ describe('PromptsPage', () => {
   it('copies the export content to the clipboard', async () => {
     const user = userEvent.setup();
     const prompts = [
-      buildPrompt({ id: 1, title: 'Alpha prompt', content: 'Alpha content', position: 1 }),
-      buildPrompt({ id: 2, title: 'Beta prompt', content: 'Beta content', position: 2 }),
+      buildPrompt({ id: 'prompt-1', title: 'Alpha prompt', content: 'Alpha content', position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Beta prompt', content: 'Beta content', position: 2 }),
     ];
 
     mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
@@ -525,5 +590,41 @@ describe('PromptsPage', () => {
     } else {
       delete navigatorWithClipboard.clipboard;
     }
+  });
+
+  it('warns when disabled prompts are selected for export and omits them from the preview', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 'prompt-1', title: 'Active prompt', content: 'Active content', enabled: true, position: 1 }),
+      buildPrompt({
+        id: 'prompt-2',
+        title: 'Disabled prompt',
+        content: 'Disabled content',
+        enabled: false,
+        position: 2,
+      }),
+    ];
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
+
+    renderPage();
+
+    const checkboxes = screen.getAllByRole('checkbox', { name: /select prompt/i });
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    expect(screen.getByText('Disabled prompts are not exported.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /export selected/i }));
+
+    const preview = await screen.findByLabelText(/preview/i);
+    expect(preview).toHaveValue('Active prompt\n\nActive content');
+    expect(
+      screen.getAllByText('Disabled prompts are not exported.').filter((element) => element.tagName === 'P')
+    ).toHaveLength(2);
   });
 });

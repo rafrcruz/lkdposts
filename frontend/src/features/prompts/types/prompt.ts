@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
 export const promptSchema = z.object({
-  id: z.number().int().positive(),
+  id: z.string().min(1),
   title: z.string(),
   content: z.string(),
   position: z.number().int().nonnegative(),
+  enabled: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -16,7 +17,7 @@ export const promptListSchema = z.array(promptSchema);
 export type PromptList = z.infer<typeof promptListSchema>;
 
 export const promptReorderItemSchema = z.object({
-  id: z.number().int().positive(),
+  id: z.string().min(1),
   position: z.number().int().nonnegative(),
 });
 

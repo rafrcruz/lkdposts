@@ -209,6 +209,7 @@ const definition = {
             example: 'Descrever principais aprendizados da sprint.',
           },
           position: { type: 'integer', example: 0 },
+          enabled: { type: 'boolean', example: true },
           createdAt: {
             type: 'string',
             format: 'date-time',
@@ -235,6 +236,10 @@ const definition = {
             minimum: 0,
             description: 'Posição opcional do novo prompt (0-based). Se omitido, é adicionado ao final.',
           },
+          enabled: {
+            type: 'boolean',
+            description: 'Define se o prompt inicia habilitado (padrão: true).',
+          },
         },
       },
       PromptUpdate: {
@@ -249,6 +254,10 @@ const definition = {
           content: {
             type: 'string',
             example: 'Novo conteúdo do prompt.',
+          },
+          enabled: {
+            type: 'boolean',
+            description: 'Atualiza o estado habilitado do prompt.',
           },
         },
       },

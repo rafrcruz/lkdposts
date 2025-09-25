@@ -4,21 +4,29 @@ const getClient = (client) => client ?? prisma;
 
 const defaultOrder = [{ position: 'asc' }, { createdAt: 'asc' }];
 
-const findManyByUser = async ({ userId, skip = 0, take, orderBy = defaultOrder }, client) => {
+const findManyByUser = async ({ userId, skip = 0, take, orderBy = defaultOrder, enabled }, client) => {
   const prismaClient = getClient(client);
 
   return prismaClient.prompt.findMany({
-    where: { userId },
+    where: {
+      userId,
+      ...(enabled !== undefined ? { enabled } : {}),
+    },
     orderBy,
     skip,
     take,
   });
 };
 
-const countByUser = async (userId, client) => {
+const countByUser = async ({ userId, enabled }, client) => {
   const prismaClient = getClient(client);
 
-  return prismaClient.prompt.count({ where: { userId } });
+  return prismaClient.prompt.count({
+    where: {
+      userId,
+      ...(enabled !== undefined ? { enabled } : {}),
+    },
+  });
 };
 
 const findById = async (id, client) => {
@@ -59,7 +67,7 @@ const findMaxPositionForUser = async ({ userId }, client) => {
   return result?._max?.position ?? null;
 };
 
-const create = async ({ userId, title, content, position }, client) => {
+const create = async ({ userId, title, content, position, enabled = true }, client) => {
   const prismaClient = getClient(client);
 
   return prismaClient.prompt.create({
@@ -68,6 +76,7 @@ const create = async ({ userId, title, content, position }, client) => {
       title,
       content,
       position,
+      enabled,
     },
   });
 };

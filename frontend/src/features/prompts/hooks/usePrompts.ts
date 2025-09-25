@@ -13,7 +13,19 @@ import { HttpError } from '@/lib/api/http';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 
 const sortPrompts = (items: PromptList) => {
-  return [...items].sort((a, b) => a.position - b.position || a.id - b.id);
+  return [...items].sort((a, b) => {
+    const positionDiff = a.position - b.position;
+    if (positionDiff !== 0) {
+      return positionDiff;
+    }
+
+    const createdDiff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    if (createdDiff !== 0) {
+      return createdDiff;
+    }
+
+    return a.id.localeCompare(b.id);
+  });
 };
 
 export const usePromptList = () => {
@@ -30,8 +42,8 @@ export const usePromptList = () => {
 
 export const useCreatePrompt = () => {
   const queryClient = useQueryClient();
-  return useMutation<Prompt, HttpError, { title: string; content: string; position?: number }>({
-    mutationFn: ({ title, content, position }) => createPrompt({ title, content, position }),
+  return useMutation<Prompt, HttpError, { title: string; content: string; position?: number; enabled?: boolean }>({
+    mutationFn: ({ title, content, position, enabled }) => createPrompt({ title, content, position, enabled }),
     onSuccess: (created) => {
       queryClient.setQueryData<PromptList | undefined>(PROMPTS_QUERY_KEY, (current) => {
         if (!current) {
@@ -43,10 +55,17 @@ export const useCreatePrompt = () => {
   });
 };
 
+type UpdatePromptVariables = {
+  id: string;
+  title?: string;
+  content?: string;
+  enabled?: boolean;
+};
+
 export const useUpdatePrompt = () => {
   const queryClient = useQueryClient();
-  return useMutation<Prompt, HttpError, { id: number; title: string; content: string }>({
-    mutationFn: ({ id, title, content }) => updatePrompt(id, { title, content }),
+  return useMutation<Prompt, HttpError, UpdatePromptVariables>({
+    mutationFn: ({ id, title, content, enabled }) => updatePrompt(id, { title, content, enabled }),
     onSuccess: (updated) => {
       queryClient.setQueryData<PromptList | undefined>(PROMPTS_QUERY_KEY, (current) => {
         if (!current) {
@@ -61,7 +80,7 @@ export const useUpdatePrompt = () => {
 
 export const useDeletePrompt = () => {
   const queryClient = useQueryClient();
-  return useMutation<{ message?: string }, HttpError, number>({
+  return useMutation<{ message?: string }, HttpError, string>({
     mutationFn: (id) => deletePrompt(id),
     onSuccess: (_result, id) => {
       queryClient.setQueryData<PromptList | undefined>(PROMPTS_QUERY_KEY, (current) => {
