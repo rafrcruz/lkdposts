@@ -1,5 +1,6 @@
 import type { ChangeEvent, Dispatch, JSX, SetStateAction } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Sentry from '@sentry/react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 
@@ -19,6 +20,7 @@ import { useAuth } from '@/features/auth/hooks/useAuth';
 import { HttpError } from '@/lib/api/http';
 import { formatDate, formatNumber, useLocale } from '@/utils/formatters';
 import { useAppParams } from '@/features/app-params/hooks/useAppParams';
+import { usePostsDiagnostics } from '@/features/posts/hooks/usePostsDiagnostics';
 
 const PAGE_SIZE = 10;
 const FEED_OPTIONS_LIMIT = 50;
@@ -446,12 +448,18 @@ const shouldRefetchPostsList = ({
   resetPagination,
   previousCursor,
   previousCursorCount,
+  windowChanged,
 }: {
   wasExecutedBefore: boolean;
   resetPagination: boolean;
   previousCursor: string | null;
   previousCursorCount: number;
+  windowChanged: boolean;
 }) => {
+  if (windowChanged) {
+    return true;
+  }
+
   if (!wasExecutedBefore) {
     return false;
   }
@@ -532,6 +540,24 @@ const PostsPage = () => {
   const [expandedSections, setExpandedSections] = useState<ExpandedSections>({});
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
   const [cooldownRemainingSeconds, setCooldownRemainingSeconds] = useState(0);
+  const [listWindowDays, setListWindowDays] = useState(postsTimeWindowDays);
+  const [cooldownNotice, setCooldownNotice] = useState<string | null>(null);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+
+  const cooldownNoticeTimeoutRef = useRef<number | null>(null);
+  const cooldownIntervalRef = useRef<number | null>(null);
+  const fetchStartTimeRef = useRef<number | null>(null);
+
+  const { metrics: diagnosticsMetrics, recordRefresh, recordCooldownBlock, recordFetchSuccess } = usePostsDiagnostics();
+  const diagnosticsPanelId = 'posts-diagnostics-panel';
+
+  useEffect(() => {
+    Sentry.addBreadcrumb({
+      category: 'posts',
+      level: 'info',
+      message: 'posts:view_opened',
+    });
+  }, []);
 
   const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT });
   const feedListData = feedList.data;
@@ -539,7 +565,13 @@ const PostsPage = () => {
   const totalFeeds: number = feedListData?.meta.total ?? 0;
   const hasFeeds = totalFeeds > 0;
 
-  const postListQuery = usePostList({ cursor, limit: PAGE_SIZE, feedId: selectedFeedId, enabled: hasExecutedSequence });
+  const postListQuery = usePostList({
+    cursor,
+    limit: PAGE_SIZE,
+    feedId: selectedFeedId,
+    windowDays: listWindowDays,
+    enabled: hasExecutedSequence,
+  });
   const postListData = postListQuery.data;
   const posts = useMemo<PostListItem[]>(() => postListData?.items ?? [], [postListData?.items]);
   const nextCursor: string | null = postListData?.meta.nextCursor ?? null;
@@ -547,6 +579,7 @@ const PostsPage = () => {
   const isError = postListQuery.isError;
   const isFetching = postListQuery.isFetching;
   const currentPage = previousCursors.length + 1;
+  const isWindowPending = listWindowDays !== postsTimeWindowDays;
 
   const { mutateAsync: refreshPostsAsync } = useRefreshPosts();
   const { mutateAsync: cleanupPostsAsync } = useCleanupPosts();
@@ -610,6 +643,7 @@ const PostsPage = () => {
           resetPagination,
           previousCursor: previousCursorValue,
           previousCursorCount,
+          windowChanged: isWindowPending,
         });
 
         return { shouldRefetchList };
@@ -623,6 +657,7 @@ const PostsPage = () => {
       handleCleanupSettled,
       handleRefreshSettled,
       hasExecutedSequence,
+      isWindowPending,
       previousCursors.length,
       refreshPostsAsync,
     ],
@@ -631,6 +666,12 @@ const PostsPage = () => {
   useInitialSync(hasExecutedSequence, syncPosts);
 
   useRefreshSummaryReset(refreshSummary, setIsSummaryDismissed);
+
+  useEffect(() => {
+    if (!hasExecutedSequence) {
+      setListWindowDays(postsTimeWindowDays);
+    }
+  }, [hasExecutedSequence, postsTimeWindowDays]);
 
   useEffect(() => {
     if (!refreshSummary?.now) {
@@ -647,6 +688,11 @@ const PostsPage = () => {
   }, [refreshSummary?.now]);
 
   useEffect(() => {
+    if (cooldownIntervalRef.current !== null && typeof window !== 'undefined') {
+      window.clearInterval(cooldownIntervalRef.current);
+      cooldownIntervalRef.current = null;
+    }
+
     if (!lastRefreshAt || refreshCooldownSeconds <= 0) {
       setCooldownRemainingSeconds(0);
       return;
@@ -655,24 +701,139 @@ const PostsPage = () => {
     const computeRemaining = () => {
       const elapsedSeconds = (Date.now() - lastRefreshAt) / 1000;
       const remaining = Math.ceil(refreshCooldownSeconds - elapsedSeconds);
-      setCooldownRemainingSeconds(remaining > 0 ? remaining : 0);
+      const next = remaining > 0 ? remaining : 0;
+      setCooldownRemainingSeconds(next);
+      return next;
     };
 
-    computeRemaining();
+    const initialRemaining = computeRemaining();
 
-    const intervalId = setInterval(computeRemaining, 1000);
+    if (initialRemaining <= 0 || typeof window === 'undefined') {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      const next = computeRemaining();
+      if (next <= 0 && cooldownIntervalRef.current !== null && typeof window !== 'undefined') {
+        window.clearInterval(cooldownIntervalRef.current);
+        cooldownIntervalRef.current = null;
+      }
+    }, 1000);
+
+    cooldownIntervalRef.current = intervalId;
+
     return () => {
-      clearInterval(intervalId);
+      if (cooldownIntervalRef.current !== null && typeof window !== 'undefined') {
+        window.clearInterval(cooldownIntervalRef.current);
+        cooldownIntervalRef.current = null;
+      }
     };
   }, [lastRefreshAt, refreshCooldownSeconds]);
+
+  useEffect(() => {
+    return () => {
+      if (cooldownNoticeTimeoutRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(cooldownNoticeTimeoutRef.current);
+      }
+
+      if (cooldownIntervalRef.current !== null && typeof window !== 'undefined') {
+        window.clearInterval(cooldownIntervalRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!cooldownNotice) {
+      if (cooldownNoticeTimeoutRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(cooldownNoticeTimeoutRef.current);
+        cooldownNoticeTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (cooldownNoticeTimeoutRef.current !== null) {
+      window.clearTimeout(cooldownNoticeTimeoutRef.current);
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCooldownNotice(null);
+      cooldownNoticeTimeoutRef.current = null;
+    }, 4000);
+
+    cooldownNoticeTimeoutRef.current = timeoutId;
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.clearTimeout(timeoutId);
+      }
+      cooldownNoticeTimeoutRef.current = null;
+    };
+  }, [cooldownNotice]);
+
+  const isCooldownActive = cooldownRemainingSeconds > 0;
+
+  useEffect(() => {
+    if (!isCooldownActive) {
+      setCooldownNotice(null);
+    }
+  }, [isCooldownActive]);
 
   const runSequence = ({ resetPagination = false }: RefreshOptions = {}) => {
     if (isSyncing) {
       return;
     }
 
-    syncPosts({ resetPagination })
+    const shouldForceReset = resetPagination || isWindowPending;
+    const canBypassCooldown = !hasExecutedSequence;
+
+    if (isCooldownActive && !canBypassCooldown) {
+      recordCooldownBlock();
+
+      Sentry.addBreadcrumb({
+        category: 'posts',
+        level: 'info',
+        message: 'posts:cooldown_blocked',
+        data: { remaining_seconds: cooldownRemainingSeconds },
+      });
+
+      const timeLabel = formatCooldownTime({
+        secondsRemaining: cooldownRemainingSeconds,
+        locale,
+        t,
+      });
+
+      setCooldownNotice(
+        t('posts.actions.refreshCooldown', 'Wait {{time}} before refreshing again.', {
+          time: timeLabel,
+        }),
+      );
+
+      return;
+    }
+
+    Sentry.addBreadcrumb({
+      category: 'posts',
+      level: 'info',
+      message: 'posts:refresh_clicked',
+      data: {
+        reset_pagination: shouldForceReset,
+        window_days: postsTimeWindowDays,
+      },
+    });
+
+    recordRefresh();
+
+    syncPosts({ resetPagination: shouldForceReset })
       .then(({ shouldRefetchList }) => {
+        if (isWindowPending) {
+          setListWindowDays(postsTimeWindowDays);
+          return;
+        }
+
         if (!shouldRefetchList) {
           return;
         }
@@ -687,6 +848,59 @@ const PostsPage = () => {
         // state updates inside syncPosts handle errors
       });
   };
+
+  useEffect(() => {
+    if (postListQuery.isFetching) {
+      if (fetchStartTimeRef.current === null) {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        fetchStartTimeRef.current = now;
+      }
+      return;
+    }
+
+    if (fetchStartTimeRef.current === null) {
+      return;
+    }
+
+    const endTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const duration = Math.max(0, Math.round(endTime - fetchStartTimeRef.current));
+    fetchStartTimeRef.current = null;
+
+    if (postListQuery.isSuccess && postListQuery.data) {
+      recordFetchSuccess(duration);
+      Sentry.addBreadcrumb({
+        category: 'posts',
+        level: 'info',
+        message: 'posts:fetch_success',
+        data: {
+          duration_ms: duration,
+          item_count: postListQuery.data.items.length,
+          window_days: listWindowDays,
+        },
+      });
+      return;
+    }
+
+    if (postListQuery.isError && postListQuery.error) {
+      Sentry.addBreadcrumb({
+        category: 'posts',
+        level: 'error',
+        message: 'posts:fetch_error',
+        data: {
+          status: postListQuery.error.status ?? null,
+          message: postListQuery.error.message,
+        },
+      });
+    }
+  }, [
+    listWindowDays,
+    postListQuery.data,
+    postListQuery.error,
+    postListQuery.isError,
+    postListQuery.isFetching,
+    postListQuery.isSuccess,
+    recordFetchSuccess,
+  ]);
 
   useEffect(() => {
     setExpandedSections((current) => mergeExpandedSections(posts, current));
@@ -760,8 +974,6 @@ const PostsPage = () => {
       }),
     [formattedTimeWindowDays, t],
   );
-
-  const isCooldownActive = cooldownRemainingSeconds > 0;
 
   const cooldownMessage = useMemo(() => {
     if (!isCooldownActive) {
@@ -871,13 +1083,21 @@ const PostsPage = () => {
           ) : null}
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            className={clsx(
+              'inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60',
+              !isSyncing && isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
+            )}
             onClick={() => runSequence({ resetPagination: true })}
-            disabled={isSyncing || isCooldownActive}
+            disabled={isSyncing}
+            aria-disabled={isSyncing || isCooldownActive}
           >
             {isSyncing ? t('posts.actions.refreshing', 'Refreshing...') : t('posts.actions.refresh', 'Refresh')}
           </button>
-          {cooldownMessage ? (
+          {cooldownNotice ? (
+            <span className="text-xs text-warning" role="status">
+              {cooldownNotice}
+            </span>
+          ) : cooldownMessage ? (
             <span className="text-xs text-muted-foreground">{cooldownMessage}</span>
           ) : null}
         </div>
@@ -890,9 +1110,13 @@ const PostsPage = () => {
           action={
             <button
               type="button"
-              className="mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              className={clsx(
+                'mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60',
+                !isSyncing && isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
+              )}
               onClick={() => runSequence()}
-              disabled={isSyncing || isCooldownActive}
+              disabled={isSyncing}
+              aria-disabled={isSyncing || isCooldownActive}
             >
               {t('actions.tryAgain', 'Try again')}
             </button>
@@ -907,9 +1131,13 @@ const PostsPage = () => {
           action={
             <button
               type="button"
-              className="mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              className={clsx(
+                'mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60',
+                !isSyncing && isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
+              )}
               onClick={() => runSequence()}
-              disabled={isSyncing || isCooldownActive}
+              disabled={isSyncing}
+              aria-disabled={isSyncing || isCooldownActive}
             >
               {t('actions.tryAgain', 'Try again')}
             </button>
@@ -1062,6 +1290,51 @@ const PostsPage = () => {
         </section>
       ) : null}
 
+      {isAdmin ? (
+        <section className="rounded-md border border-dashed border-border/70 bg-muted/30 px-4 py-3">
+          <button
+            type="button"
+            className="flex items-center gap-2 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+            onClick={() => setIsDiagnosticsOpen((current) => !current)}
+            aria-expanded={isDiagnosticsOpen}
+            aria-controls={diagnosticsPanelId}
+          >
+            <span>{t('posts.diagnostics.title', 'Diagnostics (admin)')}</span>
+            <span aria-hidden="true" className="text-lg leading-none text-foreground">
+              {isDiagnosticsOpen ? '−' : '+'}
+            </span>
+          </button>
+          {isDiagnosticsOpen ? (
+            <dl id={diagnosticsPanelId} className="mt-3 space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-background px-3 py-2">
+                <dt className="font-medium text-muted-foreground">
+                  {t('posts.diagnostics.refreshCount', 'Refreshes (session)')}
+                </dt>
+                <dd className="font-mono text-foreground">
+                  {formatNumber(diagnosticsMetrics.refreshCount, locale)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-background px-3 py-2">
+                <dt className="font-medium text-muted-foreground">
+                  {t('posts.diagnostics.cooldownBlocks', 'Cooldown blocks (session)')}
+                </dt>
+                <dd className="font-mono text-foreground">
+                  {formatNumber(diagnosticsMetrics.cooldownBlocks, locale)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-background px-3 py-2">
+                <dt className="font-medium text-muted-foreground">
+                  {t('posts.diagnostics.avgFetchDuration', 'Avg fetch duration (ms, session)')}
+                </dt>
+                <dd className="font-mono text-foreground">
+                  {`${formatNumber(diagnosticsMetrics.avgFetchDurationMs, locale)} ms`}
+                </dd>
+              </div>
+            </dl>
+          ) : null}
+        </section>
+      ) : null}
+
       <PostListContent
         expandedSections={expandedSections}
         hasExecutedSequence={hasExecutedSequence}
@@ -1071,6 +1344,7 @@ const PostsPage = () => {
         isError={isError}
         isLoading={isLoading}
         isSyncing={isSyncing}
+        isCooldownActive={isCooldownActive}
         listErrorMessage={listErrorMessage}
         locale={locale}
         nextCursor={nextCursor}
@@ -1098,6 +1372,7 @@ type PostListContentProps = {
   isError: boolean;
   isLoading: boolean;
   isSyncing: boolean;
+  isCooldownActive: boolean;
   listErrorMessage?: string;
   locale: ReturnType<typeof useLocale>;
   nextCursor: string | null;
@@ -1121,6 +1396,7 @@ const PostListContent = ({
   isError,
   isLoading,
   isSyncing,
+  isCooldownActive,
   hasPreviousPage,
   listErrorMessage,
   locale,
@@ -1184,9 +1460,13 @@ const PostListContent = ({
         action={
           <button
             type="button"
-            className="mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            className={clsx(
+              'mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60',
+              isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
+            )}
             onClick={onTryAgain}
             disabled={isSyncing}
+            aria-disabled={isSyncing || isCooldownActive}
           >
             {t('actions.tryAgain', 'Try again')}
           </button>

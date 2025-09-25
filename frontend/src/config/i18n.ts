@@ -159,6 +159,12 @@ const resources = {
           refreshing: 'Refreshing...',
           refreshCooldown: 'Wait {{time}} before refreshing again.',
         },
+        diagnostics: {
+          title: 'Diagnostics (admin)',
+          refreshCount: 'Refreshes (session)',
+          cooldownBlocks: 'Cooldown blocks (session)',
+          avgFetchDuration: 'Avg fetch duration (ms, session)',
+        },
         errors: {
           generic: 'The operation failed. Try again.',
           network: 'We could not connect. Check your network and try again.',
@@ -498,6 +504,12 @@ const resources = {
           refresh: 'Atualizar',
           refreshing: 'Atualizando...',
           refreshCooldown: 'Aguarde {{time}} antes de atualizar novamente.',
+        },
+        diagnostics: {
+          title: 'Diagnostico (admin)',
+          refreshCount: 'Atualizacoes (sessao)',
+          cooldownBlocks: 'Bloqueios por cooldown (sessao)',
+          avgFetchDuration: 'Tempo medio de busca (ms, sessao)',
         },
         errors: {
           generic: 'A operacao falhou. Tente novamente.',

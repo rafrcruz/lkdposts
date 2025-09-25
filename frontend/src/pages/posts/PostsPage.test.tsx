@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { vi } from 'vitest';
@@ -221,6 +221,21 @@ const buildRefreshSummary = (override: Partial<RefreshSummary> = {}): RefreshSum
   ...override,
 });
 
+const readMetricValue = (label: string) => {
+  const labelElement = screen.getByText(label);
+  const container = labelElement.closest('div');
+  if (!container) {
+    throw new Error(`Metric container not found for label: ${label}`);
+  }
+
+  const valueElement = container.querySelector('dd');
+  if (!valueElement) {
+    throw new Error(`Metric value not found for label: ${label}`);
+  }
+
+  return valueElement.textContent?.trim() ?? '';
+};
+
 const renderPage = () =>
   render(
     <I18nextProvider i18n={i18n}>
@@ -233,6 +248,9 @@ describe('PostsPage', () => {
   let cleanupMutateAsync: Mock;
 
   beforeEach(() => {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.clear();
+    }
     mockedUseAuth.mockReturnValue(buildAuthContext());
     mockedUseAppParams.mockReturnValue(buildAppParamsHook());
 
@@ -434,7 +452,8 @@ describe('PostsPage', () => {
     expect(screen.getByText('Pagina 1')).toBeInTheDocument();
   });
 
-  it('disables refresh action during cooldown window', async () => {
+  it('blocks refresh during cooldown window and shows warning message', async () => {
+    const user = userEvent.setup();
     mockedUseAppParams.mockReturnValue(buildAppParamsHook({ posts_refresh_cooldown_seconds: 120 }));
     refreshMutateAsync = vi.fn(() => Promise.resolve<RefreshSummary>(buildRefreshSummary()));
     mockedUseRefreshPosts.mockReturnValue(createMutationResult(refreshMutateAsync));
@@ -447,10 +466,131 @@ describe('PostsPage', () => {
     });
 
     const refreshButton = await screen.findByRole('button', { name: 'Atualizar' });
+    expect(refreshButton).not.toBeDisabled();
+
     await waitFor(() => {
-      expect(refreshButton).toBeDisabled();
+      expect(refreshButton).toHaveAttribute('aria-disabled', 'true');
     });
+
+    await user.click(refreshButton);
+
+    expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/Aguarde/i)).toBeInTheDocument();
+  });
+
+  it('shows diagnostics panel for admin and updates refresh counter', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({
+        user: { email: 'admin@example.com', role: 'admin', expiresAt: '2024-01-01T00:00:00.000Z' },
+      }),
+    );
+    mockedUseAppParams.mockReturnValue(buildAppParamsHook({ posts_refresh_cooldown_seconds: 0 }));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
+      expect(cleanupMutateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    const toggleButton = await screen.findByRole('button', { name: /Diagnostico/i });
+    await user.click(toggleButton);
+
+    expect(readMetricValue('Atualizacoes (sessao)')).toBe('0');
+    expect(readMetricValue('Bloqueios por cooldown (sessao)')).toBe('0');
+    expect(readMetricValue('Tempo medio de busca (ms, sessao)')).toMatch(/ms$/i);
+
+    const refreshButton = await screen.findByRole('button', { name: 'Atualizar' });
+    await user.click(refreshButton);
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(2);
+      expect(readMetricValue('Atualizacoes (sessao)')).toBe('1');
+    });
+  });
+
+  it('records cooldown blocks in diagnostics when refresh is attempted too early', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({
+        user: { email: 'admin@example.com', role: 'admin', expiresAt: '2024-01-01T00:00:00.000Z' },
+      }),
+    );
+    mockedUseAppParams.mockReturnValue(buildAppParamsHook({ posts_refresh_cooldown_seconds: 300 }));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
+      expect(cleanupMutateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    const toggleButton = await screen.findByRole('button', { name: /Diagnostico/i });
+    await user.click(toggleButton);
+
+    expect(readMetricValue('Bloqueios por cooldown (sessao)')).toBe('0');
+
+    const refreshButton = await screen.findByRole('button', { name: 'Atualizar' });
+    await user.click(refreshButton);
+
+    expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(readMetricValue('Bloqueios por cooldown (sessao)')).toBe('1');
+    });
+  });
+
+  it('propagates updated window days to the posts query after refresh', async () => {
+    const user = userEvent.setup();
+
+    const appParamsState = buildAppParamsHook({ posts_refresh_cooldown_seconds: 0, posts_time_window_days: 7 });
+    mockedUseAppParams.mockImplementation(() => appParamsState);
+
+    const windowDaysHistory: Array<PostListParams['windowDays'] | null | undefined> = [];
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      windowDaysHistory.push(params.windowDays);
+
+      if (!params.enabled) {
+        return createPostQueryResult();
+      }
+
+      return createPostQueryResult({
+        data: {
+          items: [buildPost({ id: 10, title: 'Janela inicial' })],
+          meta: { nextCursor: null, limit: 10 },
+        },
+        isSuccess: true,
+        isFetched: true,
+        status: 'success',
+      });
+    });
+
+    const view = renderPage();
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(windowDaysHistory).toContain(7);
+    });
+
+    act(() => {
+      appParamsState.params = buildAppParams({ posts_refresh_cooldown_seconds: 0, posts_time_window_days: 3 });
+      appParamsState.fetchedAt = Date.now();
+      view.rerender(
+        <I18nextProvider i18n={i18n}>
+          <PostsPage />
+        </I18nextProvider>,
+      );
+    });
+
+    const refreshButton = await screen.findByRole('button', { name: 'Atualizar' });
+    await user.click(refreshButton);
+
+    await waitFor(() => {
+      expect(windowDaysHistory).toContain(3);
+    });
   });
 
   it('renders empty state using the configured time window', async () => {

@@ -1,9 +1,10 @@
 import type { ReactElement } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nextProvider } from 'react-i18next';
 import { vi } from 'vitest';
+import type { SpyInstance } from 'vitest';
 
 import PostsPage from './PostsPage';
 import i18n from '@/config/i18n';
@@ -36,6 +37,8 @@ type PostsApiMockConfig = {
   postsError?: { status: number; message: string };
 };
 
+type MockApiRestore = (() => void) & { fetchSpy: SpyInstance };
+
 type ScenarioReport = {
   scenario: string;
   domTags: Record<'p' | 'h2' | 'ul' | 'li' | 'img' | 'a', number>;
@@ -54,6 +57,243 @@ afterAll(() => {
   };
 
   console.info('[posts-page] validation summary', JSON.stringify(reportPayload, null, 2));
+});
+
+describe('PostsPage parameter workflows (E2E with API mocks)', () => {
+  const renderPage = (client: QueryClient) => render(wrapWithProviders(<PostsPage />, client));
+
+  const resolveRequestDetails = (input: RequestInfo | URL, init?: RequestInit) => {
+    let resource: string;
+    if (typeof input === 'string') {
+      resource = input;
+    } else if (input instanceof URL) {
+      resource = input.toString();
+    } else {
+      resource = input.url;
+    }
+
+    const url = new URL(resource, 'http://localhost');
+    let method = init?.method;
+    if (!method && input instanceof Request) {
+      method = input.method;
+    }
+
+    return { pathname: url.pathname, method: (method ?? 'GET').toUpperCase() };
+  };
+
+  const countRequests = (spy: SpyInstance, pathname: string, method: string) =>
+    spy.mock.calls.filter(([input, init]) => {
+      const details = resolveRequestDetails(input as RequestInfo | URL, init as RequestInit | undefined);
+      return details.pathname === pathname && details.method === method.toUpperCase();
+    }).length;
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockedUseAuth.mockReset();
+    mockedUseAppParams.mockReset();
+  });
+
+  it('Scenario A: applies default cooldown and window labels', async () => {
+    setupDefaultAuth('user');
+
+    const nowIso = new Date().toISOString();
+    const restoreFetch = mockApi({
+      posts: {
+        items: [
+          buildPostItem({ id: 1201, title: 'Default window item', post: { content: 'Conteudo padrao', createdAt: nowIso } }),
+        ],
+      },
+      refresh: { now: nowIso, feeds: [] },
+    });
+
+    mockedUseAppParams.mockReturnValue(buildAppParamsContextValue());
+
+    try {
+      const queryClient = createQueryClient();
+      const user = userEvent.setup();
+      renderPage(queryClient);
+
+      await screen.findByRole('heading', { name: /Default window item/i });
+      expect(screen.getByText(/Itens dentro de < 7d/i)).toBeInTheDocument();
+
+      const refreshButton = await screen.findByRole('button', { name: /Atualizar/i });
+      const refreshCallsBefore = countRequests(restoreFetch.fetchSpy, '/api/v1/posts/refresh', 'POST');
+
+      await user.click(refreshButton);
+
+      await screen.findByText(/Aguarde/i);
+      await waitFor(() => {
+        expect(refreshButton).toHaveAttribute('aria-disabled', 'true');
+      });
+
+      const refreshCallsAfter = countRequests(restoreFetch.fetchSpy, '/api/v1/posts/refresh', 'POST');
+      expect(refreshCallsAfter).toBe(refreshCallsBefore);
+    } finally {
+      restoreFetch();
+    }
+  }, 15000);
+
+  it('Scenario B: applies updated parameters after cooldown', async () => {
+    const initialTime = new Date();
+
+    setupDefaultAuth('admin');
+
+    const appParamsState = buildAppParamsContextValue({ posts_refresh_cooldown_seconds: 3600, posts_time_window_days: 7 });
+    mockedUseAppParams.mockImplementation(() => appParamsState);
+
+    const initialPost = buildPostItem({ id: 1301, title: 'Janela 7 dias', publishedAt: initialTime.toISOString() });
+    const updatedPost = buildPostItem({
+      id: 1302,
+      title: 'Janela 3 dias',
+      publishedAt: new Date(initialTime.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    const apiConfig: PostsApiMockConfig = {
+      posts: { items: [initialPost] },
+      refresh: { now: initialTime.toISOString(), feeds: [] },
+    };
+
+    const restoreFetch = mockApi(apiConfig);
+
+    try {
+      const queryClient = createQueryClient();
+      const user = userEvent.setup();
+      const view = renderPage(queryClient);
+
+      await screen.findByRole('heading', { name: /Janela 7 dias/i });
+      expect(screen.getByText(/Itens dentro de < 7d/i)).toBeInTheDocument();
+
+      act(() => {
+        appParamsState.params = buildAppParams({ posts_refresh_cooldown_seconds: 2, posts_time_window_days: 3 });
+        appParamsState.fetchedAt = Date.now();
+        view.rerender(wrapWithProviders(<PostsPage />, queryClient));
+      });
+
+      await screen.findByText(/Itens dentro de < 3d/i);
+
+      const refreshButton = await screen.findByRole('button', { name: /Atualizar/i });
+      const refreshCallsBefore = countRequests(restoreFetch.fetchSpy, '/api/v1/posts/refresh', 'POST');
+
+      await user.click(refreshButton);
+      await screen.findByText(/Aguarde/i);
+
+      expect(countRequests(restoreFetch.fetchSpy, '/api/v1/posts/refresh', 'POST')).toBe(refreshCallsBefore);
+
+      await act(async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 2200);
+        });
+      });
+
+      await waitFor(() => {
+        expect(refreshButton).toHaveAttribute('aria-disabled', 'false');
+      });
+
+      apiConfig.posts.items = [updatedPost];
+
+      await user.click(refreshButton);
+
+      await waitFor(() => {
+        expect(countRequests(restoreFetch.fetchSpy, '/api/v1/posts/refresh', 'POST')).toBe(refreshCallsBefore + 1);
+      });
+
+      await screen.findByRole('heading', { name: /Janela 3 dias/i });
+      expect(screen.getByText(/Itens dentro de < 3d/i)).toBeInTheDocument();
+    } finally {
+      restoreFetch();
+    }
+  }, 20000);
+
+  it('Scenario C: hides admin diagnostics for non-admin users', async () => {
+    setupDefaultAuth('user');
+
+    const restoreFetch = mockApi({
+      posts: {
+        items: [buildPostItem({ id: 1401, title: 'Feed restrito' })],
+      },
+    });
+
+    mockedUseAppParams.mockReturnValue(buildAppParamsContextValue());
+
+    try {
+      const queryClient = createQueryClient();
+      renderPage(queryClient);
+
+      await screen.findByRole('heading', { name: /Feed restrito/i });
+      expect(screen.queryByRole('button', { name: /Diagn/i })).not.toBeInTheDocument();
+
+      const adminCalls = countRequests(restoreFetch.fetchSpy, '/api/v1/app-params', 'PATCH');
+      expect(adminCalls).toBe(0);
+    } finally {
+      restoreFetch();
+    }
+  }, 10000);
+
+  it('Scenario D: updates labels when cached parameters refresh in the background', async () => {
+    setupDefaultAuth('admin');
+
+    const appParamsRef: { current: ReturnType<typeof buildAppParamsContextValue> } = {
+      current: {
+        ...buildAppParamsContextValue({ posts_refresh_cooldown_seconds: 900, posts_time_window_days: 10 }),
+        fetchedAt: Date.now() - 2 * 60 * 60 * 1000,
+        isFetching: true,
+      },
+    };
+
+    mockedUseAppParams.mockImplementation(() => appParamsRef.current);
+
+    const restoreFetch = mockApi({
+      posts: {
+        items: [
+          buildPostItem({
+            id: 1501,
+            title: 'Cache antigo',
+            noticia: '<p>Conteudo inicial do cache.</p>',
+            articleHtml: '<div><p>Conteudo inicial do cache.</p></div>',
+          }),
+        ],
+      },
+    });
+
+    try {
+      const queryClient = createQueryClient();
+      const user = userEvent.setup();
+      const view = renderPage(queryClient);
+
+      await screen.findByRole('heading', { name: /Cache antigo/i });
+      expect(screen.getByText(/Itens dentro de < 10d/i)).toBeInTheDocument();
+
+      const noticiaButton = await screen.findByRole('button', { name: /NOTICIA/i });
+      await user.click(noticiaButton);
+
+      const resolveArticleContent = () =>
+        document.getElementById('article-content-1501-html') ?? document.getElementById('article-content-1501');
+
+      await waitFor(() => {
+        const element = resolveArticleContent();
+        if (!element) {
+          throw new Error('Conteudo inicial não encontrado');
+        }
+      });
+
+      act(() => {
+        appParamsRef.current = {
+          ...appParamsRef.current,
+          params: buildAppParams({ posts_refresh_cooldown_seconds: 600, posts_time_window_days: 4 }),
+          fetchedAt: Date.now(),
+          isFetching: false,
+        };
+        view.rerender(wrapWithProviders(<PostsPage />, queryClient));
+      });
+
+      await screen.findByText(/Itens dentro de < 4d/i);
+      expect(noticiaButton).toHaveAttribute('aria-expanded', 'true');
+      const updatedContent = resolveArticleContent();
+      expect(updatedContent?.innerHTML).toContain('Conteudo inicial do cache');
+    } finally {
+      restoreFetch();
+    }
+  }, 15000);
 });
 
 const buildJsonResponse = (payload: JsonEnvelope, init?: ResponseInit) => {
@@ -76,7 +316,7 @@ const defaultFeed = (override: Partial<Feed> = {}): Feed => ({
   updatedAt: override.updatedAt ?? '2024-12-21T09:30:00.000Z',
 });
 
-const mockApi = (config: PostsApiMockConfig) => {
+const mockApi = (config: PostsApiMockConfig): MockApiRestore => {
   const feedsPayload = config.feeds ?? {
     items:
       config.posts.items.length > 0
@@ -145,9 +385,11 @@ const mockApi = (config: PostsApiMockConfig) => {
     throw new Error(`Unhandled request: ${method} ${path}`);
   });
 
-  return () => {
+  const restore = () => {
     fetchSpy.mockRestore();
   };
+
+  return Object.assign(restore, { fetchSpy });
 };
 
 const createQueryClient = () =>
@@ -159,12 +401,13 @@ const createQueryClient = () =>
     },
   });
 
-const renderWithProviders = (ui: ReactElement, client: QueryClient) =>
-  render(
-    <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
-    </I18nextProvider>,
-  );
+const wrapWithProviders = (ui: ReactElement, client: QueryClient) => (
+  <I18nextProvider i18n={i18n}>
+    <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+  </I18nextProvider>
+);
+
+const renderWithProviders = (ui: ReactElement, client: QueryClient) => render(wrapWithProviders(ui, client));
 
 vi.mock('@/features/auth/hooks/useAuth');
 vi.mock('@/features/app-params/hooks/useAppParams');
