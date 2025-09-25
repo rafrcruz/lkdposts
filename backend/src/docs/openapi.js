@@ -91,6 +91,101 @@ const definition = {
           updatedAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
         },
       },
+      AllowlistListResponse: {
+        type: 'object',
+        properties: {
+          items: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/AllowedUser' },
+          },
+        },
+      },
+      AllowlistCreateRequest: {
+        type: 'object',
+        required: ['email', 'role'],
+        properties: {
+          email: { type: 'string', format: 'email', example: 'user@example.com' },
+          role: {
+            type: 'string',
+            enum: allowedRoles,
+            example: allowedRoles[1],
+          },
+        },
+      },
+      AllowlistUpdateRoleRequest: {
+        type: 'object',
+        required: ['role'],
+        properties: {
+          role: {
+            type: 'string',
+            enum: allowedRoles,
+            example: allowedRoles[0],
+          },
+        },
+      },
+      AllowlistRemovalResult: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Allowlist entry removed' },
+        },
+      },
+      AuthGoogleLoginRequest: {
+        type: 'object',
+        required: ['idToken'],
+        properties: {
+          idToken: {
+            type: 'string',
+            description: 'Google ID token obtained from the client SDK.',
+            example: 'ya29.a0AfH6SMCg...',
+          },
+        },
+      },
+      AuthSession: {
+        type: 'object',
+        properties: {
+          email: { type: 'string', format: 'email', example: 'user@example.com' },
+          role: {
+            type: 'string',
+            enum: allowedRoles,
+            example: allowedRoles[1],
+          },
+          expiresAt: {
+            type: 'string',
+            format: 'date-time',
+            example: '2025-01-20T13:45:00.000Z',
+          },
+        },
+      },
+      AuthLogoutResult: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Logged out' },
+        },
+      },
+      AuthDebugReport: {
+        type: 'object',
+        properties: {
+          origin: {
+            type: ['string', 'null'],
+            example: 'https://app.example.com',
+          },
+          hasCookie: { type: 'boolean', example: true },
+          cookieNames: {
+            type: 'array',
+            items: { type: 'string' },
+            example: ['lkdposts_session'],
+          },
+          authenticated: { type: 'boolean', example: true },
+          userIdOrEmail: {
+            type: ['string', 'null'],
+            example: 'user@example.com',
+          },
+          release: {
+            type: ['string', 'null'],
+            example: '2025.01.20-abcdef',
+          },
+        },
+      },
       FeedDuplicateEntry: {
         type: 'object',
         properties: {
@@ -263,6 +358,47 @@ const definition = {
           items: {
             type: 'array',
             items: { $ref: '#/components/schemas/PostListItem' },
+          },
+        },
+      },
+      IngestionDiagnosticEntry: {
+        type: 'object',
+        properties: {
+          itemId: { type: ['integer', 'null'], example: 101 },
+          feedId: { type: ['integer', 'null'], example: 1 },
+          feedTitle: { type: ['string', 'null'], example: 'Example Feed' },
+          itemTitle: { type: ['string', 'null'], example: 'Example item' },
+          canonicalUrl: {
+            type: ['string', 'null'],
+            format: 'uri',
+            example: 'https://example.com/item-101',
+          },
+          publishedAt: {
+            type: ['string', 'null'],
+            format: 'date-time',
+            example: '2025-01-20T10:00:00.000Z',
+          },
+          chosenSource: { type: ['string', 'null'], example: 'rss' },
+          rawDescriptionLength: { type: ['integer', 'null'], example: 240 },
+          bodyHtmlRawLength: { type: ['integer', 'null'], example: 1280 },
+          articleHtmlLength: { type: ['integer', 'null'], example: 1100 },
+          hasBlockTags: { type: ['boolean', 'null'], example: true },
+          looksEscapedHtml: { type: ['boolean', 'null'], example: false },
+          weakContent: { type: ['boolean', 'null'], example: false },
+          articleHtmlPreview: { type: ['string', 'null'], example: '<p>Example</p>' },
+          recordedAt: {
+            type: ['string', 'null'],
+            format: 'date-time',
+            example: '2025-01-20T10:01:30.000Z',
+          },
+        },
+      },
+      IngestionDiagnosticsList: {
+        type: 'object',
+        properties: {
+          items: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/IngestionDiagnosticEntry' },
           },
         },
       },
