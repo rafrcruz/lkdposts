@@ -3,11 +3,13 @@ process.env.CORS_ALLOWED_ORIGINS = process.env.CORS_ALLOWED_ORIGINS || 'http://l
 process.env.ENABLE_METRICS = process.env.ENABLE_METRICS || 'false';
 
 jest.mock('../src/lib/prisma', () => {
+  const { randomUUID } = require('node:crypto');
   const feeds = [];
   const articles = [];
   const posts = [];
   const allowedUsers = [];
   const appParams = [];
+  const prompts = [];
 
   let feedIdCounter = 1;
   let articleIdCounter = 1;
@@ -45,6 +47,24 @@ jest.mock('../src/lib/prisma', () => {
       if (condition.not !== undefined) {
         return !matchesScalar(actual, condition.not);
       }
+
+      if (condition.gt !== undefined && !(actual > condition.gt)) {
+        return false;
+      }
+
+      if (condition.gte !== undefined && !(actual >= condition.gte)) {
+        return false;
+      }
+
+      if (condition.lt !== undefined && !(actual < condition.lt)) {
+        return false;
+      }
+
+      if (condition.lte !== undefined && !(actual <= condition.lte)) {
+        return false;
+      }
+
+      return true;
     }
 
     return actual === condition;
@@ -210,6 +230,50 @@ jest.mock('../src/lib/prisma', () => {
   }
 
   const filterFeeds = (where = {}) => feeds.filter((feed) => matchFeedWhere(feed, where));
+
+  const matchPromptWhere = (prompt, where = {}) => {
+    if (where == null) {
+      return true;
+    }
+
+    if (!matchesScalar(prompt.id, where.id)) {
+      return false;
+    }
+
+    if (!matchesScalar(prompt.userId, where.userId)) {
+      return false;
+    }
+
+    if (!matchesScalar(prompt.position, where.position)) {
+      return false;
+    }
+
+    if (Array.isArray(where.AND) && where.AND.length > 0) {
+      if (!where.AND.every((condition) => matchPromptWhere(prompt, condition))) {
+        return false;
+      }
+    }
+
+    if (Array.isArray(where.OR) && where.OR.length > 0) {
+      if (!where.OR.some((condition) => matchPromptWhere(prompt, condition))) {
+        return false;
+      }
+    }
+
+    if (Array.isArray(where.NOT) && where.NOT.length > 0) {
+      if (where.NOT.some((condition) => matchPromptWhere(prompt, condition))) {
+        return false;
+      }
+    } else if (where.NOT && typeof where.NOT === 'object') {
+      if (matchPromptWhere(prompt, where.NOT)) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const filterPrompts = (where = {}) => prompts.filter((prompt) => matchPromptWhere(prompt, where));
 
   const matchAllowedUserWhere = (user, where = {}) => {
     if (where == null) {
@@ -620,6 +684,145 @@ jest.mock('../src/lib/prisma', () => {
         return clone(removed);
       },
     },
+    prompt: {
+      findMany: async ({ where = {}, orderBy, take, skip } = {}) => {
+        let result = filterPrompts(where);
+
+        if (orderBy) {
+          result = result.slice().sort(orderByComparator(orderBy));
+        } else {
+          result = result.slice();
+        }
+
+        if (typeof skip === 'number' && skip > 0) {
+          result = result.slice(skip);
+        }
+
+        if (typeof take === 'number') {
+          result = take >= 0 ? result.slice(0, take) : [];
+        }
+
+        return result.map(clone);
+      },
+      count: async ({ where = {} } = {}) => filterPrompts(where).length,
+      findUnique: async ({ where, select }) => {
+        if (!where || where.id == null) {
+          return null;
+        }
+
+        const prompt = prompts.find((entry) => entry.id === where.id) || null;
+
+        if (!prompt) {
+          return null;
+        }
+
+        return select ? selectFields(prompt, select) : clone(prompt);
+      },
+      findFirst: async ({ where = {}, orderBy, select } = {}) => {
+        let result = filterPrompts(where);
+
+        if (orderBy) {
+          result = result.slice().sort(orderByComparator(orderBy));
+        }
+
+        const first = result[0] ?? null;
+
+        if (!first) {
+          return null;
+        }
+
+        return select ? selectFields(first, select) : clone(first);
+      },
+      create: async ({ data }) => {
+        const conflict = prompts.some(
+          (entry) => entry.userId === data.userId && entry.position === data.position
+        );
+
+        if (conflict) {
+          throw uniqueConstraintError('Prompt_userId_position_key');
+        }
+
+        const now = new Date();
+        const record = {
+          id: data.id ?? randomUUID(),
+          userId: data.userId,
+          title: data.title,
+          content: data.content,
+          position: data.position,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        prompts.push(record);
+
+        return clone(record);
+      },
+      update: async ({ where, data }) => {
+        if (!where || where.id == null) {
+          throw new Error('Mock prompt.update requires an id in where clause');
+        }
+
+        const index = prompts.findIndex((entry) => entry.id === where.id);
+
+        if (index === -1) {
+          throw new Error('Prompt not found');
+        }
+
+        const current = prompts[index];
+
+        if (Object.hasOwn(data, 'position')) {
+          const targetPosition = data.position;
+          const duplicate = prompts.some(
+            (entry) => entry.id !== current.id && entry.userId === current.userId && entry.position === targetPosition
+          );
+
+          if (duplicate) {
+            throw uniqueConstraintError('Prompt_userId_position_key');
+          }
+        }
+
+        prompts[index] = {
+          ...current,
+          ...data,
+          updatedAt: new Date(),
+        };
+
+        return clone(prompts[index]);
+      },
+      delete: async ({ where }) => {
+        if (!where || where.id == null) {
+          throw new Error('Mock prompt.delete requires an id in where clause');
+        }
+
+        const index = prompts.findIndex((entry) => entry.id === where.id);
+
+        if (index === -1) {
+          throw new Error('Prompt not found');
+        }
+
+        const [removed] = prompts.splice(index, 1);
+
+        return clone(removed);
+      },
+      aggregate: async ({ where = {}, _max } = {}) => {
+        const items = filterPrompts(where);
+        const response = {};
+
+        if (_max) {
+          const maxResult = {};
+
+          if (_max.position) {
+            maxResult.position = items.length === 0 ? null : Math.max(...items.map((item) => item.position));
+          }
+
+          response._max = maxResult;
+        } else {
+          response._max = {};
+        }
+
+        return response;
+      },
+    },
     allowedUser: {
       upsert: async ({ where, update, create }) => {
         const index = allowedUsers.findIndex((user) => user.email === where.email);
@@ -922,6 +1125,7 @@ jest.mock('../src/lib/prisma', () => {
       posts.splice(0, posts.length);
       allowedUsers.splice(0, allowedUsers.length);
       appParams.splice(0, appParams.length);
+      prompts.splice(0, prompts.length);
       feedIdCounter = 1;
       articleIdCounter = 1;
       postIdCounter = 1;

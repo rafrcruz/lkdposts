@@ -199,6 +199,78 @@ const definition = {
           },
         },
       },
+      Prompt: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid', example: '3f4c9f4d-1ce5-4a4b-95f5-1234567890ab' },
+          title: { type: 'string', example: 'Ideias para post semanal' },
+          content: {
+            type: 'string',
+            example: 'Descrever principais aprendizados da sprint.',
+          },
+          position: { type: 'integer', example: 0 },
+          createdAt: {
+            type: 'string',
+            format: 'date-time',
+            example: '2025-01-20T12:34:56.000Z',
+          },
+          updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            example: '2025-01-20T12:34:56.000Z',
+          },
+        },
+      },
+      PromptCreate: {
+        type: 'object',
+        required: ['title', 'content'],
+        properties: {
+          title: { type: 'string', minLength: 1, maxLength: 120, example: 'Nova ideia' },
+          content: {
+            type: 'string',
+            example: 'Conteúdo do prompt que será usado em um post futuro.',
+          },
+          position: {
+            type: 'integer',
+            minimum: 0,
+            description: 'Posição opcional do novo prompt (0-based). Se omitido, é adicionado ao final.',
+          },
+        },
+      },
+      PromptUpdate: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 120,
+            example: 'Título atualizado',
+          },
+          content: {
+            type: 'string',
+            example: 'Novo conteúdo do prompt.',
+          },
+        },
+      },
+      PromptReorderItem: {
+        type: 'object',
+        required: ['id', 'position'],
+        properties: {
+          id: { type: 'string', format: 'uuid', example: '3f4c9f4d-1ce5-4a4b-95f5-1234567890ab' },
+          position: { type: 'integer', minimum: 0, example: 1 },
+        },
+      },
+      PromptReorderRequest: {
+        type: 'object',
+        required: ['items'],
+        properties: {
+          items: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/PromptReorderItem' },
+            minItems: 1,
+          },
+        },
+      },
       FeedDuplicateEntry: {
         type: 'object',
         properties: {
