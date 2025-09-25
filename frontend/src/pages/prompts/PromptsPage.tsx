@@ -1,5 +1,6 @@
 import type { DragEvent, FormEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import * as Sentry from '@sentry/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -87,10 +88,14 @@ const PromptsPage = () => {
   const [pendingScrollId, setPendingScrollId] = useState<number | null>(null);
   const [expandedPromptIds, setExpandedPromptIds] = useState<Set<number>>(new Set());
   const [isContentExpanded, setIsContentExpanded] = useState(false);
+  const [selectedPromptIds, setSelectedPromptIds] = useState<Set<number>>(new Set());
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const contentInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const exportTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastFetchErrorRef = useRef<unknown>(null);
 
   const shouldVirtualize = prompts.length > VIRTUALIZATION_THRESHOLD;
@@ -162,6 +167,53 @@ const PromptsPage = () => {
     virtualizer.measure();
   }, [shouldVirtualize, virtualizer, expandedPromptIds, prompts]);
 
+  useEffect(() => {
+    setSelectedPromptIds((current) => {
+      const next = new Set<number>();
+      prompts.forEach((prompt) => {
+        if (current.has(prompt.id)) {
+          next.add(prompt.id);
+        }
+      });
+
+      if (next.size === current.size && Array.from(current).every((id) => next.has(id))) {
+        return current;
+      }
+
+      return next;
+    });
+  }, [prompts]);
+
+  useEffect(() => {
+    if (!isExportModalOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsExportModalOpen(false);
+        setCopyStatus('idle');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isExportModalOpen]);
+
+  useEffect(() => {
+    if (!isExportModalOpen || !exportTextareaRef.current) {
+      return;
+    }
+
+    const textarea = exportTextareaRef.current;
+    textarea.focus();
+    textarea.select();
+  }, [isExportModalOpen, exportTextareaRef]);
+
   const resetForm = () => {
     setFormMode(null);
     setEditingPrompt(null);
@@ -219,6 +271,44 @@ const PromptsPage = () => {
 
   const handleToggleContentFieldSize = () => {
     setIsContentExpanded((previous) => !previous);
+  };
+
+  const handleTogglePromptSelection = (promptId: number, checked: boolean) => {
+    setSelectedPromptIds((current) => {
+      const next = new Set(current);
+
+      if (checked) {
+        next.add(promptId);
+      } else {
+        next.delete(promptId);
+      }
+
+      return next;
+    });
+  };
+
+  const handleOpenExportModal = () => {
+    setCopyStatus('idle');
+    setIsExportModalOpen(true);
+  };
+
+  const handleCloseExportModal = () => {
+    setIsExportModalOpen(false);
+    setCopyStatus('idle');
+  };
+
+  const handleCopyExportContent = async (content: string) => {
+    if (!content) {
+      setCopyStatus('error');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopyStatus('success');
+    } catch {
+      setCopyStatus('error');
+    }
   };
 
   const validateForm = (): { errors: FormErrors; title: string; content: string } => {
@@ -516,6 +606,16 @@ const PromptsPage = () => {
   const isDeleting = deletePrompt.isPending;
   const deletingId = deletePrompt.variables ?? null;
   const isFormOpen = formMode !== null;
+  const selectedPrompts = useMemo(
+    () => prompts.filter((prompt) => selectedPromptIds.has(prompt.id)),
+    [prompts, selectedPromptIds],
+  );
+  const hasSelection = selectedPrompts.length > 0;
+  const exportContent = useMemo(() => {
+    return selectedPrompts
+      .map((prompt) => `${prompt.title}\n\n${prompt.content}`)
+      .join('\n\n---\n\n');
+  }, [selectedPrompts]);
 
   const loadingSkeletons = useMemo(() => Array.from({ length: 3 }), []);
 
@@ -548,31 +648,42 @@ const PromptsPage = () => {
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-1 flex-col gap-3">
-              <h3 className="text-base font-semibold text-foreground">{prompt.title}</h3>
-              <div className="space-y-2">
-                <div
-                  id={contentElementId}
-                  className={clsx(
-                    'whitespace-pre-wrap break-words text-sm text-muted-foreground',
-                    !isExpanded && shouldShowToggle ? 'line-clamp-3' : '',
-                  )}
-                >
-                  {displayContent}
-                </div>
-                {shouldShowToggle ? (
-                  <button
-                    type="button"
-                    onClick={() => togglePromptExpansion(prompt.id)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary transition hover:text-primary/80"
-                    aria-expanded={isExpanded}
-                    aria-controls={contentElementId}
+            <div className="flex flex-1 gap-3">
+              <div className="pt-1">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/40"
+                  checked={selectedPromptIds.has(prompt.id)}
+                  onChange={(event) => handleTogglePromptSelection(prompt.id, event.target.checked)}
+                  aria-label={t('prompts.selection.toggle', 'Select prompt')}
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-3">
+                <h3 className="text-base font-semibold text-foreground">{prompt.title}</h3>
+                <div className="space-y-2">
+                  <div
+                    id={contentElementId}
+                    className={clsx(
+                      'whitespace-pre-wrap break-words text-sm text-muted-foreground',
+                      !isExpanded && shouldShowToggle ? 'line-clamp-3' : '',
+                    )}
                   >
-                    {isExpanded
-                      ? t('prompts.actions.collapse', 'Collapse')
-                      : t('prompts.actions.expand', 'Expand')}
-                  </button>
-                ) : null}
+                    {displayContent}
+                  </div>
+                  {shouldShowToggle ? (
+                    <button
+                      type="button"
+                      onClick={() => togglePromptExpansion(prompt.id)}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary transition hover:text-primary/80"
+                      aria-expanded={isExpanded}
+                      aria-controls={contentElementId}
+                    >
+                      {isExpanded
+                        ? t('prompts.actions.collapse', 'Collapse')
+                        : t('prompts.actions.expand', 'Expand')}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
             <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
@@ -628,14 +739,24 @@ const PromptsPage = () => {
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={handleOpenCreateForm}
-          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isSaving}
-        >
-          {t('prompts.actions.new', 'New prompt')}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleOpenCreateForm}
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isSaving}
+          >
+            {t('prompts.actions.new', 'New prompt')}
+          </button>
+          <button
+            type="button"
+            onClick={handleOpenExportModal}
+            className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!hasSelection}
+          >
+            {t('prompts.actions.exportSelected', 'Export selected')}
+          </button>
+        </div>
         {reorderPrompts.isPending ? (
           <span className="text-xs text-muted-foreground">
             {t('prompts.reorder.pending', 'Updating order...')}
@@ -847,6 +968,75 @@ const PromptsPage = () => {
           )}
         </div>
       ) : null}
+      {isExportModalOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="export-modal-title"
+                className="w-full max-w-2xl rounded-lg border border-border bg-background p-6 shadow-lg"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <h2 id="export-modal-title" className="text-lg font-semibold text-foreground">
+                      {t('prompts.export.title', 'Export selected prompts')}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {t(
+                        'prompts.export.description',
+                        'Copy the selected prompts to use them in other tools.',
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseExportModal}
+                    className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-muted"
+                  >
+                    {t('prompts.export.close', 'Close')}
+                  </button>
+                </div>
+                <div className="mt-4 space-y-2">
+                  <label htmlFor="export-preview" className="text-sm font-medium text-foreground">
+                    {t('prompts.export.previewLabel', 'Preview')}
+                  </label>
+                  <textarea
+                    id="export-preview"
+                    ref={exportTextareaRef}
+                    value={exportContent}
+                    readOnly
+                    className="h-64 w-full resize-none rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground focus:outline-none"
+                  />
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm">
+                    {copyStatus === 'success' ? (
+                      <p className="text-primary">
+                        {t('prompts.export.copySuccess', 'Copied successfully.')}
+                      </p>
+                    ) : null}
+                    {copyStatus === 'error' ? (
+                      <p className="text-danger">
+                        {t('prompts.export.copyError', 'Failed to copy. Copy manually.')}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleCopyExportContent(exportContent);
+                    }}
+                    className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+                  >
+                    {t('prompts.export.copy', 'Copy')}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </section>
   );
 };
