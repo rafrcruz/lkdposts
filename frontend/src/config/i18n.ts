@@ -53,6 +53,22 @@ const resources = {
           delete: 'Delete',
           deleting: 'Deleting...',
           retry: 'Try again',
+          duplicate: 'Duplicate',
+          duplicating: 'Duplicating...',
+          exportSelected: 'Export selected',
+          collapse: 'Collapse',
+          expand: 'Expand',
+        },
+        selection: {
+          toggle: 'Select prompt',
+        },
+        filter: {
+          status: {
+            label: 'Status filter',
+            all: 'All',
+            enabled: 'Enabled',
+            disabled: 'Disabled',
+          },
         },
         form: {
           createTitle: 'Create prompt',
@@ -61,6 +77,8 @@ const resources = {
           contentLabel: 'Content',
           save: 'Save prompt',
           saving: 'Saving...',
+          expandContent: 'Expand editor area',
+          collapseContent: 'Reduce editor height',
           errors: {
             titleRequired: 'Enter a title.',
             titleMax: 'Title must be 120 characters or fewer.',
@@ -71,6 +89,7 @@ const resources = {
           error: 'We could not load the prompts. Try again.',
           reorderHint: 'Drag the handle or card to change the order.',
           dragLabel: 'Drag to reposition this prompt.',
+          ariaLabel: 'Saved prompts',
         },
         empty: {
           title: 'No prompt registered yet.',
@@ -84,6 +103,7 @@ const resources = {
           error: 'The operation failed. Try again.',
           enabled: 'Prompt enabled.',
           disabled: 'Prompt disabled.',
+          duplicated: 'Prompt duplicated successfully.',
         },
         delete: {
           confirm: 'Are you sure you want to delete this prompt?',
@@ -109,6 +129,16 @@ const resources = {
           copySuccess: 'Copied successfully.',
           copyError: 'Failed to copy. Copy manually.',
           disabledWarning: 'Disabled prompts are not exported.',
+        },
+        search: {
+          label: 'Search prompts',
+          placeholder: 'Search by title or content',
+          noResults: 'No prompts found.',
+          noResultsWithSearch: 'No prompts found for this search.',
+          noEnabled: 'No enabled prompts found.',
+          noEnabledWithSearch: 'No enabled prompts found for this search.',
+          noDisabled: 'No disabled prompts found.',
+          noDisabledWithSearch: 'No disabled prompts found for this search.',
         },
       },
       feeds: {
@@ -470,6 +500,22 @@ const resources = {
           delete: 'Excluir',
           deleting: 'Excluindo...',
           retry: 'Tentar novamente',
+          duplicate: 'Duplicar',
+          duplicating: 'Duplicando...',
+          exportSelected: 'Exportar selecionados',
+          collapse: 'Recolher',
+          expand: 'Expandir',
+        },
+        selection: {
+          toggle: 'Selecionar prompt',
+        },
+        filter: {
+          status: {
+            label: 'Filtro de status',
+            all: 'Todos',
+            enabled: 'Ativos',
+            disabled: 'Inativos',
+          },
         },
         form: {
           createTitle: 'Criar prompt',
@@ -478,6 +524,8 @@ const resources = {
           contentLabel: 'Conteudo',
           save: 'Salvar prompt',
           saving: 'Salvando...',
+          expandContent: 'Expandir area do editor',
+          collapseContent: 'Reduzir altura do editor',
           errors: {
             titleRequired: 'Informe um titulo.',
             titleMax: 'O titulo deve ter no maximo 120 caracteres.',
@@ -488,6 +536,7 @@ const resources = {
           error: 'Nao foi possivel carregar os prompts. Tente novamente.',
           reorderHint: 'Arraste o card ou o manipulador para alterar a ordem.',
           dragLabel: 'Arraste para reposicionar este prompt.',
+          ariaLabel: 'Prompts salvos',
         },
         empty: {
           title: 'Nenhum prompt cadastrado ainda.',
@@ -501,6 +550,7 @@ const resources = {
           error: 'A operacao falhou. Tente novamente.',
           enabled: 'Prompt habilitado.',
           disabled: 'Prompt desabilitado.',
+          duplicated: 'Prompt duplicado com sucesso.',
         },
         delete: {
           confirm: 'Tem certeza de que deseja excluir este prompt?',
@@ -526,6 +576,16 @@ const resources = {
           copySuccess: 'Copiado com sucesso.',
           copyError: 'Falha ao copiar. Copie manualmente.',
           disabledWarning: 'Itens desabilitados nao sao exportados.',
+        },
+        search: {
+          label: 'Buscar prompts',
+          placeholder: 'Busque por titulo ou conteudo',
+          noResults: 'Nenhum prompt encontrado.',
+          noResultsWithSearch: 'Nenhum prompt encontrado para esta busca.',
+          noEnabled: 'Nenhum prompt ativo encontrado.',
+          noEnabledWithSearch: 'Nenhum prompt ativo encontrado para esta busca.',
+          noDisabled: 'Nenhum prompt inativo encontrado.',
+          noDisabledWithSearch: 'Nenhum prompt inativo encontrado para esta busca.',
         },
       },
       feeds: {
