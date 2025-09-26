@@ -2,20 +2,34 @@ const ApiError = require('../utils/api-error');
 const { Sentry } = require('../lib/sentry');
 const appParamsRepository = require('../repositories/app-params.repository');
 
+const OPENAI_MODEL_OPTIONS = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'];
+const DEFAULT_OPENAI_MODEL = 'gpt-5-nano';
+
 const DEFAULT_APP_PARAMS = {
   postsRefreshCooldownSeconds: 3600,
   postsTimeWindowDays: 7,
+  openAiModel: DEFAULT_OPENAI_MODEL,
 };
 
 const toDomainModel = (record) => ({
   postsRefreshCooldownSeconds: record.postsRefreshCooldownSeconds,
   postsTimeWindowDays: record.postsTimeWindowDays,
+  openAiModel:
+    typeof record.openAiModel === 'string' && OPENAI_MODEL_OPTIONS.includes(record.openAiModel)
+      ? record.openAiModel
+      : DEFAULT_OPENAI_MODEL,
   updatedAt: record.updatedAt instanceof Date ? record.updatedAt : new Date(record.updatedAt),
   updatedBy: record.updatedBy ?? null,
 });
 
 const ensureDefaultAppParams = async () => {
   const record = await appParamsRepository.ensureDefaultSingleton(DEFAULT_APP_PARAMS);
+
+  if (typeof record.openAiModel !== 'string' || !OPENAI_MODEL_OPTIONS.includes(record.openAiModel)) {
+    const updated = await appParamsRepository.updateSingleton({ openAiModel: DEFAULT_OPENAI_MODEL });
+    return toDomainModel(updated);
+  }
+
   return toDomainModel(record);
 };
 
@@ -57,9 +71,32 @@ const validateTimeWindow = (value) => {
   }
 };
 
+const validateOpenAiModel = (value) => {
+  if (typeof value !== 'string') {
+    throw new ApiError({
+      statusCode: 400,
+      code: 'INVALID_OPENAI_MODEL',
+      message: 'openai.model must be a string',
+    });
+  }
+
+  const normalized = value.trim();
+
+  if (!OPENAI_MODEL_OPTIONS.includes(normalized)) {
+    throw new ApiError({
+      statusCode: 400,
+      code: 'UNSUPPORTED_OPENAI_MODEL',
+      message: `openai.model must be one of: ${OPENAI_MODEL_OPTIONS.join(', ')}`,
+    });
+  }
+
+  return normalized;
+};
+
 const updateAppParams = async ({ updates, updatedBy }) => {
   const current = await ensureDefaultAppParams();
   const changes = {};
+  let openAiModelChanged = false;
 
   if (Object.hasOwn(updates, 'posts_refresh_cooldown_seconds')) {
     const cooldown = updates.posts_refresh_cooldown_seconds;
@@ -71,6 +108,15 @@ const updateAppParams = async ({ updates, updatedBy }) => {
     const windowDays = updates.posts_time_window_days;
     validateTimeWindow(windowDays);
     changes.postsTimeWindowDays = windowDays;
+  }
+
+  if (Object.hasOwn(updates, 'openai.model')) {
+    const model = validateOpenAiModel(updates['openai.model']);
+
+    if (model !== current.openAiModel) {
+      changes.openAiModel = model;
+      openAiModelChanged = true;
+    }
   }
 
   if (Object.keys(changes).length === 0) {
@@ -100,6 +146,14 @@ const updateAppParams = async ({ updates, updatedBy }) => {
       message: 'Application parameters updated',
       data: breadcrumbData,
     });
+
+    if (openAiModelChanged) {
+      Sentry.addBreadcrumb({
+        category: 'settings',
+        level: 'info',
+        message: 'openai.model updated',
+      });
+    }
   } catch (error) {
     console.warn('Failed to add Sentry breadcrumb for app params update', error);
   }
@@ -114,6 +168,10 @@ const updateAppParams = async ({ updates, updatedBy }) => {
     changeLog.posts_time_window_days = changes.postsTimeWindowDays;
   }
 
+  if (openAiModelChanged && Object.hasOwn(updates, 'openai.model')) {
+    changeLog['openai.model'] = changes.openAiModel;
+  }
+
   console.info('app-params updated by %s', breadcrumbData.updatedBy, {
     changed: changeLog,
   });
@@ -121,9 +179,23 @@ const updateAppParams = async ({ updates, updatedBy }) => {
   return updated;
 };
 
+const getOpenAIModel = async () => {
+  const params = await ensureDefaultAppParams();
+  const model = params.openAiModel;
+
+  if (!OPENAI_MODEL_OPTIONS.includes(model)) {
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  return model;
+};
+
 module.exports = {
+  OPENAI_MODEL_OPTIONS,
+  DEFAULT_OPENAI_MODEL,
   DEFAULT_APP_PARAMS,
   ensureDefaultAppParams,
   getAppParams,
   updateAppParams,
+  getOpenAIModel,
 };

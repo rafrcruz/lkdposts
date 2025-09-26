@@ -5,6 +5,7 @@ const mapToResponse = (params) => {
   const payload = {
     posts_refresh_cooldown_seconds: params.postsRefreshCooldownSeconds,
     posts_time_window_days: params.postsTimeWindowDays,
+    'openai.model': params.openAiModel,
     updated_at:
       params.updatedAt instanceof Date ? params.updatedAt.toISOString() : new Date(params.updatedAt).toISOString(),
   };

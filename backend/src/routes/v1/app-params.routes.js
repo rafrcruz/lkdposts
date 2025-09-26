@@ -37,6 +37,7 @@ const router = express.Router();
  *                   data:
  *                     posts_refresh_cooldown_seconds: 3600
  *                     posts_time_window_days: 7
+ *                     'openai.model': gpt-5-nano
  *                     updated_at: '2025-01-20T12:34:56.000Z'
  *                   meta:
  *                     requestId: 00000000-0000-4000-8000-000000000000
@@ -63,6 +64,10 @@ const router = express.Router();
  *               posts_time_window_days:
  *                 type: integer
  *                 minimum: 1
+ *               'openai.model':
+ *                 type: string
+ *                 enum: [gpt-5, gpt-5-mini, gpt-5-nano]
+ *                 description: Modelo da OpenAI utilizado na geração dos posts.
  *           examples:
  *             updateCooldown:
  *               summary: Ajuste de cooldown
@@ -87,6 +92,7 @@ const router = express.Router();
  *                   data:
  *                     posts_refresh_cooldown_seconds: 1800
  *                     posts_time_window_days: 7
+ *                     'openai.model': gpt-5
  *                     updated_at: '2025-01-21T09:15:00.000Z'
  *                     updated_by: admin@example.com
  *                   meta:
@@ -119,6 +125,9 @@ const router = express.Router();
  *               posts_time_window_days:
  *                 type: integer
  *                 minimum: 1
+ *               'openai.model':
+ *                 type: string
+ *                 enum: [gpt-5, gpt-5-mini, gpt-5-nano]
  *     responses:
  *       '200':
  *         description: Parâmetros atualizados com sucesso

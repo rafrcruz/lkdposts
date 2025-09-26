@@ -527,6 +527,7 @@ jest.mock('../src/lib/prisma', () => {
           id: data.id ?? 1,
           postsRefreshCooldownSeconds: data.postsRefreshCooldownSeconds,
           postsTimeWindowDays: data.postsTimeWindowDays,
+          openAiModel: data.openAiModel ?? 'gpt-5-nano',
           updatedBy: data.updatedBy ?? null,
           createdAt: now,
           updatedAt: now,
@@ -552,6 +553,10 @@ jest.mock('../src/lib/prisma', () => {
 
         if (data.postsTimeWindowDays !== undefined) {
           updated.postsTimeWindowDays = data.postsTimeWindowDays;
+        }
+
+        if (data.openAiModel !== undefined) {
+          updated.openAiModel = data.openAiModel;
         }
 
         if (data.updatedBy !== undefined) {
