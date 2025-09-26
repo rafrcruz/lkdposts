@@ -9,7 +9,7 @@ import {
   type RefreshSummary,
 } from '../types/post';
 
-import { getJson, getJsonWithMeta, postJson } from '@/lib/api/http';
+import { getJson, getJsonWithMeta, postJson, HttpError } from '@/lib/api/http';
 import { postRequestPreviewSchema, type PostRequestPreview } from '../types/post-preview';
 
 export const POSTS_QUERY_KEY = ['posts'] as const;
@@ -76,9 +76,17 @@ export const fetchPostRequestPreview = async (
   }
 
   const query = searchParams.toString();
-  const path = query
-    ? `/api/v1/admin/news/preview-payload?${query}`
-    : '/api/v1/admin/news/preview-payload';
+  const buildPath = (basePath: string) => (query ? `${basePath}?${query}` : basePath);
+  const primaryPath = buildPath('/api/v1/posts/preview-payload');
+  const fallbackPath = buildPath('/api/v1/admin/news/preview-payload');
 
-  return getJson(path, postRequestPreviewSchema);
+  try {
+    return await getJson(primaryPath, postRequestPreviewSchema);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 404) {
+      return getJson(fallbackPath, postRequestPreviewSchema);
+    }
+
+    throw error;
+  }
 };

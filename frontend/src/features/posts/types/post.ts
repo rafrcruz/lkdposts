@@ -21,9 +21,10 @@ export const postGenerationMetadataSchema = z
     tokensInput: z.number().int().nonnegative().nullable(),
     tokensOutput: z.number().int().nonnegative().nullable(),
     promptBaseHash: z.string().nullable(),
-    attemptCount: z.number().int().nonnegative(),
+    attemptCount: z.number().int().nonnegative().nullable(),
     updatedAt: z.string().nullable(),
   })
+  .partial()
   .nullable();
 
 export const postListItemSchema = z
@@ -33,7 +34,7 @@ export const postListItemSchema = z
     contentSnippet: z.string(),
     publishedAt: z.string(),
     feed: postFeedReferenceSchema,
-    post: postGenerationMetadataSchema,
+    post: postGenerationMetadataSchema.nullable().optional(),
   })
   .extend({
     link: z.string().nullable().optional(),

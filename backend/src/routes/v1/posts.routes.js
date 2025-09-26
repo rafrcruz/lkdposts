@@ -1,8 +1,10 @@
 const express = require('express');
 
 const postsController = require('../../controllers/posts.controller');
+const newsGenerationController = require('../../controllers/admin/news-generation.controller');
 const { validateRequest } = require('../../middlewares/validate-request');
 const { listPostsQuerySchema } = require('../../schemas/posts.schema');
+const { previewPayloadQuerySchema } = require('../../schemas/news.schema');
 
 const router = express.Router();
 
@@ -113,6 +115,81 @@ router.post('/posts/refresh', postsController.refresh);
  *         $ref: '#/components/responses/Unauthorized'
  */
 router.post('/posts/cleanup', postsController.cleanup);
+
+/**
+ * @openapi
+ * /api/v1/posts/preview-payload:
+ *   get:
+ *     summary: Build the prompt payload for the next eligible news article
+ *     description: Retorna os prompts concatenados e o payload de notícia que seria enviado para a IA na próxima geração.
+ *     tags:
+ *       - Posts
+ *     security:
+ *       - SessionCookie: []
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: news_id
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: ID da notícia desejada. Quando omitido, seleciona a próxima notícia elegível automaticamente.
+ *     responses:
+ *       '200':
+ *         description: Preview gerado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Envelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/PostRequestPreview'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     prompt_base: "Titulo A\n\nConteudo A"
+ *                     prompt_base_hash: e3b0c44298fc1b...
+ *                     model: gpt-5-nano
+ *                     news_payload:
+ *                       article:
+ *                         id: 1
+ *                         title: Notícia exemplo
+ *                         contentSnippet: Resumo da notícia
+ *                         articleHtml: '<p>Notícia</p>'
+ *                         link: https://example.com/noticia
+ *                         guid: guid-1
+ *                         publishedAt: '2025-01-20T12:00:00.000Z'
+ *                         feed:
+ *                           id: 1
+ *                           title: Feed principal
+ *                           url: https://example.com/rss.xml
+ *                       message:
+ *                         role: user
+ *                         content:
+ *                           - type: text
+ *                             text: |
+ *                               Notícia ID interno: 1
+ *                               Feed: Feed principal · URL: https://example.com/rss.xml
+ *                               Título: Notícia exemplo
+ *                               Publicado em: 2025-01-20T12:00:00.000Z
+ *                               Resumo: Resumo da notícia
+ *                               Instrução final: gerar um post para LinkedIn com base na notícia e no contexto acima.
+ *                   meta:
+ *                     requestId: 00000000-0000-4000-8000-000000000000
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '401':
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+router.get(
+  '/posts/preview-payload',
+  validateRequest({ query: previewPayloadQuerySchema }),
+  newsGenerationController.previewPayload,
+);
 
 /**
  * @openapi

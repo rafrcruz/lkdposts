@@ -20,6 +20,11 @@ const TOKENS = {
   user: 'token-user',
 };
 
+const PREVIEW_ROUTES = [
+  { name: 'Admin news preview API', path: '/api/v1/admin/news/preview-payload', requiresAdmin: true },
+  { name: 'Posts preview API', path: '/api/v1/posts/preview-payload', requiresAdmin: false },
+];
+
 const sessionForUser = (userId, email, role) => ({
   session: {
     id: `session-${userId}`,
@@ -36,7 +41,7 @@ const sessionForUser = (userId, email, role) => ({
 
 const withAuth = (token, req) => req.set('Origin', ORIGIN).set('Authorization', `Bearer ${token}`);
 
-describe('Admin news preview API', () => {
+describe.each(PREVIEW_ROUTES)('$name', ({ path, requiresAdmin }) => {
   let adminUser;
   let regularUser;
 
@@ -92,6 +97,8 @@ describe('Admin news preview API', () => {
       },
     });
 
+  const buildRequest = () => request(app).get(path);
+
   it('returns preview for the first eligible article when news_id is omitted', async () => {
     const ownerKey = String(adminUser.id);
     const now = Date.now();
@@ -116,7 +123,7 @@ describe('Admin news preview API', () => {
       dedupeKey: 'dedupe-newer',
     });
 
-    const response = await withAuth(TOKENS.admin, request(app).get('/api/v1/admin/news/preview-payload'))
+    const response = await withAuth(TOKENS.admin, buildRequest())
       .expect('Content-Type', /json/)
       .expect(200);
 
@@ -152,10 +159,7 @@ describe('Admin news preview API', () => {
       dedupeKey: 'dedupe-second',
     });
 
-    const response = await withAuth(
-      TOKENS.admin,
-      request(app).get('/api/v1/admin/news/preview-payload').query({ news_id: targetArticle.id }),
-    )
+    const response = await withAuth(TOKENS.admin, buildRequest().query({ news_id: targetArticle.id }))
       .expect('Content-Type', /json/)
       .expect(200);
 
@@ -187,7 +191,7 @@ describe('Admin news preview API', () => {
       },
     });
 
-    const response = await withAuth(TOKENS.admin, request(app).get('/api/v1/admin/news/preview-payload'))
+    const response = await withAuth(TOKENS.admin, buildRequest())
       .expect('Content-Type', /json/)
       .expect(200);
 
@@ -198,29 +202,49 @@ describe('Admin news preview API', () => {
     await createPrompt({ userId: adminUser.id, title: 'Prompt', content: 'Conteúdo', position: 0 });
     await createFeed({ ownerKey: String(adminUser.id) });
 
-    const response = await withAuth(
-      TOKENS.admin,
-      request(app).get('/api/v1/admin/news/preview-payload').query({ news_id: 999 }),
-    )
+    const response = await withAuth(TOKENS.admin, buildRequest().query({ news_id: 999 }))
       .expect('Content-Type', /json/)
       .expect(404);
 
     expect(response.body.error.code).toBe('NEWS_NOT_FOUND');
   });
 
-  it('returns forbidden for non-admin users', async () => {
-    await createPrompt({ userId: adminUser.id, title: 'Prompt', content: 'Conteúdo', position: 0 });
-    await createFeed({ ownerKey: String(adminUser.id) });
+  if (requiresAdmin) {
+    it('returns forbidden for non-admin users', async () => {
+      await createPrompt({ userId: adminUser.id, title: 'Prompt', content: 'Conteúdo', position: 0 });
+      await createFeed({ ownerKey: String(adminUser.id) });
 
-    const response = await withAuth(TOKENS.user, request(app).get('/api/v1/admin/news/preview-payload'))
-      .expect('Content-Type', /json/)
-      .expect(403);
+      const response = await withAuth(TOKENS.user, buildRequest())
+        .expect('Content-Type', /json/)
+        .expect(403);
 
-    expect(response.body.error.code).toBe('FORBIDDEN');
-  });
+      expect(response.body.error.code).toBe('FORBIDDEN');
+    });
+  } else {
+    it('allows regular users to preview their own news payload', async () => {
+      const ownerKey = String(regularUser.id);
+      const now = Date.now();
+      await createPrompt({ userId: regularUser.id, title: 'Prompt usuário', content: 'Conteúdo user', position: 0 });
+      const feed = await createFeed({ ownerKey, title: 'Feed do usuário' });
+      const userArticle = await createArticle({
+        feedId: feed.id,
+        title: 'Notícia do usuário',
+        publishedAt: new Date(now - 30 * 60 * 1000),
+        guid: 'guid-user',
+        dedupeKey: 'dedupe-user',
+      });
+
+      const response = await withAuth(TOKENS.user, buildRequest())
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data.news_payload.article.id).toBe(userArticle.id);
+      expect(response.body.data.prompt_base).toContain('Prompt usuário');
+    });
+  }
 
   it('returns unauthorized when missing credentials', async () => {
-    const response = await request(app).get('/api/v1/admin/news/preview-payload')
+    const response = await buildRequest()
       .set('Origin', ORIGIN)
       .expect('Content-Type', /json/)
       .expect(401);
