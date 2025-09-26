@@ -93,6 +93,18 @@ const findAllWithinWindowForOwner = ({ ownerKey, windowStart, currentTime }) =>
     },
   });
 
+const findByIdForOwner = ({ id, ownerKey }) =>
+  prisma.article.findFirst({
+    where: {
+      id,
+      feed: { ownerKey },
+    },
+    include: {
+      post: true,
+      feed: { select: { id: true, title: true, url: true } },
+    },
+  });
+
 module.exports = {
   findExistingDedupeKeys,
   create,
@@ -101,4 +113,5 @@ module.exports = {
   deleteManyByIds,
   findRecentForOwner,
   findAllWithinWindowForOwner,
+  findByIdForOwner,
 };

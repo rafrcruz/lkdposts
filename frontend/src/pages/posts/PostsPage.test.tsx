@@ -15,6 +15,7 @@ import {
 } from '@/features/posts/hooks/usePosts';
 import type { PostListResponse } from '@/features/posts/api/posts';
 import type { CleanupResult, PostListItem, RefreshSummary } from '@/features/posts/types/post';
+import type { PostRequestPreview } from '@/features/posts/types/post-preview';
 import { useFeedList } from '@/features/feeds/hooks/useFeeds';
 import type { FeedListResponse } from '@/features/feeds/api/feeds';
 import type { Feed } from '@/features/feeds/types/feed';
@@ -23,11 +24,13 @@ import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { AuthContextValue } from '@/features/auth/context/AuthContext';
 import { useAppParams } from '@/features/app-params/hooks/useAppParams';
 import type { AppParams } from '@/features/app-params/types/appParams';
+import { usePostRequestPreview } from '@/features/posts/hooks/usePostRequestPreview';
 
 vi.mock('@/features/posts/hooks/usePosts');
 vi.mock('@/features/feeds/hooks/useFeeds');
 vi.mock('@/features/auth/hooks/useAuth');
 vi.mock('@/features/app-params/hooks/useAppParams');
+vi.mock('@/features/posts/hooks/usePostRequestPreview');
 
 const mockedUsePostList = vi.mocked(usePostList);
 const mockedUseRefreshPosts = vi.mocked(useRefreshPosts);
@@ -35,6 +38,7 @@ const mockedUseCleanupPosts = vi.mocked(useCleanupPosts);
 const mockedUseFeedList = vi.mocked(useFeedList);
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedUseAppParams = vi.mocked(useAppParams);
+const mockedUsePostRequestPreview = vi.mocked(usePostRequestPreview);
 
 type PostOverride = Partial<Omit<PostListItem, 'post'>> & {
   post?: Partial<NonNullable<PostListItem['post']>> | null;
@@ -272,6 +276,8 @@ const renderPage = () =>
 describe('PostsPage', () => {
   let refreshMutateAsync: Mock;
   let cleanupMutateAsync: Mock;
+  let previewMutateAsync: Mock;
+  let previewMutationResult: UseMutationResult<PostRequestPreview, HttpError, { newsId?: number }>;
 
   beforeEach(() => {
     if (typeof window !== 'undefined' && window.sessionStorage) {
@@ -306,6 +312,11 @@ describe('PostsPage', () => {
 
     mockedUseRefreshPosts.mockReturnValue(createMutationResult(refreshMutateAsync));
     mockedUseCleanupPosts.mockReturnValue(createMutationResult(cleanupMutateAsync));
+    previewMutateAsync = vi.fn(() => Promise.resolve());
+    previewMutationResult = createMutationResult<PostRequestPreview, { newsId?: number }>(previewMutateAsync, {
+      data: undefined,
+    });
+    mockedUsePostRequestPreview.mockReturnValue(previewMutationResult);
 
     mockedUsePostList.mockImplementation((params: PostListParams) => {
       if (!params.enabled) {
@@ -534,6 +545,82 @@ describe('PostsPage', () => {
       expect(refreshMutateAsync).toHaveBeenCalledTimes(2);
       expect(readMetricValue('Atualizacoes (sessao)')).toBe('1');
     });
+  });
+
+  it('does not render preview button for non-admin users', async () => {
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({ user: { email: 'user@example.com', role: 'user', expiresAt: '2024-01-01T00:00:00.000Z' } }),
+    );
+
+    renderPage();
+
+    await screen.findByRole('button', { name: /Refresh|Atualizar/i });
+    expect(screen.queryByRole('button', { name: /Post Request Preview/i })).not.toBeInTheDocument();
+  });
+
+  it('shows preview button for admin and loads preview payload', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({
+        user: { email: 'admin@example.com', role: 'admin', expiresAt: '2024-01-01T00:00:00.000Z' },
+      }),
+    );
+
+    const previewResponse: PostRequestPreview = {
+      prompt_base: 'Prompt base example',
+      prompt_base_hash: 'hash-preview',
+      news_payload: {
+        article: {
+          id: 42,
+          title: 'News title',
+          contentSnippet: 'Summary example',
+          articleHtml: null,
+          link: 'https://example.com/article',
+          guid: 'guid-1',
+          publishedAt: '2024-01-01T00:00:00.000Z',
+          feed: { id: 10, title: 'Feed Admin', url: 'https://example.com/feed' },
+        },
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Context example' }],
+        },
+        context: 'Context example',
+      },
+      model: 'gpt-4o-mini',
+    };
+
+    previewMutateAsync.mockImplementation(async () => {
+      previewMutationResult.data = previewResponse;
+      previewMutationResult.isSuccess = true;
+      previewMutationResult.status = 'success';
+      return previewResponse;
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    const previewButtonLabel = i18n.t('posts.preview.openButton');
+    const previewButton = await screen.findByRole('button', {
+      name: new RegExp(previewButtonLabel, 'i'),
+    });
+    await user.click(previewButton);
+
+    await waitFor(() => {
+      expect(previewMutateAsync).toHaveBeenCalledWith({ newsId: undefined });
+    });
+
+    const dialogTitle = i18n.t('posts.preview.modalTitle');
+    const dialog = await screen.findByRole('dialog', {
+      name: new RegExp(dialogTitle, 'i'),
+    });
+    expect(within(dialog).getByText('hash-preview')).toBeInTheDocument();
+    expect(within(dialog).getByText('Prompt base example')).toBeInTheDocument();
+    expect(within(dialog).getByText('Context example')).toBeInTheDocument();
+    expect(within(dialog).getByText('Summary example')).toBeInTheDocument();
+    expect(within(dialog).getByText('https://example.com/article')).toBeInTheDocument();
   });
 
   it('records cooldown blocks in diagnostics when refresh is attempted too early', async () => {

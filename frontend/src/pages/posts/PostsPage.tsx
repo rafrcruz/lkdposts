@@ -1,5 +1,6 @@
 import type { ChangeEvent, Dispatch, JSX, SetStateAction } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as Sentry from '@sentry/react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
@@ -11,6 +12,8 @@ import type {
   RefreshFeedSummary,
   RefreshSummary,
 } from '@/features/posts/types/post';
+import { usePostRequestPreview } from '@/features/posts/hooks/usePostRequestPreview';
+import type { PostRequestPreview } from '@/features/posts/types/post-preview';
 import { useFeedList } from '@/features/feeds/hooks/useFeeds';
 import type { Feed } from '@/features/feeds/types/feed';
 import { EmptyState } from '@/components/feedback/EmptyState';
@@ -45,6 +48,8 @@ type RefreshAggregates = {
 };
 
 type TranslateFunction = ReturnType<typeof useTranslation>['t'];
+
+type CopyFeedback = { type: 'success' | 'error'; message: string } | null;
 
 const useDocumentTitle = (title: string) => {
   useEffect(() => {
@@ -515,6 +520,23 @@ const resolveOperationErrorMessage = (error: unknown, t: ReturnType<typeof useTr
   return t('posts.errors.generic', 'The operation failed. Try again.');
 };
 
+const resolvePreviewErrorMessage = (error: unknown, t: ReturnType<typeof useTranslation>['t']) => {
+  if (error instanceof HttpError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    const normalized = error.message.toLowerCase();
+    if (NETWORK_ERROR_KEYWORDS.some((keyword) => normalized.includes(keyword))) {
+      return t('posts.preview.errors.network', 'We could not load the preview. Check your connection and try again.');
+    }
+
+    return error.message;
+  }
+
+  return t('posts.preview.errors.generic', 'We could not load the preview. Try again.');
+};
+
 const PostsPage = () => {
   const { t } = useTranslation();
   const locale = useLocale();
@@ -543,6 +565,10 @@ const PostsPage = () => {
   const [listWindowDays, setListWindowDays] = useState(postsTimeWindowDays);
   const [cooldownNotice, setCooldownNotice] = useState<string | null>(null);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const previewMutation = usePostRequestPreview();
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewCopyFeedback, setPreviewCopyFeedback] = useState<CopyFeedback>(null);
+  const [lastPreviewRequest, setLastPreviewRequest] = useState<number | null>(null);
 
   const cooldownNoticeTimeoutRef = useRef<number | null>(null);
   const cooldownIntervalRef = useRef<number | null>(null);
@@ -583,6 +609,22 @@ const PostsPage = () => {
 
   const { mutateAsync: refreshPostsAsync } = useRefreshPosts();
   const { mutateAsync: cleanupPostsAsync } = useCleanupPosts();
+  const previewData: PostRequestPreview | null = previewMutation.data ?? null;
+  const previewNewsPayload = previewData?.news_payload ?? null;
+  const previewPrefix = previewData?.prompt_base ?? '';
+  const previewHash = previewData?.prompt_base_hash ?? '';
+  const previewModel = previewData?.model ?? null;
+  const previewContext = previewNewsPayload?.context ?? '';
+  const previewArticle = previewNewsPayload?.article ?? null;
+  const previewFeedLabel = previewArticle ? resolveArticleFeedLabel(previewArticle.feed, t) : null;
+  const previewPublishedAt = previewArticle?.publishedAt ? formatDate(previewArticle.publishedAt, locale) : null;
+  const previewCombinedText = [previewPrefix, previewContext]
+    .filter((segment) => typeof segment === 'string' && segment.trim().length > 0)
+    .join('\n\n');
+  const previewErrorMessage = previewMutation.error
+    ? resolvePreviewErrorMessage(previewMutation.error, t)
+    : null;
+  const previewIsLoading = previewMutation.isPending;
 
   const handleRefreshSettled = useCallback(
     (result: PromiseSettledResult<RefreshSummary>) => {
@@ -606,6 +648,65 @@ const PostsPage = () => {
 
       setCleanupResult(null);
       setCleanupError(resolveOperationErrorMessage(result.reason, t));
+    },
+    [t],
+  );
+
+  const handleOpenPreview = useCallback(
+    async (newsId?: number) => {
+      if (!isAdmin) {
+        return;
+      }
+
+      setPreviewCopyFeedback(null);
+      setLastPreviewRequest(typeof newsId === 'number' ? newsId : null);
+      previewMutation.reset();
+      setIsPreviewModalOpen(true);
+
+      try {
+        await previewMutation.mutateAsync({ newsId });
+      } catch (error) {
+        if (error instanceof Error && process.env.NODE_ENV !== 'test') {
+          console.warn('Failed to load post request preview', error);
+        }
+      }
+    },
+    [isAdmin, previewMutation],
+  );
+
+  const handleClosePreview = useCallback(() => {
+    setIsPreviewModalOpen(false);
+    setPreviewCopyFeedback(null);
+    previewMutation.reset();
+  }, [previewMutation]);
+
+  const handleCopyPreviewContent = useCallback(
+    async (value: string, successMessage: string) => {
+      if (!value) {
+        setPreviewCopyFeedback({
+          type: 'error',
+          message: t('posts.preview.copyEmpty', 'Nothing to copy.'),
+        });
+        return;
+      }
+
+      if (typeof navigator === 'undefined' || !navigator.clipboard) {
+        setPreviewCopyFeedback({
+          type: 'error',
+          message: t('posts.preview.copyUnsupported', 'Copy is not available in this browser.'),
+        });
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(value);
+        setPreviewCopyFeedback({ type: 'success', message: successMessage });
+      } catch {
+        setPreviewCopyFeedback({
+          type: 'error',
+          message: t('posts.preview.copyError', 'Copy failed. Copy manually.'),
+        });
+      }
     },
     [t],
   );
@@ -1093,6 +1194,19 @@ const PostsPage = () => {
           >
             {isSyncing ? t('posts.actions.refreshing', 'Refreshing...') : t('posts.actions.refresh', 'Refresh')}
           </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => handleOpenPreview()}
+              disabled={previewIsLoading}
+              aria-disabled={previewIsLoading}
+            >
+              {previewIsLoading
+                ? t('posts.preview.loadingShort', 'Loading preview...')
+                : t('posts.preview.openButton', 'Post Request Preview')}
+            </button>
+          ) : null}
           {cooldownNotice ? (
             <span className="text-xs text-warning" role="status">
               {cooldownNotice}
@@ -1352,6 +1466,8 @@ const PostsPage = () => {
         onPreviousPage={handlePreviousPage}
         onToggleSection={toggleSection}
         onTryAgain={() => runSequence()}
+        onPreviewRequest={handleOpenPreview}
+        isPreviewLoading={previewIsLoading}
         posts={posts}
         selectedFeedId={selectedFeedId}
         t={t}
@@ -1359,6 +1475,207 @@ const PostsPage = () => {
         feedListIsSuccess={feedList.isSuccess}
         formattedTimeWindowDays={formattedTimeWindowDays}
       />
+
+      {isPreviewModalOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="post-request-preview-title"
+                className="flex max-h-[90vh] w-full max-w-4xl flex-col gap-4 overflow-hidden rounded-lg border border-border bg-background p-6 shadow-lg"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-2">
+                    <h2 id="post-request-preview-title" className="text-lg font-semibold text-foreground">
+                      {t('posts.preview.modalTitle', 'Post Request Preview')}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {t(
+                        'posts.preview.modalDescription',
+                        'Inspect the concatenated prompts and the news payload before triggering OpenAI.',
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClosePreview}
+                    className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-muted"
+                  >
+                    {t('posts.preview.close', 'Close')}
+                  </button>
+                </div>
+
+                <dl className="grid gap-3 rounded-md border border-border px-4 py-3 text-xs sm:grid-cols-3">
+                  <div>
+                    <dt className="font-semibold uppercase tracking-wide text-muted-foreground">prompt_base_hash</dt>
+                    <dd className="mt-1 font-mono break-all text-foreground">{previewHash || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t('posts.preview.modelLabel', 'Model')}
+                    </dt>
+                    <dd className="mt-1 font-mono text-foreground">{previewModel ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t('posts.preview.newsIdLabel', 'News ID')}
+                    </dt>
+                    <dd className="mt-1 font-mono text-foreground">
+                      {previewArticle?.id ?? (lastPreviewRequest !== null
+                        ? lastPreviewRequest
+                        : t('posts.preview.newsIdAutomatic', 'Automatic selection'))}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm">
+                    {previewCopyFeedback?.type === 'success' ? (
+                      <p className="text-primary">{previewCopyFeedback.message}</p>
+                    ) : null}
+                    {previewCopyFeedback?.type === 'error' ? (
+                      <p className="text-danger">{previewCopyFeedback.message}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => handleCopyPreviewContent(previewCombinedText, t('posts.preview.copySuccess', 'Copied to clipboard.'))}
+                      disabled={previewIsLoading || previewCombinedText.length === 0}
+                    >
+                      {t('posts.preview.copyAll', 'Copy all')}
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => handleCopyPreviewContent(previewPrefix, t('posts.preview.copySuccess', 'Copied to clipboard.'))}
+                      disabled={previewIsLoading || previewPrefix.trim().length === 0}
+                    >
+                      {t('posts.preview.copyPrefix', 'Copy prefix')}
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => handleCopyPreviewContent(previewContext, t('posts.preview.copySuccess', 'Copied to clipboard.'))}
+                      disabled={previewIsLoading || previewContext.trim().length === 0}
+                    >
+                      {t('posts.preview.copyNews', 'Copy news')}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
+                  {previewIsLoading ? (
+                    <div className="flex h-48 items-center justify-center rounded-md border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                      {t('posts.preview.loading', 'Loading preview...')}
+                    </div>
+                  ) : previewErrorMessage ? (
+                    <div className="space-y-3 rounded-md border border-danger/40 bg-danger/5 px-4 py-4 text-sm text-danger">
+                      <p>{previewErrorMessage}</p>
+                      <div>
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
+                          onClick={() => handleOpenPreview(lastPreviewRequest ?? undefined)}
+                        >
+                          {t('posts.preview.retry', 'Try again')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <section className="space-y-2">
+                        <h3 className="text-sm font-semibold text-foreground">
+                          {t('posts.preview.prefixTitle', 'Prompts concatenated (prefix)')}
+                        </h3>
+                        <div className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted/20 p-3">
+                          {previewPrefix ? (
+                            <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">{previewPrefix}</pre>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {t('posts.preview.prefixEmpty', 'No prompts enabled for this preview.')}
+                            </p>
+                          )}
+                        </div>
+                      </section>
+
+                      <section className="space-y-2">
+                        <h3 className="text-sm font-semibold text-foreground">
+                          {t('posts.preview.newsTitle', 'News payload')}
+                        </h3>
+                        {previewNewsPayload ? (
+                          <div className="space-y-3">
+                            <dl className="grid gap-2 text-xs sm:grid-cols-2">
+                              <div>
+                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {t('posts.preview.article.titleLabel', 'Title')}
+                                </dt>
+                                <dd className="mt-1 text-foreground">{previewArticle?.title ?? '—'}</dd>
+                              </div>
+                              <div>
+                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {t('posts.preview.article.feedLabel', 'Feed')}
+                                </dt>
+                                <dd className="mt-1 text-foreground">{previewFeedLabel ?? '—'}</dd>
+                              </div>
+                              <div>
+                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {t('posts.preview.article.publishedAt', 'Published at')}
+                                </dt>
+                                <dd className="mt-1 text-foreground">{previewPublishedAt ?? '—'}</dd>
+                              </div>
+                              <div>
+                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {t('posts.preview.article.linkLabel', 'Link')}
+                                </dt>
+                                <dd className="mt-1 break-all text-foreground">
+                                  {previewArticle?.link ? (
+                                    <a
+                                      href={previewArticle.link}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-primary underline underline-offset-2"
+                                    >
+                                      {previewArticle.link}
+                                    </a>
+                                  ) : (
+                                    '—'
+                                  )}
+                                </dd>
+                              </div>
+                              <div className="sm:col-span-2">
+                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {t('posts.preview.article.snippetLabel', 'Summary')}
+                                </dt>
+                                <dd className="mt-1 text-foreground">{previewArticle?.contentSnippet ?? '—'}</dd>
+                              </div>
+                            </dl>
+                            <div className="max-h-72 overflow-y-auto rounded-md border border-border bg-muted/20 p-3">
+                              {previewContext ? (
+                                <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">{previewContext}</pre>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  {t('posts.preview.newsEmpty', 'News content is not available for this preview.')}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+                            {t('posts.preview.empty', 'No eligible news item is available for preview.')}
+                          </p>
+                        )}
+                      </section>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 };
@@ -1380,6 +1697,8 @@ type PostListContentProps = {
   onPreviousPage: () => void;
   onToggleSection: (id: number, section: 'post' | 'article') => void;
   onTryAgain: () => void;
+  onPreviewRequest?: (newsId?: number) => void;
+  isPreviewLoading: boolean;
   posts: PostListItem[];
   selectedFeedId: number | null;
   t: TranslateFunction;
@@ -1405,6 +1724,8 @@ const PostListContent = ({
   onPreviousPage,
   onToggleSection,
   onTryAgain,
+  onPreviewRequest,
+  isPreviewLoading,
   posts,
   selectedFeedId,
   t,
@@ -1507,22 +1828,35 @@ const PostListContent = ({
 
         return (
           <article key={item.id} className="card space-y-4 px-6 py-6">
-            <header className="space-y-1">
-              <h2 className="text-lg font-semibold text-foreground">{item.title}</h2>
-              <p className="text-xs text-muted-foreground">
-                {t('posts.list.metadata.publishedAt', 'Published {{date}}', {
-                  date: formatDate(item.publishedAt, locale),
-                })}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {t('posts.list.metadata.feed', 'Feed: {{feed}}', { feed: feedLabel })}
-              </p>
-              {item.post?.createdAt ? (
+            <header className="space-y-2 sm:flex sm:items-start sm:justify-between sm:gap-4">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-foreground">{item.title}</h2>
                 <p className="text-xs text-muted-foreground">
-                  {t('posts.list.metadata.createdAt', 'Generated {{date}}', {
-                    date: formatDate(item.post.createdAt, locale),
+                  {t('posts.list.metadata.publishedAt', 'Published {{date}}', {
+                    date: formatDate(item.publishedAt, locale),
                   })}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('posts.list.metadata.feed', 'Feed: {{feed}}', { feed: feedLabel })}
+                </p>
+                {item.post?.createdAt ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t('posts.list.metadata.createdAt', 'Generated {{date}}', {
+                      date: formatDate(item.post.createdAt, locale),
+                    })}
+                  </p>
+                ) : null}
+              </div>
+              {isAdmin && onPreviewRequest ? (
+                <button
+                  type="button"
+                  className="mt-2 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:mt-0"
+                  onClick={() => onPreviewRequest(item.id)}
+                  disabled={isPreviewLoading}
+                  aria-disabled={isPreviewLoading}
+                >
+                  {t('posts.preview.rowAction', 'Preview')}
+                </button>
               ) : null}
             </header>
             <section className="space-y-2">

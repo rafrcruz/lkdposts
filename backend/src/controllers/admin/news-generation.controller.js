@@ -30,8 +30,34 @@ const getStatus = asyncHandler(async (req, res) => {
   });
 });
 
+const previewPayload = asyncHandler(async (req, res) => {
+  const ownerKey = getOwnerKey(req);
+  const { newsId } = req.validated?.query ?? {};
+
+  try {
+    const preview = await postGenerationService.buildPostRequestPreview({
+      ownerKey,
+      newsId,
+    });
+
+    return res.success({
+      prompt_base: preview.promptBase,
+      prompt_base_hash: preview.promptBaseHash,
+      news_payload: preview.newsPayload,
+      model: preview.model,
+    });
+  } catch (error) {
+    if (error instanceof postGenerationService.ArticleNotFoundError) {
+      throw new ApiError({ statusCode: 404, code: 'NEWS_NOT_FOUND', message: 'News item not found' });
+    }
+
+    throw error;
+  }
+});
+
 module.exports = {
   triggerGeneration,
   getStatus,
+  previewPayload,
 };
 
