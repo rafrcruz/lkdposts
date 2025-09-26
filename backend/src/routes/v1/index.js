@@ -7,6 +7,7 @@ const promptsRoutes = require('./prompts.routes');
 const appParamsRoutes = require('./app-params.routes');
 const allowlistRoutes = require('./allowlist.routes');
 const diagnosticsRoutes = require('./diagnostics.routes');
+const adminNewsRoutes = require('./admin/news.routes');
 const { requireAuth } = require('../../middlewares/authentication');
 const { requireRole, ROLES } = require('../../middlewares/authorization');
 
@@ -21,5 +22,6 @@ router.use(promptsRoutes);
 router.use('/app-params', appParamsRoutes);
 router.use('/allowlist', requireRole(ROLES.ADMIN), allowlistRoutes);
 router.use('/diagnostics', requireRole(ROLES.ADMIN), diagnosticsRoutes);
+router.use('/admin/news', requireRole(ROLES.ADMIN), adminNewsRoutes);
 
 module.exports = router;

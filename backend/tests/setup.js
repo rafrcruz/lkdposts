@@ -397,10 +397,68 @@ jest.mock('../src/lib/prisma', () => {
       return false;
     }
 
+    if (!matchesScalar(post.status, where.status)) {
+      return false;
+    }
+
     return true;
   };
 
   const filterPosts = (where = {}) => posts.filter((post) => matchPostWhere(post, where));
+
+  const findPostRecord = (where = {}) => {
+    if (where == null) {
+      return null;
+    }
+
+    if (where.id !== undefined) {
+      return posts.find((post) => post.id === where.id) ?? null;
+    }
+
+    if (where.articleId !== undefined) {
+      return posts.find((post) => post.articleId === where.articleId) ?? null;
+    }
+
+    return null;
+  };
+
+  const applyPostData = (record, data = {}) => {
+    if (data.content !== undefined) {
+      record.content = data.content;
+    }
+
+    if (data.modelUsed !== undefined) {
+      record.modelUsed = data.modelUsed;
+    }
+
+    if (data.generatedAt !== undefined) {
+      record.generatedAt = data.generatedAt ? new Date(data.generatedAt) : null;
+    }
+
+    if (data.status !== undefined) {
+      record.status = data.status;
+    }
+
+    if (data.errorReason !== undefined) {
+      record.errorReason = data.errorReason;
+    }
+
+    if (data.tokensInput !== undefined) {
+      record.tokensInput = data.tokensInput;
+    }
+
+    if (data.tokensOutput !== undefined) {
+      record.tokensOutput = data.tokensOutput;
+    }
+
+    if (data.promptBaseHash !== undefined) {
+      record.promptBaseHash = data.promptBaseHash;
+    }
+
+    if (data.attemptCount !== undefined) {
+      record.attemptCount = data.attemptCount;
+    }
+  };
 
   const orderByComparator = (orderBy) => {
     const fields = Array.isArray(orderBy) ? orderBy : [orderBy];
@@ -1089,15 +1147,57 @@ jest.mock('../src/lib/prisma', () => {
         const record = {
           id: postIdCounter++,
           articleId: data.articleId,
-          content: data.content,
+          content: null,
+          modelUsed: null,
+          generatedAt: null,
+          status: 'PENDING',
+          errorReason: null,
+          tokensInput: null,
+          tokensOutput: null,
+          promptBaseHash: null,
+          attemptCount: 0,
           createdAt: now,
+          updatedAt: now,
         };
+
+        applyPostData(record, data);
 
         posts.push(record);
 
         return clone(record);
       },
       findMany: async ({ where = {} } = {}) => filterPosts(where).map(clone),
+      findUnique: async ({ where = {} } = {}) => {
+        const record = findPostRecord(where);
+        return record ? clone(record) : null;
+      },
+      update: async ({ where = {}, data = {} }) => {
+        const record = findPostRecord(where);
+        if (!record) {
+          throw new Error('Record not found');
+        }
+
+        applyPostData(record, data);
+        record.updatedAt = new Date();
+
+        return clone(record);
+      },
+      upsert: async ({ where = {}, create, update }) => {
+        const existing = findPostRecord(where);
+
+        if (existing) {
+          applyPostData(existing, update);
+          existing.updatedAt = new Date();
+          return clone(existing);
+        }
+
+        const payload = { ...create };
+        if (payload.articleId === undefined && where.articleId !== undefined) {
+          payload.articleId = where.articleId;
+        }
+
+        return prisma.post.create({ data: payload });
+      },
       deleteMany: async ({ where = {} } = {}) => {
         const matching = filterPosts(where);
         const ids = new Set(matching.map((post) => post.id));
@@ -1145,4 +1245,25 @@ jest.mock('../src/lib/prisma', () => {
   };
 
   return { prisma, disconnectDatabase: jest.fn() };
+});
+
+jest.mock('../src/lib/openai-client', () => {
+  const responses = {
+    create: jest.fn(async () => ({
+      id: 'mock-openai-response',
+      model: 'gpt-mock',
+      output_text: 'Post gerado automaticamente (mock).',
+      usage: { input_tokens: 120, output_tokens: 80 },
+    })),
+  };
+
+  const client = {};
+  client.responses = responses;
+  client.withOptions = jest.fn(() => client);
+
+  return {
+    getOpenAIClient: jest.fn(() => client),
+    resetOpenAIClient: jest.fn(),
+    __mockClient: client,
+  };
 });

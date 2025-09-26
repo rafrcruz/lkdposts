@@ -8,10 +8,21 @@ export const postFeedReferenceSchema = z
   })
   .nullable();
 
-export const postContentSchema = z
+export const postGenerationStatusSchema = z.enum(['PENDING', 'SUCCESS', 'FAILED']);
+
+export const postGenerationMetadataSchema = z
   .object({
-    content: z.string(),
+    content: z.string().nullable(),
     createdAt: z.string().nullable(),
+    status: postGenerationStatusSchema.nullable(),
+    generatedAt: z.string().nullable(),
+    modelUsed: z.string().nullable(),
+    errorReason: z.string().nullable(),
+    tokensInput: z.number().int().nonnegative().nullable(),
+    tokensOutput: z.number().int().nonnegative().nullable(),
+    promptBaseHash: z.string().nullable(),
+    attemptCount: z.number().int().nonnegative(),
+    updatedAt: z.string().nullable(),
   })
   .nullable();
 
@@ -22,7 +33,7 @@ export const postListItemSchema = z
     contentSnippet: z.string(),
     publishedAt: z.string(),
     feed: postFeedReferenceSchema,
-    post: postContentSchema,
+    post: postGenerationMetadataSchema,
   })
   .extend({
     link: z.string().nullable().optional(),
@@ -62,9 +73,30 @@ export const refreshFeedSummarySchema = z.object({
 
 export type RefreshFeedSummary = z.infer<typeof refreshFeedSummarySchema>;
 
+export const postGenerationErrorSchema = z.object({
+  articleId: z.number().int().positive().nullable(),
+  reason: z.string(),
+});
+
+export const postGenerationSummarySchema = z
+  .object({
+    ownerKey: z.string(),
+    startedAt: z.string(),
+    finishedAt: z.string().nullable(),
+    eligibleCount: z.number().int().nonnegative(),
+    generatedCount: z.number().int().nonnegative(),
+    failedCount: z.number().int().nonnegative(),
+    skippedCount: z.number().int().nonnegative(),
+    promptBaseHash: z.string().nullable(),
+    modelUsed: z.string().nullable(),
+    errors: z.array(postGenerationErrorSchema).nullable(),
+  })
+  .nullable();
+
 export const refreshSummarySchema = z.object({
   now: z.string(),
   feeds: z.array(refreshFeedSummarySchema),
+  generation: postGenerationSummarySchema.optional(),
 });
 
 export type RefreshSummary = z.infer<typeof refreshSummarySchema>;

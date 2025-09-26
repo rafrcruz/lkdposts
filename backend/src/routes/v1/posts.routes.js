@@ -11,7 +11,7 @@ const router = express.Router();
  * /api/v1/posts/refresh:
  *   post:
  *     summary: Refresh articles and generate posts from configured feeds
- *     description: Consulta todos os feeds do usuário autenticado, aplica a janela de retenção configurada e cria posts placeholder para notícias recentes.
+ *     description: Consulta todos os feeds do usuário autenticado, aplica a janela de retenção configurada e aciona a geração de posts para notícias recentes utilizando os prompts habilitados.
  *     tags:
  *       - Posts
  *     security:
@@ -59,6 +59,17 @@ const router = express.Router();
  *                         invalidItems: 0
  *                         error:
  *                           message: Feed request timed out
+ *                     generation:
+ *                       ownerKey: '1'
+ *                       startedAt: '2025-01-20T12:34:56.000Z'
+ *                       finishedAt: '2025-01-20T12:34:57.000Z'
+ *                       eligibleCount: 2
+ *                       generatedCount: 2
+ *                       failedCount: 0
+ *                       skippedCount: 1
+ *                       promptBaseHash: 'e3b0c44298fc1c149afbf4c8996fb924'
+ *                       modelUsed: gpt-5-nano
+ *                       errors: null
  *                   meta:
  *                     requestId: 77777777-8888-4999-8aaa-bbbbbbbbbbbb
  *       '401':

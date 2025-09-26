@@ -461,7 +461,46 @@ const buildAuthContext = (override: Partial<AuthContextValue> = {}): AuthContext
     vi.fn(() => Promise.resolve({ authenticated: true, user: override.user ?? { email: 'user@example.com', role: 'user', expiresAt: '2025-01-01T00:00:00.000Z' } })),
 });
 
-const buildPostItem = (override: Partial<PostListItem> = {}): PostListItem => ({
+type PostItemOverride = Partial<Omit<PostListItem, 'post'>> & {
+  post?: Partial<NonNullable<PostListItem['post']>> | null;
+};
+
+const buildPostMetadata = (
+  override: Partial<NonNullable<PostListItem['post']>> = {},
+): NonNullable<PostListItem['post']> => ({
+  content:
+    Object.hasOwn(override, 'content')
+      ? override.content ?? null
+      : 'Post gerado automaticamente para promover a reportagem.',
+  createdAt: Object.hasOwn(override, 'createdAt')
+    ? override.createdAt ?? null
+    : '2025-01-08T13:00:00.000Z',
+  status: Object.hasOwn(override, 'status') ? override.status ?? null : 'SUCCESS',
+  generatedAt: Object.hasOwn(override, 'generatedAt')
+    ? override.generatedAt ?? null
+    : '2025-01-08T13:00:00.000Z',
+  modelUsed: Object.hasOwn(override, 'modelUsed') ? override.modelUsed ?? null : 'gpt-5-nano',
+  errorReason: Object.hasOwn(override, 'errorReason') ? override.errorReason ?? null : null,
+  tokensInput: Object.hasOwn(override, 'tokensInput') ? override.tokensInput ?? null : null,
+  tokensOutput: Object.hasOwn(override, 'tokensOutput') ? override.tokensOutput ?? null : null,
+  promptBaseHash: Object.hasOwn(override, 'promptBaseHash') ? override.promptBaseHash ?? null : 'hash-example',
+  attemptCount: override.attemptCount ?? 1,
+  updatedAt:
+    Object.hasOwn(override, 'updatedAt')
+      ? override.updatedAt ?? null
+      : override.generatedAt ?? override.createdAt ?? '2025-01-08T13:00:00.000Z',
+});
+
+const normalizePostMetadata = (
+  value: Partial<NonNullable<PostListItem['post']>> | null | undefined,
+): PostListItem['post'] => {
+  if (value == null) {
+    return value ?? null;
+  }
+  return buildPostMetadata(value);
+};
+
+const buildPostItem = (override: PostItemOverride = {}): PostListItem => ({
   id: override.id ?? 40401,
   title: override.title ?? '404 Media unveils investigative report',
   contentSnippet:
@@ -478,12 +517,11 @@ const buildPostItem = (override: Partial<PostListItem> = {}): PostListItem => ({
           url: 'https://404media.co/rss',
         },
   post:
-    Object.hasOwn(override, 'post') && override.post === undefined
-      ? null
-      : override.post ?? {
-          content: 'Post gerado automaticamente para promover a reportagem.',
-          createdAt: '2025-01-08T13:00:00.000Z',
-        },
+    Object.hasOwn(override, 'post')
+      ? override.post === undefined
+        ? null
+        : normalizePostMetadata(override.post)
+      : buildPostMetadata(),
   link: override.link ?? 'https://404media.co/articles/investigative-report',
   articleHtml: override.articleHtml ?? null,
   author: override.author ?? 'Equipe 404 Media',

@@ -36,7 +36,39 @@ const mockedUseFeedList = vi.mocked(useFeedList);
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedUseAppParams = vi.mocked(useAppParams);
 
-const buildPost = (override: Partial<PostListItem> = {}): PostListItem => ({
+type PostOverride = Partial<Omit<PostListItem, 'post'>> & {
+  post?: Partial<NonNullable<PostListItem['post']>> | null;
+};
+
+const buildPostMetadata = (
+  override: Partial<NonNullable<PostListItem['post']>> = {},
+): NonNullable<PostListItem['post']> => ({
+  content: Object.hasOwn(override, 'content') ? override.content ?? null : 'Conteudo gerado 1',
+  createdAt: Object.hasOwn(override, 'createdAt') ? override.createdAt ?? null : '2024-01-01T12:00:00.000Z',
+  status: Object.hasOwn(override, 'status') ? override.status ?? null : 'SUCCESS',
+  generatedAt: Object.hasOwn(override, 'generatedAt') ? override.generatedAt ?? null : '2024-01-01T12:00:00.000Z',
+  modelUsed: Object.hasOwn(override, 'modelUsed') ? override.modelUsed ?? null : 'gpt-5-nano',
+  errorReason: Object.hasOwn(override, 'errorReason') ? override.errorReason ?? null : null,
+  tokensInput: Object.hasOwn(override, 'tokensInput') ? override.tokensInput ?? null : null,
+  tokensOutput: Object.hasOwn(override, 'tokensOutput') ? override.tokensOutput ?? null : null,
+  promptBaseHash: Object.hasOwn(override, 'promptBaseHash') ? override.promptBaseHash ?? null : 'hash-example',
+  attemptCount: override.attemptCount ?? 1,
+  updatedAt:
+    Object.hasOwn(override, 'updatedAt')
+      ? override.updatedAt ?? null
+      : override.generatedAt ?? override.createdAt ?? '2024-01-01T12:00:00.000Z',
+});
+
+const normalizePostMetadata = (
+  value: Partial<NonNullable<PostListItem['post']>> | null | undefined,
+): PostListItem['post'] => {
+  if (value == null) {
+    return value ?? null;
+  }
+  return buildPostMetadata(value);
+};
+
+const buildPost = (override: PostOverride = {}): PostListItem => ({
   id: override.id ?? 1,
   title: override.title ?? 'Post 1',
   contentSnippet: override.contentSnippet ?? 'Resumo da noticia 1',
@@ -50,13 +82,7 @@ const buildPost = (override: Partial<PostListItem> = {}): PostListItem => ({
           title: 'Feed 1',
           url: 'https://example.com/feed.xml',
         },
-  post:
-    Object.hasOwn(override, 'post')
-      ? (override.post as PostListItem['post'])
-      : {
-          content: 'Conteudo gerado 1',
-          createdAt: '2024-01-01T12:00:00.000Z',
-        },
+  post: Object.hasOwn(override, 'post') ? normalizePostMetadata(override.post) : buildPostMetadata(),
 });
 
 const buildFeed = (override: Partial<Feed> = {}): Feed => ({
