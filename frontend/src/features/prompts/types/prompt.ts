@@ -16,6 +16,12 @@ export const promptListSchema = z.array(promptSchema);
 
 export type PromptList = z.infer<typeof promptListSchema>;
 
+export const promptListResponseSchema = z.object({
+  items: promptListSchema,
+});
+
+export type PromptListResponse = z.infer<typeof promptListResponseSchema>;
+
 export const promptReorderItemSchema = z.object({
   id: z.string().min(1),
   position: z.number().int().nonnegative(),
