@@ -47,6 +47,7 @@ const ensureAppParams = async () => {
       id: 1,
       postsRefreshCooldownSeconds: 3600,
       postsTimeWindowDays: 7,
+      openAiModel: 'gpt-5-nano',
     },
   });
 };

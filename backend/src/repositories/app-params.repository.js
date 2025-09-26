@@ -4,27 +4,28 @@ const APP_PARAMS_ID = 1;
 
 const findSingleton = () => prisma.appParams.findUnique({ where: { id: APP_PARAMS_ID } });
 
-const createSingleton = ({ postsRefreshCooldownSeconds, postsTimeWindowDays, updatedBy = null }) =>
+const createSingleton = ({ postsRefreshCooldownSeconds, postsTimeWindowDays, openAiModel, updatedBy = null }) =>
   prisma.appParams.create({
     data: {
       id: APP_PARAMS_ID,
       postsRefreshCooldownSeconds,
       postsTimeWindowDays,
+      openAiModel,
       updatedBy,
     },
   });
 
-const ensureDefaultSingleton = async ({ postsRefreshCooldownSeconds, postsTimeWindowDays }) => {
+const ensureDefaultSingleton = async ({ postsRefreshCooldownSeconds, postsTimeWindowDays, openAiModel }) => {
   const existing = await findSingleton();
 
   if (existing) {
     return existing;
   }
 
-  return createSingleton({ postsRefreshCooldownSeconds, postsTimeWindowDays });
+  return createSingleton({ postsRefreshCooldownSeconds, postsTimeWindowDays, openAiModel });
 };
 
-const updateSingleton = ({ postsRefreshCooldownSeconds, postsTimeWindowDays, updatedBy }) => {
+const updateSingleton = ({ postsRefreshCooldownSeconds, postsTimeWindowDays, openAiModel, updatedBy }) => {
   const data = {};
 
   if (postsRefreshCooldownSeconds !== undefined) {
@@ -33,6 +34,10 @@ const updateSingleton = ({ postsRefreshCooldownSeconds, postsTimeWindowDays, upd
 
   if (postsTimeWindowDays !== undefined) {
     data.postsTimeWindowDays = postsTimeWindowDays;
+  }
+
+  if (openAiModel !== undefined) {
+    data.openAiModel = openAiModel;
   }
 
   if (updatedBy !== undefined) {

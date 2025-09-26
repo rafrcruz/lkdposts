@@ -66,6 +66,7 @@ describe('Application parameters API', () => {
       expect.objectContaining({
         posts_refresh_cooldown_seconds: 3600,
         posts_time_window_days: 7,
+        'openai.model': 'gpt-5-nano',
       })
     );
     expect(typeof response.body.data.updated_at).toBe('string');
@@ -77,13 +78,16 @@ describe('Application parameters API', () => {
 
     const response = await withAuth(
       TOKENS.admin,
-      request(app).put('/api/v1/app-params').send({ posts_refresh_cooldown_seconds: 1800 })
+      request(app)
+        .put('/api/v1/app-params')
+        .send({ posts_refresh_cooldown_seconds: 1800, 'openai.model': 'gpt-5' })
     )
       .expect('Content-Type', /json/)
       .expect(200);
 
     expect(response.body.data.posts_refresh_cooldown_seconds).toBe(1800);
     expect(response.body.data.posts_time_window_days).toBe(7);
+    expect(response.body.data['openai.model']).toBe('gpt-5');
     expect(response.body.data.updated_by).toBe('admin@example.com');
 
     const updatedAt = new Date(response.body.data.updated_at).valueOf();
@@ -117,6 +121,15 @@ describe('Application parameters API', () => {
     await withAuth(
       TOKENS.admin,
       request(app).patch('/api/v1/app-params').send({ posts_refresh_cooldown_seconds: 1.5 })
+    )
+      .expect('Content-Type', /json/)
+      .expect(400);
+  });
+
+  it('rejects unsupported OpenAI model values', async () => {
+    await withAuth(
+      TOKENS.admin,
+      request(app).patch('/api/v1/app-params').send({ 'openai.model': 'gpt-5-ultra' })
     )
       .expect('Content-Type', /json/)
       .expect(400);

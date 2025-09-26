@@ -96,6 +96,12 @@ const definition = {
         properties: {
           posts_refresh_cooldown_seconds: { type: 'integer', minimum: 0, example: 3600 },
           posts_time_window_days: { type: 'integer', minimum: 1, example: 7 },
+          'openai.model': {
+            type: 'string',
+            enum: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'],
+            example: 'gpt-5-nano',
+            description: 'Identificador do modelo OpenAI usado para gerar os posts.',
+          },
           updated_at: {
             type: 'string',
             format: 'date-time',

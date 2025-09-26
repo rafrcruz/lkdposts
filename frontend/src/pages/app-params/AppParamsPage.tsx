@@ -3,6 +3,11 @@ import { useTranslation } from 'react-i18next';
 import * as Sentry from '@sentry/react';
 
 import { useAppParams } from '@/features/app-params/hooks/useAppParams';
+import {
+  openAiModelOptions,
+  type AppParams,
+  type AppParamsUpdateInput,
+} from '@/features/app-params/types/appParams';
 import { useResetFeeds } from '@/features/feeds/hooks/useFeeds';
 import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -38,6 +43,32 @@ const resolveErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+type OpenAiModel = (typeof openAiModelOptions)[number];
+
+const DEFAULT_OPENAI_MODEL: OpenAiModel = 'gpt-5-nano';
+
+const openAiModelLabels: Record<OpenAiModel, string> = {
+  'gpt-5': 'GPT-5',
+  'gpt-5-mini': 'GPT-5 mini',
+  'gpt-5-nano': 'GPT-5 nano',
+};
+
+const isOpenAiModel = (value: string | null | undefined): value is OpenAiModel => {
+  if (!value) {
+    return false;
+  }
+
+  return openAiModelOptions.includes(value as OpenAiModel);
+};
+
+const normalizeOpenAiModel = (value: string | null | undefined): OpenAiModel => {
+  return isOpenAiModel(value) ? value : DEFAULT_OPENAI_MODEL;
+};
+
+const resolveOpenAiModelFromParams = (params: AppParams | null | undefined): OpenAiModel => {
+  return normalizeOpenAiModel(params?.['openai.model']);
+};
+
 const AppParamsPage = () => {
   const { t } = useTranslation();
   const appParams = useAppParams();
@@ -45,6 +76,7 @@ const AppParamsPage = () => {
 
   const [cooldownInput, setCooldownInput] = useState('');
   const [timeWindowInput, setTimeWindowInput] = useState('');
+  const [openAiModelInput, setOpenAiModelInput] = useState<OpenAiModel>(DEFAULT_OPENAI_MODEL);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -99,10 +131,14 @@ const AppParamsPage = () => {
 
     setCooldownInput(String(params.posts_refresh_cooldown_seconds));
     setTimeWindowInput(String(params.posts_time_window_days));
-  }, [params?.posts_refresh_cooldown_seconds, params?.posts_time_window_days]);
+    setOpenAiModelInput(resolveOpenAiModelFromParams(params));
+  }, [params]);
 
   const cooldownValue = useMemo(() => parseInteger(cooldownInput), [cooldownInput]);
   const timeWindowValue = useMemo(() => parseInteger(timeWindowInput), [timeWindowInput]);
+  const openAiModelValue = useMemo<OpenAiModel | null>(() => {
+    return isOpenAiModel(openAiModelInput) ? openAiModelInput : null;
+  }, [openAiModelInput]);
 
   const cooldownError = useMemo(() => {
     if (cooldownValue === null) {
@@ -128,32 +164,45 @@ const AppParamsPage = () => {
     return null;
   }, [timeWindowValue, t]);
 
+  const openAiModelError = useMemo(() => {
+    if (!openAiModelValue) {
+      return t('appParams.validation.openAiModelRequired', 'Selecione um modelo válido.');
+    }
+
+    return null;
+  }, [openAiModelValue, t]);
+
   const isDirty = useMemo(() => {
-    if (!params || cooldownValue === null || timeWindowValue === null) {
+    if (!params || cooldownValue === null || timeWindowValue === null || !openAiModelValue) {
       return false;
     }
 
     return (
       cooldownValue !== params.posts_refresh_cooldown_seconds ||
-      timeWindowValue !== params.posts_time_window_days
+      timeWindowValue !== params.posts_time_window_days ||
+      openAiModelValue !== params['openai.model']
     );
-  }, [cooldownValue, params, timeWindowValue]);
+  }, [cooldownValue, openAiModelValue, params, timeWindowValue]);
 
-  const canSave = hasData && !cooldownError && !timeWindowError && isDirty && !isSaving;
+  const canSave =
+    hasData && !cooldownError && !timeWindowError && !openAiModelError && isDirty && !isSaving;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!params || cooldownValue === null || timeWindowValue === null || !isDirty) {
+    if (!params || cooldownValue === null || timeWindowValue === null || !openAiModelValue || !isDirty) {
       return;
     }
 
-    const payload: Record<string, number> = {};
+    const payload: AppParamsUpdateInput = {};
     if (cooldownValue !== params.posts_refresh_cooldown_seconds) {
       payload.posts_refresh_cooldown_seconds = cooldownValue;
     }
     if (timeWindowValue !== params.posts_time_window_days) {
       payload.posts_time_window_days = timeWindowValue;
+    }
+    if (openAiModelValue !== params['openai.model']) {
+      payload['openai.model'] = openAiModelValue;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -178,6 +227,7 @@ const AppParamsPage = () => {
 
       setCooldownInput(String(updated.posts_refresh_cooldown_seconds));
       setTimeWindowInput(String(updated.posts_time_window_days));
+      setOpenAiModelInput(resolveOpenAiModelFromParams(updated));
 
       try {
         await resetFeedsMutation.mutateAsync();
@@ -248,6 +298,11 @@ const AppParamsPage = () => {
             <div className="space-y-2">
               <LoadingSkeleton className="h-4 w-44" />
               <LoadingSkeleton className="h-10" />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <LoadingSkeleton className="h-4 w-40" />
+              <LoadingSkeleton className="h-10" />
+              <LoadingSkeleton className="h-3 w-72" />
             </div>
           </div>
           <LoadingSkeleton className="h-10 w-32" />
@@ -324,6 +379,37 @@ const AppParamsPage = () => {
               </span>
             ) : null}
           </label>
+
+          <label className="text-sm sm:col-span-2">
+            <span className="mb-1 block font-medium">
+              {t('appParams.fields.openAiModel', 'Modelo da OpenAI')}
+            </span>
+            <select
+              value={openAiModelInput}
+              onChange={(event) => {
+                setOpenAiModelInput(event.target.value as OpenAiModel);
+                setFeedback(null);
+              }}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              {openAiModelOptions.map((option) => (
+                <option key={option} value={option}>
+                  {openAiModelLabels[option]}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t(
+                'appParams.fields.openAiModelDescription',
+                'Modelo usado para gerar os posts a partir das notícias (OpenAI).',
+              )}
+            </p>
+            {openAiModelError ? (
+              <span className="mt-1 block text-xs text-destructive" role="alert">
+                {openAiModelError}
+              </span>
+            ) : null}
+          </label>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -343,6 +429,7 @@ const AppParamsPage = () => {
               }
               setCooldownInput(String(params.posts_refresh_cooldown_seconds));
               setTimeWindowInput(String(params.posts_time_window_days));
+              setOpenAiModelInput(resolveOpenAiModelFromParams(params));
               setFeedback(null);
             }}
             disabled={!isDirty || isSaving}

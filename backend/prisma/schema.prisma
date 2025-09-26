@@ -102,6 +102,7 @@ model AppParams {
   id                          Int      @id @default(1)
   postsRefreshCooldownSeconds Int      @map("posts_refresh_cooldown_seconds")
   postsTimeWindowDays         Int      @map("posts_time_window_days")
+  openAiModel                 String   @default("gpt-5-nano") @map("openai_model")
   updatedBy                   String?  @map("updated_by") @db.Text
   createdAt                   DateTime @default(now()) @map("created_at")
   updatedAt                   DateTime @updatedAt @map("updated_at")
