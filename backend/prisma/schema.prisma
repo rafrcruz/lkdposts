@@ -20,54 +20,54 @@ model HelloMessage {
 }
 
 model AllowedUser {
-  id        Int          @id @default(autoincrement())
-  email     String       @unique
-  role      AllowedRole  @default(user)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id        Int           @id @default(autoincrement())
+  email     String        @unique
+  role      AllowedRole   @default(user)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
   sessions  UserSession[]
   prompts   Prompt[]
 }
 
 model UserSession {
-  id          String      @id @default(uuid())
-  tokenHash   String      @unique
-  userId      Int
-  user        AllowedUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime    @default(now())
-  expiresAt   DateTime
-  revokedAt   DateTime?
-  lastUsedAt  DateTime?
-  userAgent   String?     @db.VarChar(255)
-  ipAddress   String?     @db.VarChar(45)
+  id         String      @id @default(uuid())
+  tokenHash  String      @unique
+  userId     Int
+  user       AllowedUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime    @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  userAgent  String?     @db.VarChar(255)
+  ipAddress  String?     @db.VarChar(45)
 }
 
 model Feed {
-  id           Int       @id @default(autoincrement())
-  ownerKey     String    @db.VarChar(255)
-  url          String    @db.Text
-  title        String?   @db.Text
+  id            Int       @id @default(autoincrement())
+  ownerKey      String    @db.VarChar(255)
+  url           String    @db.Text
+  title         String?   @db.Text
   lastFetchedAt DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  articles     Article[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  articles      Article[]
 
   @@unique([ownerKey, url])
 }
 
 model Article {
-  id             Int       @id @default(autoincrement())
+  id             Int      @id @default(autoincrement())
   feedId         Int
-  feed           Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
-  title          String    @db.Text
-  contentSnippet String    @db.Text
-  articleHtml    String?   @db.Text
+  feed           Feed     @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  title          String   @db.Text
+  contentSnippet String   @db.Text
+  articleHtml    String?  @db.Text
   publishedAt    DateTime
-  guid           String?   @db.Text
-  link           String?   @db.Text
-  dedupeKey      String    @db.Text
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  guid           String?  @db.Text
+  link           String?  @db.Text
+  dedupeKey      String   @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
   post           Post?
 
   @@unique([feedId, guid])
@@ -84,15 +84,15 @@ model Post {
 }
 
 model Prompt {
-  id        String       @id @default(uuid())
+  id        String      @id @default(uuid())
   userId    Int
-  user      AllowedUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title     String       @db.VarChar(120)
-  content   String       @db.Text
+  user      AllowedUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String      @db.VarChar(120)
+  content   String      @db.Text
   position  Int
-  enabled   Boolean      @default(true)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  enabled   Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@unique([userId, position])
   @@index([userId, position])
@@ -108,4 +108,3 @@ model AppParams {
 
   @@map("app_params")
 }
-
