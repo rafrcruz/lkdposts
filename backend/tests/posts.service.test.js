@@ -3,7 +3,6 @@ const {
   cleanupOldArticles,
   listRecentArticles,
   InvalidCursorError,
-  POST_PLACEHOLDER_CONTENT,
   constants: postsConstants,
 } = require('../src/services/posts.service');
 const { prisma } = require('../src/lib/prisma');
@@ -309,7 +308,9 @@ describe('posts.service', () => {
       const posts = await prisma.post.findMany();
       expect(articles).toHaveLength(1);
       expect(posts).toHaveLength(1);
-      expect(posts[0].content).toBe(POST_PLACEHOLDER_CONTENT);
+      expect(posts[0].status).toBe('PENDING');
+      expect(posts[0].content).toBeNull();
+      expect(posts[0].attemptCount).toBe(0);
     });
 
     it('is idempotent when guid is missing but link is provided', async () => {
@@ -326,7 +327,9 @@ describe('posts.service', () => {
 
       expect(articles).toHaveLength(1);
       expect(posts).toHaveLength(1);
-      expect(posts[0].content).toBe(POST_PLACEHOLDER_CONTENT);
+      expect(posts[0].status).toBe('PENDING');
+      expect(posts[0].content).toBeNull();
+      expect(posts[0].attemptCount).toBe(0);
       expect(secondRun.results[0].articlesCreated).toBe(0);
     });
 
@@ -346,7 +349,9 @@ describe('posts.service', () => {
       expect(secondRun.results[0].articlesCreated).toBe(0);
       expect(articles).toHaveLength(1);
       expect(posts).toHaveLength(1);
-      expect(posts[0].content).toBe(POST_PLACEHOLDER_CONTENT);
+      expect(posts[0].status).toBe('PENDING');
+      expect(posts[0].content).toBeNull();
+      expect(posts[0].attemptCount).toBe(0);
     });
 
     it('continues processing other feeds when a fetch fails', async () => {
@@ -566,7 +571,9 @@ describe('posts.service', () => {
       const posts = await prisma.post.findMany();
       expect(posts).toHaveLength(3);
       for (const post of posts) {
-        expect(post.content).toBe(POST_PLACEHOLDER_CONTENT);
+        expect(post.status).toBe('PENDING');
+        expect(post.content).toBeNull();
+        expect(post.attemptCount).toBe(0);
       }
     });
 

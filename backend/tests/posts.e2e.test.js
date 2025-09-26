@@ -148,7 +148,15 @@ describe('Posts API', () => {
       const posts = await prisma.post.findMany();
       expect(articles).toHaveLength(1);
       expect(posts).toHaveLength(1);
-      expect(posts[0].content).toBe(postsService.POST_PLACEHOLDER_CONTENT);
+      expect(posts[0].status).toBe('SUCCESS');
+      expect(posts[0].content).toBe('Post gerado automaticamente (mock).');
+      expect(posts[0].attemptCount).toBe(1);
+      expect(posts[0].modelUsed).toBe('gpt-mock');
+      expect(posts[0].generatedAt).toBeInstanceOf(Date);
+      expect(posts[0].tokensInput).toBe(120);
+      expect(posts[0].tokensOutput).toBe(80);
+      expect(typeof posts[0].promptBaseHash).toBe('string');
+      expect(posts[0].promptBaseHash.length).toBeGreaterThan(0);
 
       const updatedFeed = await prisma.feed.findUnique({ where: { id: feed.id } });
       expect(updatedFeed.lastFetchedAt).not.toBeNull();
@@ -267,7 +275,7 @@ describe('Posts API', () => {
       expect(firstPage.body.data.items[0]).toEqual(
         expect.objectContaining({
           title: 'Item 0',
-          post: expect.objectContaining({ content: postsService.POST_PLACEHOLDER_CONTENT }),
+          post: expect.objectContaining({ status: 'PENDING', content: null, attemptCount: 0 }),
         })
       );
       const cursor = firstPage.body.meta.nextCursor;

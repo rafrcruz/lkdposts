@@ -36,6 +36,11 @@ const config = {
       max: env.RATE_LIMIT_MAX,
     },
   },
+  openai: {
+    timeoutMs: env.OPENAI_TIMEOUT_MS,
+    baseUrl: env.OPENAI_BASE_URL || null,
+    apiKey: env.OPENAI_API_KEY,
+  },
   database: {
     url: env.DATABASE_URL,
     pooledUrl: env.PRISMA_URL && env.PRISMA_URL.length > 0 ? env.PRISMA_URL : null,

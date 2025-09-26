@@ -388,6 +388,45 @@ const definition = {
             type: 'array',
             items: { $ref: '#/components/schemas/FeedRefreshSummary' },
           },
+          generation: {
+            oneOf: [
+              { $ref: '#/components/schemas/PostGenerationSummary' },
+              { type: 'null' },
+            ],
+            description: 'Resumo da última geração de posts executada durante o refresh.',
+          },
+        },
+      },
+      PostGenerationErrorEntry: {
+        type: 'object',
+        properties: {
+          articleId: {
+            type: ['integer', 'null'],
+            example: 123,
+            description: 'Identificador interno do artigo associado ao erro, quando disponível.',
+          },
+          reason: {
+            type: 'string',
+            example: 'OpenAI request timed out',
+          },
+        },
+      },
+      PostGenerationSummary: {
+        type: 'object',
+        properties: {
+          ownerKey: { type: 'string', example: '1' },
+          startedAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
+          finishedAt: { type: ['string', 'null'], format: 'date-time', example: '2025-01-20T12:34:57.000Z' },
+          eligibleCount: { type: 'integer', example: 3 },
+          generatedCount: { type: 'integer', example: 2 },
+          failedCount: { type: 'integer', example: 1 },
+          skippedCount: { type: 'integer', example: 4 },
+          promptBaseHash: { type: ['string', 'null'], example: 'e3b0c44298fc1c149afbf4c8996fb924' },
+          modelUsed: { type: ['string', 'null'], example: 'gpt-5-nano' },
+          errors: {
+            type: ['array', 'null'],
+            items: { $ref: '#/components/schemas/PostGenerationErrorEntry' },
+          },
         },
       },
       PostsCleanupResult: {
@@ -413,13 +452,37 @@ const definition = {
         type: 'object',
         properties: {
           content: {
-            type: 'string',
+            type: ['string', 'null'],
             example: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
           },
           createdAt: {
             type: ['string', 'null'],
             format: 'date-time',
             example: '2025-01-20T12:35:30.000Z',
+          },
+          status: {
+            type: ['string', 'null'],
+            enum: ['PENDING', 'SUCCESS', 'FAILED'],
+            example: 'SUCCESS',
+          },
+          generatedAt: {
+            type: ['string', 'null'],
+            format: 'date-time',
+            example: '2025-01-20T12:35:45.000Z',
+          },
+          modelUsed: { type: ['string', 'null'], example: 'gpt-5-nano' },
+          errorReason: { type: ['string', 'null'], example: null },
+          tokensInput: { type: ['integer', 'null'], example: 120 },
+          tokensOutput: { type: ['integer', 'null'], example: 90 },
+          promptBaseHash: {
+            type: ['string', 'null'],
+            example: 'e3b0c44298fc1c149afbf4c8996fb924',
+          },
+          attemptCount: { type: 'integer', example: 1 },
+          updatedAt: {
+            type: ['string', 'null'],
+            format: 'date-time',
+            example: '2025-01-20T12:35:45.000Z',
           },
         },
       },

@@ -75,12 +75,29 @@ model Article {
   @@unique([feedId, dedupeKey])
 }
 
+enum PostGenerationStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
 model Post {
-  id        Int      @id @default(autoincrement())
-  articleId Int      @unique
-  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  content   String   @db.Text
-  createdAt DateTime @default(now())
+  id             Int                   @id @default(autoincrement())
+  articleId      Int                   @unique
+  article        Article               @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  content        String?               @db.Text
+  modelUsed      String?               @map("model_used") @db.Text
+  generatedAt    DateTime?             @map("generated_at")
+  status         PostGenerationStatus  @default(PENDING)
+  errorReason    String?               @map("error_reason") @db.VarChar(255)
+  tokensInput    Int?                  @map("tokens_input")
+  tokensOutput   Int?                  @map("tokens_output")
+  promptBaseHash String?               @map("prompt_base_hash") @db.VarChar(128)
+  attemptCount   Int                   @default(0) @map("attempt_count")
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  @@index([promptBaseHash])
 }
 
 model Prompt {

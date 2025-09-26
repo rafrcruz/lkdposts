@@ -1,6 +1,7 @@
 const asyncHandler = require('../utils/async-handler');
 const ApiError = require('../utils/api-error');
 const postsService = require('../services/posts.service');
+const postGenerationService = require('../services/post-generation.service');
 const config = require('../config');
 const { ROLES } = require('../constants/roles');
 const { hasBlockTags, buildPreview } = require('../utils/html-diagnostics');
@@ -27,6 +28,21 @@ const mapFeedSummary = (entry) => ({
   error: entry.error ? entry.error.message : null,
 });
 
+const toIsoString = (value) => {
+  if (!value) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.valueOf()) ? null : value.toISOString();
+  }
+  try {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.valueOf()) ? null : parsed.toISOString();
+  } catch (error) {
+    return null;
+  }
+};
+
 const mapPostListItem = (article, { includeDiagnostics = false } = {}) => {
   const noticia = article.articleHtml ?? null;
   const response = {
@@ -43,11 +59,17 @@ const mapPostListItem = (article, { includeDiagnostics = false } = {}) => {
       : null,
     post: article.post
       ? {
-          content: article.post.content,
-          createdAt:
-            article.post.createdAt instanceof Date
-              ? article.post.createdAt.toISOString()
-              : article.post.createdAt ?? null,
+          content: article.post.content ?? null,
+          createdAt: toIsoString(article.post.createdAt),
+          status: article.post.status ?? null,
+          generatedAt: toIsoString(article.post.generatedAt),
+          modelUsed: article.post.modelUsed ?? null,
+          errorReason: article.post.errorReason ?? null,
+          tokensInput: article.post.tokensInput ?? null,
+          tokensOutput: article.post.tokensOutput ?? null,
+          promptBaseHash: article.post.promptBaseHash ?? null,
+          attemptCount: article.post.attemptCount ?? 0,
+          updatedAt: toIsoString(article.post.updatedAt),
         }
       : null,
     link: article.link ?? null,
@@ -68,9 +90,18 @@ const refresh = asyncHandler(async (req, res) => {
   const ownerKey = getOwnerKey(req);
   const result = await postsService.refreshUserFeeds({ ownerKey });
 
+  let generationSummary = null;
+  try {
+    generationSummary = await postGenerationService.generatePostsForOwner({ ownerKey });
+  } catch (error) {
+    console.error('Failed to generate posts for LinkedIn', { ownerKey, error });
+    generationSummary = postGenerationService.getLatestStatus(ownerKey);
+  }
+
   return res.success({
     now: result.now.toISOString(),
     feeds: result.results.map(mapFeedSummary),
+    generation: generationSummary,
   });
 });
 

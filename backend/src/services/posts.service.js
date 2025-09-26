@@ -13,10 +13,14 @@ const rssMetrics = require('./rss-metrics');
 const config = require('../config');
 const ingestionDiagnostics = require('./ingestion-diagnostics');
 const appParamsService = require('./app-params.service');
+const {
+  MS_PER_SECOND,
+  MS_PER_DAY,
+  resolveOperationalParams,
+  defaultOperationalParams,
+} = require('./posts-operational-params');
 const { looksEscapedHtml, computeWeakContent, buildPreview } = require('../utils/html-diagnostics');
 
-const MS_PER_SECOND = 1000;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_FETCH_TIMEOUT_MS = 5000;
 const MAX_PAGE_SIZE = 50;
 const MAX_ARTICLE_TITLE_LENGTH = 200;
@@ -33,66 +37,6 @@ const feedFetchCache = shouldCacheFeeds
       maxEntries: config.cache.feedFetchMaxEntries,
     })
   : null;
-
-const normalizeCooldownSeconds = (value) => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return appParamsService.DEFAULT_APP_PARAMS.postsRefreshCooldownSeconds;
-  }
-
-  const normalized = Math.trunc(value);
-  return normalized < 0 ? 0 : normalized;
-};
-
-const normalizeWindowDays = (value) => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return appParamsService.DEFAULT_APP_PARAMS.postsTimeWindowDays;
-  }
-
-  const normalized = Math.trunc(value);
-  return normalized < 1 ? 1 : normalized;
-};
-
-const buildOperationalParams = ({ cooldownSeconds, windowDays }) => {
-  const normalizedCooldownSeconds = normalizeCooldownSeconds(cooldownSeconds);
-  const normalizedWindowDays = normalizeWindowDays(windowDays);
-
-  return {
-    cooldownSeconds: normalizedCooldownSeconds,
-    cooldownMs: normalizedCooldownSeconds * MS_PER_SECOND,
-    windowDays: normalizedWindowDays,
-    windowMs: normalizedWindowDays * MS_PER_DAY,
-  };
-};
-
-const resolveOperationalParams = async (overrides) => {
-  if (overrides && (overrides.cooldownSeconds != null || overrides.windowDays != null)) {
-    return buildOperationalParams({
-      cooldownSeconds:
-        overrides.cooldownSeconds ?? appParamsService.DEFAULT_APP_PARAMS.postsRefreshCooldownSeconds,
-      windowDays: overrides.windowDays ?? appParamsService.DEFAULT_APP_PARAMS.postsTimeWindowDays,
-    });
-  }
-
-  const params = await appParamsService.getAppParams();
-  return buildOperationalParams({
-    cooldownSeconds: params.postsRefreshCooldownSeconds,
-    windowDays: params.postsTimeWindowDays,
-  });
-};
-
-const defaultOperationalParams = buildOperationalParams({
-  cooldownSeconds: appParamsService.DEFAULT_APP_PARAMS.postsRefreshCooldownSeconds,
-  windowDays: appParamsService.DEFAULT_APP_PARAMS.postsTimeWindowDays,
-});
-
-const POST_PLACEHOLDER_CONTENT = [
-  'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
-  'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
-  'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.',
-  'Nisi ut aliquip ex ea commodo consequat.',
-  'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum.',
-  'Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia.',
-].join('\n');
 
 class InvalidCursorError extends Error {
   constructor(message = 'Invalid pagination cursor', options = {}) {
@@ -1040,9 +984,8 @@ const persistCandidates = async ({ feed, candidates }) => {
           dedupeKey: candidate.dedupeKey,
         });
 
-        await postRepository.create({
+        await postRepository.createPlaceholder({
           articleId: article.id,
-          content: POST_PLACEHOLDER_CONTENT,
         });
 
         existingByKey.set(candidate.dedupeKey, {
@@ -1324,7 +1267,6 @@ module.exports = {
   cleanupOldArticles,
   listRecentArticles,
   InvalidCursorError,
-  POST_PLACEHOLDER_CONTENT,
   constants: {
     DEFAULT_COOLDOWN_SECONDS: defaultOperationalParams.cooldownSeconds,
     DEFAULT_COOLDOWN_MS: defaultOperationalParams.cooldownMs,
