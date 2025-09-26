@@ -1038,6 +1038,10 @@ jest.mock('../src/lib/prisma', () => {
 
         return result.map(clone);
       },
+      findFirst: async ({ where = {}, orderBy, cursor, include, select } = {}) => {
+        const [first] = await prisma.article.findMany({ where, orderBy, take: 1, cursor, include, select });
+        return first ?? null;
+      },
       findUnique: async ({ where, select }) => {
         let found = null;
 

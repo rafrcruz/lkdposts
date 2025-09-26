@@ -1,5 +1,6 @@
 const { createHash } = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
+const Sentry = require('@sentry/node');
 
 const promptRepository = require('../repositories/prompt.repository');
 const articleRepository = require('../repositories/article.repository');
@@ -200,6 +201,145 @@ ${article.articleHtml}`);
   return parts.join('\n\n');
 };
 
+const collectEligibleArticles = async ({ ownerKey, startedAt, operationalParams, maxAttempts }) => {
+  const windowStart = new Date(startedAt.valueOf() - operationalParams.windowMs);
+  const articles = await articleRepository.findAllWithinWindowForOwner({
+    ownerKey,
+    windowStart,
+    currentTime: startedAt,
+  });
+
+  const eligible = [];
+  let skippedCount = 0;
+
+  for (const article of articles) {
+    const post = article.post;
+    if (post && post.status === 'SUCCESS') {
+      skippedCount += 1;
+      continue;
+    }
+
+    const attempts = post?.attemptCount ?? 0;
+    if (attempts >= maxAttempts) {
+      skippedCount += 1;
+      continue;
+    }
+
+    eligible.push(article);
+  }
+
+  return { eligible, skippedCount };
+};
+
+const mapArticleForPayload = (article) => ({
+  id: article.id,
+  title: article.title,
+  contentSnippet: article.contentSnippet,
+  articleHtml: article.articleHtml ?? null,
+  link: article.link ?? null,
+  guid: article.guid ?? null,
+  publishedAt:
+    article.publishedAt instanceof Date && !Number.isNaN(article.publishedAt.valueOf())
+      ? article.publishedAt.toISOString()
+      : article.publishedAt ?? null,
+  feed: article.feed
+    ? {
+        id: article.feed.id,
+        title: article.feed.title ?? null,
+        url: article.feed.url ?? null,
+      }
+    : null,
+});
+
+class ArticleNotFoundError extends Error {
+  constructor(articleId) {
+    super('Article not found for preview');
+    this.name = 'ArticleNotFoundError';
+    this.articleId = articleId;
+  }
+}
+
+const buildNewsPayload = (article) => {
+  const context = buildArticleContext(article);
+
+  return {
+    article: mapArticleForPayload(article),
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: context,
+        },
+      ],
+    },
+    context,
+  };
+};
+
+const buildPostRequestPreview = async ({
+  ownerKey,
+  newsId,
+  now = new Date(),
+  operationalParams: overrides,
+  maxAttempts = MAX_GENERATION_ATTEMPTS,
+} = {}) => {
+  if (!ownerKey) {
+    throw new TypeError('ownerKey is required');
+  }
+
+  const startedAt = ensureDate(now);
+  const operationalParams = await resolveOperationalParams(overrides);
+  const promptBase = await buildPromptBase({ ownerKey });
+  const model = await getOpenAIModel();
+
+  let article = null;
+
+  if (newsId != null) {
+    const normalizedId = Number.parseInt(newsId, 10);
+    if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+      throw new TypeError('newsId must be a positive integer');
+    }
+
+    article = await articleRepository.findByIdForOwner({ id: normalizedId, ownerKey });
+    if (!article) {
+      throw new ArticleNotFoundError(normalizedId);
+    }
+  } else {
+    const { eligible } = await collectEligibleArticles({
+      ownerKey,
+      startedAt,
+      operationalParams,
+      maxAttempts,
+    });
+    article = eligible.at(0) ?? null;
+  }
+
+  const newsPayload = article ? buildNewsPayload(article) : null;
+
+  try {
+    Sentry.addBreadcrumb({
+      category: 'preview',
+      level: 'info',
+      message: 'post-request-preview',
+      data: {
+        newsId: article?.id ?? null,
+        promptBaseHash: promptBase.promptBaseHash,
+        hasNews: Boolean(article),
+      },
+    });
+  } catch (error) {
+    console.warn('Failed to record preview breadcrumb', error);
+  }
+
+  return {
+    promptBase: promptBase.basePrompt,
+    promptBaseHash: promptBase.promptBaseHash,
+    newsPayload,
+    model,
+  };
+};
+
 const callOpenAIWithRetry = async ({ client, payload, maxRetries, timeoutMs }) => {
   let attempt = 0;
   let lastError;
@@ -304,8 +444,6 @@ const generatePostsForOwner = async ({
     const errors = [];
 
     const operationalParams = await resolveOperationalParams(overrides);
-
-    const windowStart = new Date(startedAt.valueOf() - operationalParams.windowMs);
     let promptBase;
     try {
       promptBase = await buildPromptBase({ ownerKey });
@@ -330,29 +468,12 @@ const generatePostsForOwner = async ({
     const promptBaseHash = promptBase.promptBaseHash;
     const basePrompt = promptBase.basePrompt;
 
-    const articles = await articleRepository.findAllWithinWindowForOwner({
+    const { eligible, skippedCount } = await collectEligibleArticles({
       ownerKey,
-      windowStart,
-      currentTime: startedAt,
+      startedAt,
+      operationalParams,
+      maxAttempts,
     });
-
-    const eligible = [];
-    let skippedCount = 0;
-
-    for (const article of articles) {
-      const post = article.post;
-      if (post && post.status === 'SUCCESS') {
-        skippedCount += 1;
-        continue;
-      }
-      const attempts = post?.attemptCount ?? 0;
-      if (attempts >= maxAttempts) {
-        skippedCount += 1;
-        continue;
-      }
-      eligible.push(article);
-    }
-
     const eligibleCount = eligible.length;
     if (eligibleCount === 0) {
       const summary = computeSummary({
@@ -484,6 +605,9 @@ module.exports = {
   generatePostsForOwner,
   getLatestStatus,
   buildPromptBase,
+  buildArticleContext,
+  buildPostRequestPreview,
+  ArticleNotFoundError,
   MAX_GENERATION_ATTEMPTS,
 };
 
