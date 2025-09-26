@@ -1,5 +1,11 @@
 import { deleteJson, getJson, patchJson, postJson, putJson } from '@/lib/api/http';
-import { promptListSchema, promptSchema, type Prompt, type PromptList, type PromptReorderItem } from '../types/prompt';
+import {
+  promptListResponseSchema,
+  promptSchema,
+  type Prompt,
+  type PromptReorderItem,
+  type PromptListResponse,
+} from '../types/prompt';
 
 export const PROMPTS_QUERY_KEY = ['prompts'] as const;
 
@@ -20,8 +26,13 @@ type ReorderPayload = {
   items: PromptReorderItem[];
 };
 
-export const fetchPrompts = () => {
-  return getJson<PromptList>('/api/v1/prompts', promptListSchema);
+export const fetchPrompts = async () => {
+  const response = await getJson<PromptListResponse>(
+    '/api/v1/prompts',
+    promptListResponseSchema,
+  );
+
+  return response.items;
 };
 
 export const createPrompt = (payload: CreatePromptPayload) => {
