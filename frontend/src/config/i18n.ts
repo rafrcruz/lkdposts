@@ -89,6 +89,10 @@ const resources = {
           error: 'We could not load the prompts. Try again.',
           reorderHint: 'Drag the handle or card to change the order.',
           dragLabel: 'Drag to reposition this prompt.',
+          moveUp: 'Move prompt up',
+          moveDown: 'Move prompt down',
+          dropZone: 'Drop here to move the prompt to the end.',
+          reorderDisabledWithFilters: 'Clear filters to reorder the full list before reordering.',
           ariaLabel: 'Saved prompts',
         },
         empty: {
@@ -536,6 +540,10 @@ const resources = {
           error: 'Nao foi possivel carregar os prompts. Tente novamente.',
           reorderHint: 'Arraste o card ou o manipulador para alterar a ordem.',
           dragLabel: 'Arraste para reposicionar este prompt.',
+          moveUp: 'Mover prompt para cima',
+          moveDown: 'Mover prompt para baixo',
+          dropZone: 'Solte aqui para mover o prompt para o final.',
+          reorderDisabledWithFilters: 'Limpe os filtros para reordenar toda a lista.',
           ariaLabel: 'Prompts salvos',
         },
         empty: {
