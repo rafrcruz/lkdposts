@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { vi } from 'vitest';
@@ -205,11 +205,12 @@ describe('PromptsPage', () => {
 
     await user.click(toggle);
 
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(toggle).toHaveTextContent(/collapse/i);
+    const collapseToggle = await screen.findByRole('button', { name: /collapse/i });
+    expect(collapseToggle).toHaveAttribute('aria-expanded', 'true');
 
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(collapseToggle);
+    const expandToggle = await screen.findByRole('button', { name: /expand/i });
+    expect(expandToggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('creates a new prompt successfully', async () => {
@@ -287,7 +288,7 @@ describe('PromptsPage', () => {
 
   it('allows reordering after duplicating a prompt', async () => {
     const user = userEvent.setup();
-    const prompts: Prompt[] = [
+    let prompts: Prompt[] = [
       buildPrompt({ id: 'prompt-11', title: 'Primary prompt', position: 1 }),
       buildPrompt({ id: 'prompt-22', title: 'Secondary prompt', position: 2 }),
     ];
@@ -307,7 +308,9 @@ describe('PromptsPage', () => {
         options?.onSuccess?.(duplicated);
       },
     );
-    const reorderMutateMock = vi.fn();
+    const reorderMutateMock = vi.fn((updated: Prompt[]) => {
+      prompts = updated.map((prompt) => ({ ...prompt }));
+    });
 
     mockedUsePromptList.mockImplementation(() => createQueryResult([...prompts]));
     mockedUseCreatePrompt.mockReturnValue(createMutationResult(createMutateMock));
@@ -334,24 +337,22 @@ describe('PromptsPage', () => {
     const itemsAfterDuplicate = screen.getAllByRole('listitem');
     expect(itemsAfterDuplicate).toHaveLength(3);
 
-    const dragData: Record<string, string> = {};
-    const eventData = {
-      dataTransfer: {
-        setData: (type: string, value: string) => {
-          dragData[type] = value;
-        },
-        getData: (type: string) => dragData[type] ?? '',
-        dropEffect: '',
-        effectAllowed: '',
-      },
-    } as unknown as DragEventInit;
+    const duplicatedCard = screen.getByText('Primary prompt (cópia)').closest('[role="listitem"]');
+    expect(duplicatedCard).not.toBeNull();
 
-    fireEvent.dragStart(itemsAfterDuplicate[2], eventData);
-    fireEvent.dragOver(itemsAfterDuplicate[0], eventData);
-    fireEvent.drop(itemsAfterDuplicate[0], eventData);
+    const moveUpButton = within(duplicatedCard as HTMLElement).getByRole('button', {
+      name: /move prompt up/i,
+    });
+
+    await user.click(moveUpButton);
+    const updatedCard = screen.getByText('Primary prompt (cópia)').closest('[role="listitem"]');
+    expect(updatedCard).not.toBeNull();
+    const moveUpAgain = within(updatedCard as HTMLElement).getByRole('button', { name: /move prompt up/i });
+    await user.click(moveUpAgain);
 
     expect(reorderMutateMock).toHaveBeenCalled();
-    const reorderPayload = reorderMutateMock.mock.calls[0]?.[0] as unknown;
+    const lastCall = reorderMutateMock.mock.calls[reorderMutateMock.mock.calls.length - 1];
+    const reorderPayload = lastCall?.[0] as unknown;
     expect(Array.isArray(reorderPayload)).toBe(true);
     if (Array.isArray(reorderPayload)) {
       expect(reorderPayload).toEqual([
@@ -405,7 +406,8 @@ describe('PromptsPage', () => {
     confirmSpy.mockRestore();
   });
 
-  it('reorders prompts when dragged', () => {
+  it('reorders prompts using move buttons', async () => {
+    const user = userEvent.setup();
     const mutateMock = vi.fn();
     const prompts = [
       buildPrompt({ id: 'prompt-1', title: 'First prompt', position: 1 }),
@@ -420,22 +422,10 @@ describe('PromptsPage', () => {
 
     renderPage();
 
-    const items = screen.getAllByRole('listitem');
-    const dragData: { [key: string]: string } = {};
-    const eventData = {
-      dataTransfer: {
-        setData: (type: string, value: string) => {
-          dragData[type] = value;
-        },
-        getData: (type: string) => dragData[type] ?? '',
-        dropEffect: '',
-        effectAllowed: '',
-      },
-    } as unknown as DragEventInit;
+    const moveDownButtons = screen.getAllByRole('button', { name: /move prompt down/i });
+    expect(moveDownButtons[0]).not.toBeDisabled();
 
-    fireEvent.dragStart(items[1], eventData);
-    fireEvent.dragOver(items[0], eventData);
-    fireEvent.drop(items[0], eventData);
+    await user.click(moveDownButtons[0]);
 
     expect(mutateMock).toHaveBeenCalled();
     const firstCall = mutateMock.mock.calls[0];
@@ -515,8 +505,8 @@ describe('PromptsPage', () => {
     const exportButton = screen.getByRole('button', { name: /export selected/i });
     expect(exportButton).toBeDisabled();
 
-    const checkboxes = screen.getAllByRole('checkbox', { name: /select prompt/i });
-    await user.click(checkboxes[0]);
+    const [firstCheckbox] = screen.getAllByRole('checkbox', { name: /select prompt/i });
+    await user.click(firstCheckbox);
 
     expect(exportButton).toBeEnabled();
   });
@@ -537,9 +527,12 @@ describe('PromptsPage', () => {
 
     renderPage();
 
-    const checkboxes = screen.getAllByRole('checkbox', { name: /select prompt/i });
-    await user.click(checkboxes[1]);
-    await user.click(checkboxes[0]);
+    await user.click(screen.getAllByRole('checkbox', { name: /select prompt/i })[1]);
+    await user.click(screen.getAllByRole('checkbox', { name: /select prompt/i })[0]);
+
+    const updatedCheckboxes = screen.getAllByRole('checkbox', { name: /select prompt/i });
+    expect(updatedCheckboxes[0]).toBeChecked();
+    expect(updatedCheckboxes[1]).toBeChecked();
 
     await user.click(screen.getByRole('button', { name: /export selected/i }));
 
@@ -570,9 +563,8 @@ describe('PromptsPage', () => {
 
     renderPage();
 
-    const checkboxes = screen.getAllByRole('checkbox', { name: /select prompt/i });
-    await user.click(checkboxes[0]);
-    await user.click(checkboxes[1]);
+    await user.click(screen.getAllByRole('checkbox', { name: /select prompt/i })[0]);
+    await user.click(screen.getAllByRole('checkbox', { name: /select prompt/i })[1]);
 
     await user.click(screen.getByRole('button', { name: /export selected/i }));
     await user.click(screen.getByRole('button', { name: /copy/i }));
@@ -613,9 +605,8 @@ describe('PromptsPage', () => {
 
     renderPage();
 
-    const checkboxes = screen.getAllByRole('checkbox', { name: /select prompt/i });
-    await user.click(checkboxes[0]);
-    await user.click(checkboxes[1]);
+    await user.click(screen.getAllByRole('checkbox', { name: /select prompt/i })[0]);
+    await user.click(screen.getAllByRole('checkbox', { name: /select prompt/i })[1]);
 
     expect(screen.getByText('Disabled prompts are not exported.')).toBeInTheDocument();
 

@@ -139,6 +139,17 @@ const AppParamsPage = () => {
   const openAiModelValue = useMemo<OpenAiModel | null>(() => {
     return isOpenAiModel(openAiModelInput) ? openAiModelInput : null;
   }, [openAiModelInput]);
+  const normalizedParams = useMemo(() => {
+    if (!params) {
+      return null;
+    }
+
+    return {
+      cooldown: params.posts_refresh_cooldown_seconds,
+      timeWindow: params.posts_time_window_days,
+      openAiModel: resolveOpenAiModelFromParams(params),
+    };
+  }, [params]);
 
   const cooldownError = useMemo(() => {
     if (cooldownValue === null) {
@@ -173,16 +184,16 @@ const AppParamsPage = () => {
   }, [openAiModelValue, t]);
 
   const isDirty = useMemo(() => {
-    if (!params || cooldownValue === null || timeWindowValue === null || !openAiModelValue) {
+    if (!normalizedParams || cooldownValue === null || timeWindowValue === null || !openAiModelValue) {
       return false;
     }
 
     return (
-      cooldownValue !== params.posts_refresh_cooldown_seconds ||
-      timeWindowValue !== params.posts_time_window_days ||
-      openAiModelValue !== params['openai.model']
+      cooldownValue !== normalizedParams.cooldown ||
+      timeWindowValue !== normalizedParams.timeWindow ||
+      openAiModelValue !== normalizedParams.openAiModel
     );
-  }, [cooldownValue, openAiModelValue, params, timeWindowValue]);
+  }, [cooldownValue, openAiModelValue, normalizedParams, timeWindowValue]);
 
   const canSave =
     hasData && !cooldownError && !timeWindowError && !openAiModelError && isDirty && !isSaving;
@@ -190,18 +201,18 @@ const AppParamsPage = () => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!params || cooldownValue === null || timeWindowValue === null || !openAiModelValue || !isDirty) {
+    if (!params || !normalizedParams || cooldownValue === null || timeWindowValue === null || !openAiModelValue || !isDirty) {
       return;
     }
 
     const payload: AppParamsUpdateInput = {};
-    if (cooldownValue !== params.posts_refresh_cooldown_seconds) {
+    if (cooldownValue !== normalizedParams.cooldown) {
       payload.posts_refresh_cooldown_seconds = cooldownValue;
     }
-    if (timeWindowValue !== params.posts_time_window_days) {
+    if (timeWindowValue !== normalizedParams.timeWindow) {
       payload.posts_time_window_days = timeWindowValue;
     }
-    if (openAiModelValue !== params['openai.model']) {
+    if (openAiModelValue !== normalizedParams.openAiModel) {
       payload['openai.model'] = openAiModelValue;
     }
 

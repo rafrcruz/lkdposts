@@ -1,9 +1,29 @@
-import type { DragEvent, FormEvent } from 'react';
+import type { CSSProperties, FormEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import * as Sentry from '@sentry/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DraggableAttributes, DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core';
+import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -23,6 +43,21 @@ const TITLE_LIMIT = 120;
 const CONTENT_PREVIEW_LIMIT = 240;
 const VIRTUALIZATION_THRESHOLD = 50;
 const ESTIMATED_ITEM_HEIGHT = 196;
+const DROP_ZONE_ID = 'prompts-reorder-dropzone';
+
+const arraysShallowEqual = (first: readonly string[], second: readonly string[]) => {
+  if (first.length !== second.length) {
+    return false;
+  }
+
+  for (let index = 0; index < first.length; index += 1) {
+    if (first[index] !== second[index]) {
+      return false;
+    }
+  }
+
+  return true;
+};
 
 type FormMode = 'create' | 'edit';
 
@@ -86,7 +121,6 @@ const PromptsPage = () => {
   const [contentInput, setContentInput] = useState('');
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
   const [expandedPromptIds, setExpandedPromptIds] = useState<Set<string>>(new Set());
   const [isContentExpanded, setIsContentExpanded] = useState(false);
@@ -120,14 +154,64 @@ const PromptsPage = () => {
     return titleMatch || contentMatch;
   });
 
-  const shouldVirtualize = filteredPrompts.length > VIRTUALIZATION_THRESHOLD;
+  const promptIdList = useMemo(() => filteredPrompts.map((prompt) => prompt.id), [filteredPrompts]);
+  const [sortedIds, setSortedIds] = useState<string[]>(promptIdList);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const promptMap = useMemo(() => {
+    const map = new Map<string, Prompt>();
+    filteredPrompts.forEach((prompt) => {
+      map.set(prompt.id, prompt);
+    });
+    return map;
+  }, [filteredPrompts]);
+  const orderedPrompts = useMemo(() => {
+    return sortedIds
+      .map((id) => promptMap.get(id))
+      .filter((prompt): prompt is Prompt => Boolean(prompt));
+  }, [promptMap, sortedIds]);
+  const isSorting = activeId !== null;
+  const shouldVirtualize = !isSorting && orderedPrompts.length > VIRTUALIZATION_THRESHOLD;
+  const isReorderEnabled = normalizedSearch.length === 0 && statusFilter === 'all';
+  const isReorderPending = reorderPrompts.isPending;
+  const canReorder = isReorderEnabled && !isReorderPending;
+  const activePrompt = useMemo(() => {
+    if (!activeId) {
+      return null;
+    }
+
+    return prompts.find((item) => item.id === activeId) ?? null;
+  }, [activeId, prompts]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const { setNodeRef: setDropZoneRef, isOver: isDropZoneOver } = useDroppable({
+    id: DROP_ZONE_ID,
+    disabled: !canReorder,
+  });
   const virtualizer = useVirtualizer({
-    count: shouldVirtualize ? filteredPrompts.length : 0,
+    count: shouldVirtualize ? orderedPrompts.length : 0,
     getScrollElement: () => listContainerRef.current,
     estimateSize: () => ESTIMATED_ITEM_HEIGHT,
     overscan: 8,
-    getItemKey: (index) => filteredPrompts[index]?.id ?? index,
+    getItemKey: (index) => orderedPrompts[index]?.id ?? index,
   });
+
+  useEffect(() => {
+    if (isSorting || isReorderPending) {
+      return;
+    }
+
+    setSortedIds((current) => {
+      if (arraysShallowEqual(current, promptIdList)) {
+        return current;
+      }
+
+      return [...promptIdList];
+    });
+  }, [isSorting, isReorderPending, promptIdList]);
 
   useEffect(() => {
     if (!promptList.error || !shouldReportError(promptList.error)) {
@@ -158,7 +242,7 @@ const PromptsPage = () => {
       return;
     }
 
-    const isVisible = filteredPrompts.some((item) => item.id === pendingScrollId);
+    const isVisible = orderedPrompts.some((item) => item.id === pendingScrollId);
     if (!isVisible) {
       setPendingScrollId(null);
       return;
@@ -168,14 +252,21 @@ const PromptsPage = () => {
       return;
     }
 
-    const index = filteredPrompts.findIndex((item) => item.id === pendingScrollId);
+    const index = orderedPrompts.findIndex((item) => item.id === pendingScrollId);
     if (index >= 0) {
       virtualizer.scrollToIndex(index, { align: 'center' });
       return;
     }
 
     setPendingScrollId(null);
-  }, [pendingScrollId, normalizedSearch, filteredPrompts.length, shouldVirtualize, statusFilter, virtualizer]);
+  }, [
+    pendingScrollId,
+    normalizedSearch,
+    orderedPrompts.length,
+    shouldVirtualize,
+    statusFilter,
+    virtualizer,
+  ]);
 
   useEffect(() => {
     if (!contentInputRef.current) {
@@ -197,7 +288,7 @@ const PromptsPage = () => {
     shouldVirtualize,
     virtualizer,
     expandedPromptIds,
-    filteredPrompts.length,
+    orderedPrompts.length,
     normalizedSearch,
     statusFilter,
   ]);
@@ -566,32 +657,23 @@ const PromptsPage = () => {
     );
   };
 
-  const reorderById = (sourceId: string, targetId: string | null) => {
+  const requestReorder = (orderedIds: string[]) => {
     if (reorderPrompts.isPending) {
       return;
     }
 
-    if (targetId !== null && targetId === sourceId) {
+    if (orderedIds.length !== prompts.length) {
       return;
     }
 
-    const items = prompts;
-    const sourceIndex = items.findIndex((item) => item.id === sourceId);
+    const itemsById = new Map(prompts.map((item) => [item.id, item] as const));
+    const next = orderedIds
+      .map((id) => itemsById.get(id))
+      .filter((item): item is Prompt => Boolean(item));
 
-    if (sourceIndex === -1) {
+    if (next.length !== prompts.length) {
       return;
     }
-
-    const next = [...items];
-    const [moved] = next.splice(sourceIndex, 1);
-
-    let insertIndex = targetId === null ? next.length : next.findIndex((item) => item.id === targetId);
-
-    if (insertIndex < 0) {
-      insertIndex = next.length;
-    }
-
-    next.splice(insertIndex, 0, moved);
 
     const normalized = normalizeOrder(next);
 
@@ -616,52 +698,139 @@ const PromptsPage = () => {
     });
   };
 
-  const handleDragStart = (event: DragEvent<HTMLDivElement>, promptId: string) => {
-    setDraggingId(promptId);
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', String(promptId));
-  };
-
-  const resolveSourceId = (event: DragEvent<HTMLDivElement>) => {
-    if (draggingId !== null) {
-      return draggingId;
-    }
-
-    const data = event.dataTransfer.getData('text/plain');
-    return data || null;
-  };
-
-  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDropOnItem = (event: DragEvent<HTMLDivElement>, targetId: string) => {
-    event.preventDefault();
-    const sourceId = resolveSourceId(event);
-    if (!sourceId || sourceId === targetId) {
-      setDraggingId(null);
+  const handleDragStart = (event: DragStartEvent) => {
+    if (!canReorder) {
       return;
     }
 
-    reorderById(sourceId, targetId);
-    setDraggingId(null);
+    setActiveId(String(event.active.id));
   };
 
-  const handleDropOnList = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const sourceId = resolveSourceId(event);
-    if (!sourceId) {
-      setDraggingId(null);
+  const handleDragOver = (event: DragOverEvent) => {
+    if (!canReorder) {
       return;
     }
 
-    reorderById(sourceId, null);
-    setDraggingId(null);
+    const { active, over } = event;
+
+    if (!over) {
+      return;
+    }
+
+    const activeIdValue = String(active.id);
+
+    setSortedIds((current) => {
+      const activeIndex = current.indexOf(activeIdValue);
+
+      if (activeIndex === -1) {
+        return current;
+      }
+
+      if (over.id === DROP_ZONE_ID) {
+        const lastIndex = current.length - 1;
+        if (activeIndex === lastIndex) {
+          return current;
+        }
+
+        return arrayMove(current, activeIndex, lastIndex);
+      }
+
+      const overIdValue = String(over.id);
+      const overIndex = current.indexOf(overIdValue);
+
+      if (overIndex === -1 || overIndex === activeIndex) {
+        return current;
+      }
+
+      return arrayMove(current, activeIndex, overIndex);
+    });
   };
 
-  const handleDragEnd = () => {
-    setDraggingId(null);
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (!canReorder) {
+      setActiveId(null);
+      setSortedIds(promptIdList);
+      return;
+    }
+
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over) {
+      setSortedIds(promptIdList);
+      return;
+    }
+
+    const activeIdValue = String(active.id);
+
+    setSortedIds((current) => {
+      const currentIndex = current.indexOf(activeIdValue);
+
+      if (currentIndex === -1) {
+        return [...promptIdList];
+      }
+
+      if (over.id === DROP_ZONE_ID) {
+        const targetIndex = current.length - 1;
+        const nextOrder = arrayMove(current, currentIndex, targetIndex);
+
+        if (arraysShallowEqual(nextOrder, current)) {
+          return current;
+        }
+
+        requestReorder(nextOrder);
+        return nextOrder;
+      }
+
+      const overIdValue = String(over.id);
+      const targetIndex = current.indexOf(overIdValue);
+
+      if (targetIndex === -1) {
+        return [...promptIdList];
+      }
+
+      const nextOrder = arrayMove(current, currentIndex, targetIndex);
+
+      if (arraysShallowEqual(nextOrder, current)) {
+        return current;
+      }
+
+      requestReorder(nextOrder);
+      return nextOrder;
+    });
+  };
+
+  const handleDragCancel = () => {
+    setActiveId(null);
+    setSortedIds(promptIdList);
+  };
+
+  const handleMovePrompt = (promptId: string, direction: 'up' | 'down') => {
+    if (!canReorder) {
+      return;
+    }
+
+    setSortedIds((current) => {
+      const currentIndex = current.indexOf(promptId);
+
+      if (currentIndex === -1) {
+        return current;
+      }
+
+      const targetIndex =
+        direction === 'up'
+          ? Math.max(currentIndex - 1, 0)
+          : Math.min(currentIndex + 1, current.length - 1);
+
+      if (targetIndex === currentIndex) {
+        return current;
+      }
+
+      const nextOrder = arrayMove(current, currentIndex, targetIndex);
+
+      requestReorder(nextOrder);
+      return nextOrder;
+    });
   };
 
   const updateVariables = updatePrompt.variables;
@@ -677,8 +846,8 @@ const PromptsPage = () => {
   const deletingId = deletePrompt.variables ?? null;
   const isFormOpen = formMode !== null;
   const selectedPrompts = useMemo(
-    () => prompts.filter((prompt) => selectedPromptIds.has(prompt.id)),
-    [prompts, selectedPromptIds],
+    () => orderedPrompts.filter((prompt) => selectedPromptIds.has(prompt.id)),
+    [orderedPrompts, selectedPromptIds],
   );
   const exportablePrompts = useMemo(
     () => selectedPrompts.filter((prompt) => prompt.enabled),
@@ -694,7 +863,21 @@ const PromptsPage = () => {
 
   const loadingSkeletons = useMemo(() => Array.from({ length: 3 }), []);
 
-  const renderPromptCard = (prompt: Prompt) => {
+  type PromptCardRenderOptions = {
+    setNodeRef?: (element: HTMLDivElement | null) => void;
+    handleAttributes?: DraggableAttributes;
+    handleListeners?: SyntheticListenerMap;
+    style?: CSSProperties;
+    isDragging?: boolean;
+    isSorting?: boolean;
+    isOverlay?: boolean;
+    canMoveUp?: boolean;
+    canMoveDown?: boolean;
+    onMoveUp?: () => void;
+    onMoveDown?: () => void;
+  };
+
+  const renderPromptCard = (prompt: Prompt, options?: PromptCardRenderOptions) => {
     const normalizedContent = prompt.content.trim();
     const displayContent = normalizedContent.length > 0 ? prompt.content : '…';
     const shouldShowToggle =
@@ -717,6 +900,21 @@ const PromptsPage = () => {
       updateVariables.enabled !== undefined &&
       updateVariables.title === undefined &&
       updateVariables.content === undefined;
+    const canMoveUp = options?.canMoveUp ?? false;
+    const canMoveDown = options?.canMoveDown ?? false;
+
+    const assignRef = (element: HTMLDivElement | null) => {
+      if (!options?.isOverlay) {
+        registerItemRef(prompt.id)(element);
+      }
+
+      if (options?.setNodeRef) {
+        options.setNodeRef(element);
+      }
+    };
+
+    const isDragging = options?.isDragging ?? false;
+    const isSortingItem = options?.isSorting ?? false;
 
     return (
       <div
@@ -724,16 +922,14 @@ const PromptsPage = () => {
         role="listitem"
         className={clsx(
           'card flex flex-col gap-3 p-4 outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-primary',
-          draggingId === prompt.id ? 'opacity-60 ring-2 ring-primary/40' : '',
+          isDragging ? 'opacity-60 ring-2 ring-primary/40' : '',
+          isSortingItem ? 'transition-transform duration-150' : '',
+          options?.isOverlay ? 'pointer-events-none' : '',
           !isEnabled ? 'border-dashed border-border/70 bg-muted/30' : '',
         )}
-        draggable
-        onDragStart={(event) => handleDragStart(event, prompt.id)}
-        onDragOver={handleDragOver}
-        onDrop={(event) => handleDropOnItem(event, prompt.id)}
-        onDragEnd={handleDragEnd}
         tabIndex={0}
-        ref={registerItemRef(prompt.id)}
+        ref={assignRef}
+        style={options?.style}
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -831,15 +1027,97 @@ const PromptsPage = () => {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span aria-hidden="true">⋮⋮</span>
-            <span className="sr-only">
-              {t('prompts.list.dragLabel', 'Drag to reposition this prompt.')}
-            </span>
+          <div className="space-y-2 text-xs text-muted-foreground">
+            <p>
+              <span className="font-medium text-foreground">
+                {t('prompts.list.updatedAt', 'Last updated:')}
+              </span>{' '}
+              {new Date(prompt.updatedAt).toLocaleString()}
+            </p>
+            <p>
+              <span className="font-medium text-foreground">
+                {t('prompts.list.createdAt', 'Created:')}
+              </span>{' '}
+              {new Date(prompt.createdAt).toLocaleString()}
+            </p>
           </div>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <button
+            type="button"
+            className={clsx(
+              'inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-muted-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+              canReorder ? 'cursor-grab hover:text-foreground' : 'cursor-not-allowed opacity-60',
+              isDragging ? 'cursor-grabbing' : '',
+            )}
+            {...(options?.handleAttributes ?? {})}
+            {...(options?.handleListeners ?? {})}
+            disabled={!canReorder}
+            aria-label={t('prompts.list.dragLabel', 'Drag to reposition this prompt.')}
+          >
+            <span aria-hidden="true">⋮⋮</span>
+          </button>
+          {canReorder ? (
+            <div className="sr-only space-y-1">
+              <button
+                type="button"
+                onClick={options?.onMoveUp}
+                disabled={!canMoveUp || isReorderPending}
+              >
+                {t('prompts.list.moveUp', 'Move prompt up')}
+              </button>
+              <button
+                type="button"
+                onClick={options?.onMoveDown}
+                disabled={!canMoveDown || isReorderPending}
+              >
+                {t('prompts.list.moveDown', 'Move prompt down')}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     );
+  };
+
+  type SortablePromptCardProps = {
+    prompt: Prompt;
+    canMoveUp: boolean;
+    canMoveDown: boolean;
+    onMoveUp: () => void;
+    onMoveDown: () => void;
+  };
+
+  const SortablePromptCard = ({
+    prompt,
+    canMoveUp,
+    canMoveDown,
+    onMoveUp,
+    onMoveDown,
+  }: SortablePromptCardProps) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging, isSorting } = useSortable({
+      id: prompt.id,
+      disabled: !canReorder,
+    });
+
+    const style: CSSProperties = {
+      transform: transform ? CSS.Transform.toString(transform) : undefined,
+      transition: transition ?? undefined,
+      zIndex: isDragging ? 10 : undefined,
+    };
+
+    return renderPromptCard(prompt, {
+      setNodeRef,
+      handleAttributes: attributes,
+      handleListeners: listeners,
+      style,
+      isDragging,
+      isSorting,
+      canMoveUp,
+      canMoveDown,
+      onMoveUp,
+      onMoveDown,
+    });
   };
 
   const hasPrompts = prompts.length > 0;
@@ -927,11 +1205,6 @@ const PromptsPage = () => {
             {t('prompts.actions.exportSelected', 'Export selected')}
           </button>
         </div>
-        {reorderPrompts.isPending ? (
-          <span className="text-xs text-muted-foreground">
-            {t('prompts.reorder.pending', 'Updating order...')}
-          </span>
-        ) : null}
       </div>
       {hasSelection && hasDisabledSelected ? (
         <p className="text-sm font-medium text-amber-600">
@@ -1090,58 +1363,118 @@ const PromptsPage = () => {
 
       {!isLoading && !isError && hasPrompts ? (
         hasFilteredPrompts ? (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              {t('prompts.list.reorderHint', 'Drag the handle or card to change the order.')}
-            </p>
-            {shouldVirtualize ? (
-              <div
-                ref={(element) => {
-                  listContainerRef.current = element;
-                }}
-                onDragOver={handleDragOver}
-                onDrop={handleDropOnList}
-                className="relative max-h-[65vh] overflow-auto"
-                role="list"
-                aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
-              >
-                <div
-                  style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
-                >
-                  {virtualizer.getVirtualItems().map((virtualItem) => {
-                    const prompt = filteredPrompts[virtualItem.index];
-                    if (!prompt) {
-                      return null;
-                    }
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                {t('prompts.list.reorderHint', 'Drag the handle or card to change the order.')}
+              </p>
+              {!isReorderEnabled ? (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'prompts.list.reorderDisabledWithFilters',
+                    'Clear filters to reorder the full list before reordering.',
+                  )}
+                </p>
+              ) : null}
+              {isReorderPending ? (
+                <p className="text-xs font-medium text-primary" role="status" aria-live="polite">
+                  {t('prompts.reorder.pending', 'Updating order...')}
+                </p>
+              ) : null}
+            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
+                {shouldVirtualize ? (
+                  <div
+                    ref={(element) => {
+                      listContainerRef.current = element;
+                    }}
+                    className="relative max-h-[65vh] overflow-auto"
+                    role="list"
+                    aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
+                  >
+                    <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+                      {virtualizer.getVirtualItems().map((virtualItem) => {
+                        const prompt = orderedPrompts[virtualItem.index];
 
-                    return (
-                      <div
-                        key={virtualItem.key}
-                        className="absolute inset-x-0 pb-3"
-                        style={{ transform: `translateY(${virtualItem.start}px)` }}
-                        ref={(element) => {
-                          if (element) {
-                            virtualizer.measureElement(element);
-                          }
-                        }}
-                      >
-                        {renderPromptCard(prompt)}
-                      </div>
-                    );
-                  })}
+                        if (!prompt) {
+                          return null;
+                        }
+
+                        const isLast = virtualItem.index === orderedPrompts.length - 1;
+
+                        return (
+                          <div
+                            key={virtualItem.key}
+                            className="absolute inset-x-0 pb-3"
+                            style={{ transform: `translateY(${virtualItem.start}px)` }}
+                            ref={(element) => {
+                              if (element) {
+                                virtualizer.measureElement(element);
+                              }
+                            }}
+                          >
+                            <SortablePromptCard
+                              prompt={prompt}
+                              canMoveUp={virtualItem.index > 0}
+                              canMoveDown={!isLast}
+                              onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
+                              onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    ref={(element) => {
+                      listContainerRef.current = element;
+                    }}
+                    className="space-y-3"
+                    role="list"
+                    aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
+                  >
+                    {orderedPrompts.map((prompt, index) => (
+                      <SortablePromptCard
+                        key={prompt.id}
+                        prompt={prompt}
+                        canMoveUp={index > 0}
+                        canMoveDown={index < orderedPrompts.length - 1}
+                        onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
+                        onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
+                      />
+                    ))}
+                  </div>
+                )}
+              </SortableContext>
+              {canReorder && orderedPrompts.length > 0 ? (
+                <div
+                  ref={setDropZoneRef}
+                  className={clsx(
+                    'mt-3 rounded-md border border-dashed border-border/70 px-3 py-2 text-center text-xs text-muted-foreground transition',
+                    isDropZoneOver ? 'border-primary bg-primary/5 text-primary' : '',
+                  )}
+                >
+                  {t('prompts.list.dropZone', 'Drop here to move the prompt to the end.')}
                 </div>
-              </div>
-            ) : (
-              <div
-                onDragOver={handleDragOver}
-                onDrop={handleDropOnList}
-                className="space-y-3"
-                role="list"
-                aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
-              >
-                {filteredPrompts.map((prompt) => renderPromptCard(prompt))}
-              </div>
-            )}
+              ) : null}
+              <DragOverlay dropAnimation={null}>
+                {activePrompt
+                  ? renderPromptCard(activePrompt, {
+                      isOverlay: true,
+                      style: { width: '100%' },
+                    })
+                  : null}
+              </DragOverlay>
+            </DndContext>
           </div>
         ) : (
           <div className="rounded-md border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
