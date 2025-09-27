@@ -48,5 +48,9 @@ export const deletePrompt = (id: string) => {
 };
 
 export const reorderPrompts = (payload: ReorderPayload) => {
-  return putJson<Record<string, unknown>, ReorderPayload>('/api/v1/prompts/reorder', payload);
+  return putJson<PromptListResponse, ReorderPayload>(
+    '/api/v1/prompts/reorder',
+    payload,
+    promptListResponseSchema,
+  );
 };
