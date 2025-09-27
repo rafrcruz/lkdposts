@@ -1,9 +1,15 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { vi } from 'vitest';
 import type { Mock } from 'vitest';
-import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query';
+import * as Sentry from '@sentry/react';
 
 import PromptsPage from './PromptsPage';
 import i18n from '@/config/i18n';
@@ -135,9 +141,12 @@ const createMutationResult = <TData, TVariables>(
 };
 
 const renderPage = () => {
+  const queryClient = new QueryClient();
   return render(
     <I18nextProvider i18n={i18n}>
-      <PromptsPage />
+      <QueryClientProvider client={queryClient}>
+        <PromptsPage />
+      </QueryClientProvider>
     </I18nextProvider>,
   );
 };
@@ -147,6 +156,10 @@ describe('PromptsPage', () => {
     vi.clearAllMocks();
     await i18n.changeLanguage('en');
     promptCounter = 1;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders the prompt list with preview', () => {
@@ -212,6 +225,7 @@ describe('PromptsPage', () => {
     const expandToggle = await screen.findByRole('button', { name: /expand/i });
     expect(expandToggle).toHaveAttribute('aria-expanded', 'false');
   });
+
 
   it('creates a new prompt successfully', async () => {
     const user = userEvent.setup();
@@ -304,19 +318,22 @@ describe('PromptsPage', () => {
           content: variables.content,
           position: variables.position ?? 0,
         });
-        prompts.push(duplicated);
+        prompts = [...prompts, duplicated];
         options?.onSuccess?.(duplicated);
       },
     );
     const reorderMutateMock = vi.fn((updated: Prompt[]) => {
       prompts = updated.map((prompt) => ({ ...prompt }));
+      return Promise.resolve(prompts);
     });
 
     mockedUsePromptList.mockImplementation(() => createQueryResult([...prompts]));
     mockedUseCreatePrompt.mockReturnValue(createMutationResult(createMutateMock));
     mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
     mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
-    mockedUseReorderPrompts.mockReturnValue(createMutationResult(reorderMutateMock));
+    mockedUseReorderPrompts.mockReturnValue(
+      createMutationResult(vi.fn(), { mutateAsync: reorderMutateMock }),
+    );
 
     renderPage();
 
@@ -350,7 +367,10 @@ describe('PromptsPage', () => {
     const moveUpAgain = within(updatedCard as HTMLElement).getByRole('button', { name: /move prompt up/i });
     await user.click(moveUpAgain);
 
-    expect(reorderMutateMock).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(reorderMutateMock).toHaveBeenCalled();
+    }, { timeout: 1500 });
+
     const lastCall = reorderMutateMock.mock.calls[reorderMutateMock.mock.calls.length - 1];
     const reorderPayload = lastCall?.[0] as unknown;
     expect(Array.isArray(reorderPayload)).toBe(true);
@@ -408,17 +428,22 @@ describe('PromptsPage', () => {
 
   it('reorders prompts using move buttons', async () => {
     const user = userEvent.setup();
-    const mutateMock = vi.fn();
     const prompts = [
       buildPrompt({ id: 'prompt-1', title: 'First prompt', position: 1 }),
       buildPrompt({ id: 'prompt-2', title: 'Second prompt', position: 2 }),
     ];
+    const mutateAsyncMock = vi.fn().mockResolvedValue([
+      { ...prompts[1], position: 1 },
+      { ...prompts[0], position: 2 },
+    ]);
 
     mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
     mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
     mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
     mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
-    mockedUseReorderPrompts.mockReturnValue(createMutationResult(mutateMock));
+    mockedUseReorderPrompts.mockReturnValue(
+      createMutationResult(vi.fn(), { mutateAsync: mutateAsyncMock }),
+    );
 
     renderPage();
 
@@ -427,8 +452,11 @@ describe('PromptsPage', () => {
 
     await user.click(moveDownButtons[0]);
 
-    expect(mutateMock).toHaveBeenCalled();
-    const firstCall = mutateMock.mock.calls[0];
+    await waitFor(() => {
+      expect(mutateAsyncMock).toHaveBeenCalled();
+    }, { timeout: 1500 });
+
+    const firstCall = mutateAsyncMock.mock.calls[0];
     expect(firstCall).toBeDefined();
 
     const variables = firstCall?.[0] as unknown;
@@ -442,6 +470,69 @@ describe('PromptsPage', () => {
       expect.objectContaining({ id: 'prompt-2', position: 1 }),
       expect.objectContaining({ id: 'prompt-1', position: 2 }),
     ]);
+
+    const breadcrumbCalls = vi.mocked(Sentry.addBreadcrumb).mock.calls.map(([entry]) => entry);
+    const startEvent = breadcrumbCalls.find((entry) => entry?.message === 'prompt_reorder_start');
+    const commitEvent = breadcrumbCalls.find((entry) => entry?.message === 'prompt_reorder_commit');
+
+    expect(startEvent?.data).toMatchObject({ method: 'quick', originPosition: 1, listSize: 2 });
+    expect(commitEvent?.data).toMatchObject({ method: 'quick', destinationPosition: 2, listSize: 2 });
+  });
+
+  it('shows undo and telemetry when reordering via move buttons fails', async () => {
+    const user = userEvent.setup();
+    const prompts = [
+      buildPrompt({ id: 'prompt-1', title: 'First prompt', position: 1 }),
+      buildPrompt({ id: 'prompt-2', title: 'Second prompt', position: 2 }),
+    ];
+    const mutateAsyncMock = vi.fn().mockRejectedValue(new Error('reorder failed'));
+
+    mockedUsePromptList.mockReturnValue(createQueryResult(prompts));
+    mockedUseCreatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseUpdatePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseDeletePrompt.mockReturnValue(createMutationResult(vi.fn()));
+    mockedUseReorderPrompts.mockReturnValue(
+      createMutationResult(vi.fn(), { mutateAsync: mutateAsyncMock }),
+    );
+
+    renderPage();
+
+    const moveDownButtons = screen.getAllByRole('button', { name: /move prompt down/i });
+    await user.click(moveDownButtons[0]);
+
+    const errorAlert = await screen.findByRole('alert');
+    expect(errorAlert).toHaveTextContent(/reorder/i);
+
+    const breadcrumbCalls = vi.mocked(Sentry.addBreadcrumb).mock.calls.map(([entry]) => entry);
+    const errorEvent = breadcrumbCalls.find((entry) => entry?.message === 'prompt_reorder_error');
+    expect(errorEvent?.data).toMatchObject({ method: 'quick', listSize: 2 });
+
+    const headingsAfterError = screen.getAllByRole('heading', { level: 3 });
+    expect(headingsAfterError.map((heading) => heading.textContent)).toEqual([
+      'Second prompt',
+      'First prompt',
+    ]);
+
+    await user.click(within(errorAlert).getByRole('button', { name: /undo/i }));
+
+    await screen.findByText(/prompt order restored/i);
+
+    await waitFor(
+      () => {
+        const headingsAfterUndo = screen.getAllByRole('heading', { level: 3 });
+        expect(headingsAfterUndo.map((heading) => heading.textContent)).toEqual([
+          'First prompt',
+          'Second prompt',
+        ]);
+      },
+      { timeout: 1500 },
+    );
+
+    const undoEvent = vi
+      .mocked(Sentry.addBreadcrumb)
+      .mock.calls.map(([entry]) => entry)
+      .find((entry) => entry?.message === 'prompt_reorder_undo');
+    expect(undoEvent?.data).toMatchObject({ revertedError: true, method: 'quick' });
   });
 
   it('toggles prompt enabled state via the switch', async () => {

@@ -93,30 +93,12 @@ export const useDeletePrompt = () => {
   });
 };
 
-type ReorderContext = {
-  previous?: PromptList;
-};
-
 export const useReorderPrompts = () => {
-  const queryClient = useQueryClient();
-  return useMutation<unknown, HttpError, PromptList, ReorderContext>({
+  return useMutation<PromptList, HttpError, PromptList>({
     mutationFn: async (nextOrder) => {
       const items = nextOrder.map((prompt) => ({ id: prompt.id, position: prompt.position }));
-      await reorderPrompts({ items });
-    },
-    onMutate: async (nextOrder) => {
-      await queryClient.cancelQueries({ queryKey: PROMPTS_QUERY_KEY });
-      const previous = queryClient.getQueryData<PromptList>(PROMPTS_QUERY_KEY);
-      queryClient.setQueryData(PROMPTS_QUERY_KEY, nextOrder);
-      return { previous };
-    },
-    onError: (_error, _variables, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(PROMPTS_QUERY_KEY, context.previous);
-      }
-    },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: PROMPTS_QUERY_KEY });
+      const response = await reorderPrompts({ items });
+      return sortPrompts(response.items);
     },
   });
 };
