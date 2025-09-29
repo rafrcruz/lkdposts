@@ -226,6 +226,7 @@ const PromptsPage = () => {
   });
 
   const promptIdList = useMemo(() => filteredPrompts.map((prompt) => prompt.id), [filteredPrompts]);
+  const allPromptIds = useMemo(() => prompts.map((prompt) => prompt.id), [prompts]);
   const [sortedIds, setSortedIds] = useState<string[]>(promptIdList);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [keyboardActiveId, setKeyboardActiveId] = useState<string | null>(null);
@@ -1046,21 +1047,26 @@ const PromptsPage = () => {
   };
 
   const persistReorder = async (nextIds: string[], previousIds: string[]) => {
-    if (nextIds.length !== prompts.length) {
+    const completeNextIds = completeOrder(nextIds);
+    const completePreviousIds = completeOrder(previousIds);
+
+    if (completeNextIds.length !== allPromptIds.length) {
+      setHasReorderSaveQueued(false);
       return;
     }
 
     const itemsById = new Map(prompts.map((item) => [item.id, item] as const));
-    const nextPrompts = nextIds
+    const nextPrompts = completeNextIds
       .map((id) => itemsById.get(id))
       .filter((item): item is Prompt => Boolean(item));
 
     if (nextPrompts.length !== prompts.length) {
+      setHasReorderSaveQueued(false);
       return;
     }
 
     const normalizedNext = normalizePromptOrder(nextPrompts);
-    const previousPrompts = previousIds
+    const previousPrompts = completePreviousIds
       .map((id) => itemsById.get(id))
       .filter((item): item is Prompt => Boolean(item));
     const normalizedPrevious = normalizePromptOrder(previousPrompts);
@@ -1080,9 +1086,9 @@ const PromptsPage = () => {
       }
 
       const serverIds = serverPrompts.map((item) => item.id);
-      const requestedSet = new Set(nextIds);
+      const requestedSet = new Set(completeNextIds);
       const serverSet = new Set(serverIds);
-      const missingInServer = nextIds.filter((id) => !serverSet.has(id));
+      const missingInServer = completeNextIds.filter((id) => !serverSet.has(id));
 
       if (missingInServer.length > 0) {
         const normalizedServer = normalizePromptOrder(serverPrompts);
@@ -1107,7 +1113,7 @@ const PromptsPage = () => {
         return;
       }
 
-      const requestedIntersection = nextIds.filter((id) => serverSet.has(id));
+      const requestedIntersection = completeNextIds.filter((id) => serverSet.has(id));
       const serverOnlyIds = serverIds.filter((id) => !requestedSet.has(id));
       const finalIds = [...requestedIntersection, ...serverOnlyIds];
       const serverMap = new Map(serverPrompts.map((item) => [item.id, item] as const));
@@ -1135,7 +1141,7 @@ const PromptsPage = () => {
         return;
       }
 
-      updateReorderUndoState({ previousIds, previousPrompts: normalizedPrevious });
+      updateReorderUndoState({ previousIds: completePreviousIds, previousPrompts: normalizedPrevious });
 
       const errorMessage = resolveErrorMessage(
         error,
@@ -1156,12 +1162,48 @@ const PromptsPage = () => {
     }
   };
 
+  const completeOrder = useCallback(
+    (partial: readonly string[]) => {
+      if (allPromptIds.length === 0) {
+        return [] as string[];
+      }
+
+      const allowedIds = new Set(allPromptIds);
+      const seen = new Set<string>();
+      const result: string[] = [];
+
+      for (const id of partial) {
+        if (!allowedIds.has(id) || seen.has(id)) {
+          continue;
+        }
+
+        seen.add(id);
+        result.push(id);
+      }
+
+      for (const id of allPromptIds) {
+        if (seen.has(id)) {
+          continue;
+        }
+
+        seen.add(id);
+        result.push(id);
+      }
+
+      return result;
+    },
+    [allPromptIds],
+  );
+
   const scheduleReorderPersist = (nextIds: string[], previousIds: string[]) => {
-    if (nextIds.length !== prompts.length) {
+    const completeNextIds = completeOrder(nextIds);
+    const completePreviousIds = completeOrder(previousIds);
+
+    if (completeNextIds.length !== allPromptIds.length) {
       return;
     }
 
-    if (arraysShallowEqual(nextIds, previousIds)) {
+    if (arraysShallowEqual(completeNextIds, completePreviousIds)) {
       return;
     }
 
@@ -1170,9 +1212,12 @@ const PromptsPage = () => {
     setFeedback(null);
     updateReorderUndoState(null);
     setHasReorderSaveQueued(true);
-    prepareCommitTelemetry(nextIds, previousIds);
+    prepareCommitTelemetry(completeNextIds, completePreviousIds);
 
-    pendingReorderRef.current = { nextIds: [...nextIds], previousIds: [...previousIds] };
+    pendingReorderRef.current = {
+      nextIds: [...completeNextIds],
+      previousIds: [...completePreviousIds],
+    };
     reorderPersistTimeoutRef.current = setTimeout(() => {
       const payload = pendingReorderRef.current;
       reorderPersistTimeoutRef.current = null;
