@@ -392,7 +392,7 @@ const PromptsPage = () => {
       .map((id) => promptMap.get(id))
       .filter((prompt): prompt is Prompt => Boolean(prompt));
   }, [promptMap, sortedIds]);
-  const shouldVirtualize = orderedPrompts.length > VIRTUALIZATION_THRESHOLD;
+  const shouldVirtualize = false; // Temporarily disable virtualization to ensure DnD collisions work reliably
   const isReorderEnabled = normalizedSearch.length === 0 && statusFilter === 'all';
   const isReorderPending = reorderPrompts.isPending || hasReorderSaveQueued;
   const canReorder = isReorderEnabled;
@@ -1977,7 +1977,7 @@ const PromptsPage = () => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging, isSorting } =
       useSortable({
         id: prompt.id,
-        disabled: !canReorder,
+        disabled: false,
         transition: {
           duration: REORDER_ANIMATION_DURATION_MS,
           easing: REORDER_ANIMATION_EASING,
@@ -2308,7 +2308,11 @@ const PromptsPage = () => {
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
+              onDragOver={(event) => {
+                const overId = event?.over?.id ?? null;
+                console.log('[REORDER] onDragOver', { overId });
+                handleDragOver(event);
+              }}
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
               modifiers={[restrictToVerticalAxis]}
