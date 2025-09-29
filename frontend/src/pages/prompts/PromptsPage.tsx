@@ -49,6 +49,7 @@ import { derivePromptMove, normalizePromptOrder } from '@/features/prompts/utils
 import type { Prompt } from '@/features/prompts/types/prompt';
 import { HttpError } from '@/lib/api/http';
 import { clsx } from 'clsx';
+import { PromptCard, type PromptCardRenderOptions } from './components/PromptCard';
 
 const TITLE_LIMIT = 120;
 const CONTENT_PREVIEW_LIMIT = 240;
@@ -58,6 +59,7 @@ const DROP_ZONE_ID = 'prompts-reorder-dropzone';
 const REORDER_DEBOUNCE_MS = 500;
 const REORDER_ANIMATION_DURATION_MS = 180;
 const REORDER_ANIMATION_EASING = 'cubic-bezier(0.22, 0.8, 0.36, 1)';
+const DUPLICATE_SUFFIX = ' (c\u00F3pia)';
 
 const arraysShallowEqual = (first: readonly string[], second: readonly string[]) => {
   if (first.length !== second.length) {
@@ -976,7 +978,7 @@ const PromptsPage = () => {
   };
 
   const handleDuplicatePrompt = (prompt: Prompt) => {
-    const duplicatedTitle = `${prompt.title} (cópia)`;
+    const duplicatedTitle = `${prompt.title}${DUPLICATE_SUFFIX}`;
     const nextPosition = prompts.reduce((max, item) => Math.max(max, item.position), -1) + 1;
 
     setFeedback(null);
@@ -1681,263 +1683,42 @@ const PromptsPage = () => {
 
   const loadingSkeletons = useMemo(() => Array.from({ length: 3 }), []);
 
-  type PromptCardRenderOptions = {
-    setNodeRef?: (element: HTMLDivElement | null) => void;
-    containerAttributes?: DraggableAttributes;
-    handleListeners?: SyntheticListenerMap;
-    style?: CSSProperties;
-    isDragging?: boolean;
-    isSorting?: boolean;
-    isOverlay?: boolean;
-    isActive?: boolean;
-    showPlaceholder?: boolean;
-    canMoveUp?: boolean;
-    canMoveDown?: boolean;
-    onMoveUp?: () => void;
-    onMoveDown?: () => void;
-    onKeyDown?: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
-    isKeyboardActive?: boolean;
-  };
-
   const renderPromptCard = (prompt: Prompt, options?: PromptCardRenderOptions) => {
-    const normalizedContent = prompt.content.trim();
-    const displayContent = normalizedContent.length > 0 ? prompt.content : '…';
-    const shouldShowToggle =
-      normalizedContent.length > CONTENT_PREVIEW_LIMIT || normalizedContent.includes('\n');
     const isExpanded = expandedPromptIds.has(prompt.id);
-    const contentElementId = `prompt-content-${prompt.id}`;
-    const duplicatedTitle = `${prompt.title} (cópia)`;
-    const isCurrentDuplicatePending =
-      isDuplicating && createPrompt.variables?.title === duplicatedTitle;
-    const isEnabled = prompt.enabled;
-    const statusLabel = isEnabled
-      ? t('prompts.status.enabled', 'Enabled')
-      : t('prompts.status.disabled', 'Disabled');
-    const toggleAriaLabel = isEnabled
-      ? t('prompts.toggle.disable', 'Disable prompt')
-      : t('prompts.toggle.enable', 'Enable prompt');
+    const isSelected = selectedPromptIds.has(prompt.id);
     const isTogglePending =
       updatePrompt.isPending &&
       updateVariables?.id === prompt.id &&
       updateVariables.enabled !== undefined &&
       updateVariables.title === undefined &&
       updateVariables.content === undefined;
-    const canMoveUp = options?.canMoveUp ?? false;
-    const canMoveDown = options?.canMoveDown ?? false;
-    const showPlaceholder = Boolean(options?.showPlaceholder && !options?.isOverlay);
-    const isDragging = options?.isDragging ?? false;
-    const isSortingItem = options?.isSorting ?? false;
-    const isOverlayCard = options?.isOverlay ?? false;
-    const isKeyboardActive = options?.isKeyboardActive ?? false;
-    const isGrabbed = Boolean(isDragging || isKeyboardActive || options?.isActive);
-    const reorderHandleLabel = t(
-      'prompts.list.dragHandleLabel',
-      'Drag handle: hold and move to reorder.',
-    );
-    const dropPlaceholderLabel = t(
-      'prompts.list.dropPlaceholder',
-      'Release to place the prompt here.',
-    );
-    const containerAttributes = options?.containerAttributes ?? {};
-    const handleListeners = canReorder ? options?.handleListeners ?? {} : {};
-
-    const assignRef = (element: HTMLDivElement | null) => {
-      if (!options?.isOverlay) {
-        registerItemRef(prompt.id)(element);
-      }
-
-      if (options?.setNodeRef) {
-        options.setNodeRef(element);
-      }
-    };
+    const duplicatedTitle = `${prompt.title}${DUPLICATE_SUFFIX}`;
+    const isDuplicateInFlight =
+      isDuplicating && createPrompt.variables?.title === duplicatedTitle;
 
     return (
-      <div
+      <PromptCard
         key={prompt.id}
-        ref={assignRef}
-        {...containerAttributes}
-        role="listitem"
-        className={clsx(
-          'relative card flex flex-col gap-4 p-4 outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary',
-          'hover:shadow-sm',
-          isOverlayCard ? 'pointer-events-none' : '',
-          showPlaceholder ? 'border-2 border-dashed border-primary/60 bg-primary/5 shadow-none' : '',
-          isDragging || isOverlayCard ? 'scale-[1.01] shadow-xl ring-2 ring-primary/40' : '',
-          isKeyboardActive ? 'ring-2 ring-primary/70 ring-offset-2 ring-offset-background shadow-lg border-primary/70' : '',
-          isSortingItem ? 'transition-transform duration-200 ease-out' : '',
-          !isEnabled ? 'border-dashed border-border/70 bg-muted/30' : '',
-        )}
-        tabIndex={0}
-        style={options?.style}
-        data-dragging={isDragging}
-        data-keyboard-grabbed={isKeyboardActive ? 'true' : undefined}
-        aria-grabbed={isGrabbed}
-        onKeyDown={options?.onKeyDown}
-      >
-        {showPlaceholder ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-primary/5">
-            <span className="animate-pulse text-sm font-medium text-primary/80">
-              {dropPlaceholderLabel}
-            </span>
-          </div>
-        ) : null}
-        <div className={clsx('flex flex-col gap-4', showPlaceholder ? 'invisible' : '')}>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-1 gap-3">
-              <div className="flex items-start gap-3">
-                <div className="pt-1">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/40"
-                    checked={selectedPromptIds.has(prompt.id)}
-                    onChange={(event) => handleTogglePromptSelection(prompt.id, event.target.checked)}
-                    aria-label={t('prompts.selection.toggle', 'Select prompt')}
-                  />
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <button
-                    type="button"
-                    className={clsx(
-                      'group flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-muted/40 text-foreground/80 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-                      canReorder
-                        ? 'cursor-grab hover:border-primary hover:text-foreground active:cursor-grabbing'
-                        : 'cursor-not-allowed opacity-60',
-                      isDragging ? 'cursor-grabbing border-primary bg-background text-foreground shadow-sm' : '',
-                    )}
-                    {...handleListeners}
-                    disabled={!canReorder}
-                    aria-label={reorderHandleLabel}
-                    data-active={options?.isActive ? 'true' : undefined}
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
-                      <path
-                        d="M7 4h6M7 10h6M7 16h6"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                  {canReorder ? (
-                    <div className="sr-only space-y-1">
-                      <button
-                        type="button"
-                        onClick={options?.onMoveUp}
-                        disabled={!canMoveUp || !canReorder}
-                      >
-                        {t('prompts.list.moveUp', 'Move prompt up')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={options?.onMoveDown}
-                        disabled={!canMoveDown || !canReorder}
-                      >
-                        {t('prompts.list.moveDown', 'Move prompt down')}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="flex flex-1 flex-col gap-3">
-                <h3 className="text-base font-semibold text-foreground">{prompt.title}</h3>
-                <div className="space-y-2">
-                  <div
-                    id={contentElementId}
-                    className={clsx(
-                      'whitespace-pre-wrap break-words text-sm text-muted-foreground',
-                      !isExpanded && shouldShowToggle ? 'line-clamp-3' : '',
-                    )}
-                  >
-                    {displayContent}
-                  </div>
-                  {shouldShowToggle ? (
-                    <button
-                      type="button"
-                      onClick={() => togglePromptExpansion(prompt.id)}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-primary transition hover:text-primary/80"
-                      aria-expanded={isExpanded}
-                      aria-controls={contentElementId}
-                    >
-                      {isExpanded
-                        ? t('prompts.actions.collapse', 'Collapse')
-                        : t('prompts.actions.expand', 'Expand')}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col items-stretch gap-3 sm:items-end">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isEnabled}
-                aria-label={toggleAriaLabel}
-                onClick={() => handleToggleEnabled(prompt, !isEnabled)}
-                disabled={isTogglePending}
-                className={clsx(
-                  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition',
-                  isEnabled
-                    ? 'border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
-                    : 'border-border text-muted-foreground hover:bg-muted',
-                  isTogglePending ? 'cursor-not-allowed opacity-60' : '',
-                )}
-              >
-                <span
-                  aria-hidden="true"
-                  className={clsx(
-                    'inline-flex h-2.5 w-2.5 rounded-full',
-                    isEnabled ? 'bg-emerald-500' : 'bg-muted-foreground',
-                  )}
-                />
-                {statusLabel}
-              </button>
-              <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
-                <button
-                  type="button"
-                  onClick={() => handleOpenEditForm(prompt)}
-                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
-                >
-                  {t('prompts.actions.edit', 'Edit')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDuplicatePrompt(prompt)}
-                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
-                  disabled={createPrompt.isPending}
-                >
-                  {isCurrentDuplicatePending
-                    ? t('prompts.actions.duplicating', 'Duplicating...')
-                    : t('prompts.actions.duplicate', 'Duplicate')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeletePrompt(prompt)}
-                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10"
-                  disabled={isDeleting}
-                >
-                  {isDeleting && deletingId === prompt.id
-                    ? t('prompts.actions.deleting', 'Deleting...')
-                    : t('prompts.actions.delete', 'Delete')}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-2 text-xs text-muted-foreground">
-            <p>
-              <span className="font-medium text-foreground">
-                {t('prompts.list.updatedAt', 'Last updated:')}
-              </span>{' '}
-              {new Date(prompt.updatedAt).toLocaleString()}
-            </p>
-            <p>
-              <span className="font-medium text-foreground">
-                {t('prompts.list.createdAt', 'Created:')}
-              </span>{' '}
-              {new Date(prompt.createdAt).toLocaleString()}
-            </p>
-          </div>
-        </div>
-      </div>
+        prompt={prompt}
+        options={options}
+        isSelected={isSelected}
+        onSelectionChange={(checked) => handleTogglePromptSelection(prompt.id, checked)}
+        isExpanded={isExpanded}
+        onToggleExpansion={() => togglePromptExpansion(prompt.id)}
+        canReorder={canReorder}
+        registerItemRef={registerItemRef}
+        t={t}
+        onToggleEnabled={handleToggleEnabled}
+        isTogglePending={isTogglePending}
+        onEdit={handleOpenEditForm}
+        onDuplicate={handleDuplicatePrompt}
+        onDelete={handleDeletePrompt}
+        isDuplicating={createPrompt.isPending}
+        isDuplicateInFlight={isDuplicateInFlight}
+        isDeleting={isDeleting}
+        deletingId={deletingId}
+        contentPreviewLimit={CONTENT_PREVIEW_LIMIT}
+      />
     );
   };
 
@@ -2504,3 +2285,4 @@ type ReorderUndoState = {
   previousIds: string[];
   previousPrompts: Prompt[];
 };
+
