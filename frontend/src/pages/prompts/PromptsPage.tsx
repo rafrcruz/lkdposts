@@ -199,7 +199,6 @@ const PromptsPage = () => {
   const reorderPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingReorderRef = useRef<{ nextIds: string[]; previousIds: string[] } | null>(null);
   const activeReorderRequestIdRef = useRef(0);
-  const lastSyncedIdsRef = useRef<string[]>([]);
   const dragStartOrderRef = useRef<string[] | null>(null);
   const activeOverlayDimensionsRef = useRef<{ width: number; height: number } | null>(null);
   const keyboardStartOrderRef = useRef<string[] | null>(null);
@@ -227,19 +226,29 @@ const PromptsPage = () => {
 
   const promptIdList = useMemo(() => filteredPrompts.map((prompt) => prompt.id), [filteredPrompts]);
   const allPromptIds = useMemo(() => prompts.map((prompt) => prompt.id), [prompts]);
-  const [sortedIds, setSortedIds] = useState<string[]>(promptIdList);
+  const [visibleOrder, setVisibleOrder] = useState<string[]>(promptIdList);
+  const [baselineOrder, setBaselineOrder] = useState<string[]>(promptIdList);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
   const [keyboardActiveId, setKeyboardActiveId] = useState<string | null>(null);
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const isSorting = activeId !== null;
-  const sortedIdsRef = useRef(sortedIds);
+  const visibleOrderRef = useRef(visibleOrder);
+  const baselineOrderRef = useRef(baselineOrder);
+  const sortedIdsRef = visibleOrderRef;
+  const sortedIds = visibleOrder;
+  const setSortedIds = setVisibleOrder;
   const reorderSessionRef = useRef<ReorderSession | null>(null);
   const pendingCommitTelemetryRef = useRef<ReorderCommitTelemetry | null>(null);
   const lastReorderOutcomeRef = useRef<ReorderOutcome | null>(null);
 
   useEffect(() => {
-    sortedIdsRef.current = sortedIds;
-  }, [sortedIds]);
+    visibleOrderRef.current = visibleOrder;
+  }, [visibleOrder]);
+
+  useEffect(() => {
+    baselineOrderRef.current = baselineOrder;
+  }, [baselineOrder]);
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -388,10 +397,10 @@ const PromptsPage = () => {
     return map;
   }, [filteredPrompts]);
   const orderedPrompts = useMemo(() => {
-    return sortedIds
+    return visibleOrder
       .map((id) => promptMap.get(id))
       .filter((prompt): prompt is Prompt => Boolean(prompt));
-  }, [promptMap, sortedIds]);
+  }, [promptMap, visibleOrder]);
   const shouldVirtualize = false; // Temporarily disable virtualization to ensure DnD collisions work reliably
   const isReorderEnabled = normalizedSearch.length === 0 && statusFilter === 'all';
   const isReorderPending = reorderPrompts.isPending || hasReorderSaveQueued;
@@ -406,7 +415,7 @@ const PromptsPage = () => {
   }, [canReorder, statusFilter, normalizedSearch]);
 
   const showForceSaveButton =
-    canReorder && !arraysShallowEqual(sortedIds, lastSyncedIdsRef.current);
+    canReorder && dirty && !arraysShallowEqual(visibleOrder, baselineOrder);
 
   const activePrompt = useMemo(() => {
     if (!activeId) {
@@ -509,28 +518,19 @@ const PromptsPage = () => {
       return;
     }
 
-    if (isReorderPending) {
+    if (reorderPrompts.isPending) {
       return;
     }
 
-    if (reorderPersistTimeoutRef.current !== null) {
+    if (arraysShallowEqual(visibleOrderRef.current, promptIdList) && arraysShallowEqual(baselineOrderRef.current, promptIdList)) {
       return;
     }
 
-    if (reorderUndoState) {
-      return;
-    }
-
-    setSortedIds((current) => {
-      if (arraysShallowEqual(current, promptIdList)) {
-        lastSyncedIdsRef.current = [...promptIdList];
-        return current;
-      }
-
-      lastSyncedIdsRef.current = [...promptIdList];
-      return [...promptIdList];
-    });
-  }, [isSorting, isReorderPending, promptIdList, reorderUndoState]);
+    setVisibleOrder(promptIdList);
+    setBaselineOrder(promptIdList);
+    setDirty(false);
+    setActiveId(null);
+  }, [isSorting, reorderPrompts.isPending, promptIdList]);
 
   useEffect(() => {
     if (!promptList.error || !shouldReportError(promptList.error)) {
@@ -1023,8 +1023,12 @@ const PromptsPage = () => {
     const { previousIds, previousPrompts } = undoState;
     const normalizedPrevious = normalizePromptOrder(previousPrompts);
 
-    setSortedIds([...previousIds]);
-    lastSyncedIdsRef.current = [...previousIds];
+    const restoredIds = [...previousIds];
+    setVisibleOrder(restoredIds);
+    setBaselineOrder(restoredIds);
+    visibleOrderRef.current = restoredIds;
+    baselineOrderRef.current = restoredIds;
+    setDirty(false);
     updateReorderUndoState(null);
 
     queryClient.setQueryData(PROMPTS_QUERY_KEY, normalizedPrevious);
@@ -1058,7 +1062,7 @@ const PromptsPage = () => {
     void promptList.refetch();
   };
 
-  const persistReorder = async (nextIds: string[], previousIds: string[]) => {
+  const persistReorder = async (previousIds: string[], nextIds: string[]) => {
     const completeNextIds = completeOrder(nextIds);
     const completePreviousIds = completeOrder(previousIds);
 
@@ -1099,10 +1103,10 @@ const PromptsPage = () => {
 
     const payloadItems = normalizedNext.map((item) => ({ id: item.id, position: item.position }));
 
-    console.log('[REORDER] persistReorder payload', {
+    console.log('[REORDER] persist payload', {
       items: payloadItems,
-      nextIds: completeNextIds,
       previousIds: completePreviousIds,
+      nextIds: completeNextIds,
     });
 
     const requestId = activeReorderRequestIdRef.current + 1;
@@ -1133,8 +1137,11 @@ const PromptsPage = () => {
         const normalizedServer = normalizePromptOrder(serverPrompts);
         queryClient.setQueryData(PROMPTS_QUERY_KEY, normalizedServer);
         const conflictIds = normalizedServer.map((item) => item.id);
-        setSortedIds(conflictIds);
-        lastSyncedIdsRef.current = [...conflictIds];
+        setVisibleOrder(conflictIds);
+        setBaselineOrder(conflictIds);
+        visibleOrderRef.current = conflictIds;
+        baselineOrderRef.current = conflictIds;
+        setDirty(false);
         setFeedback({
           type: 'error',
           message: t(
@@ -1168,8 +1175,11 @@ const PromptsPage = () => {
         .filter((item): item is Prompt => Boolean(item));
 
       queryClient.setQueryData(PROMPTS_QUERY_KEY, finalPrompts);
-      setSortedIds(finalIds);
-      lastSyncedIdsRef.current = [...finalIds];
+      setVisibleOrder(finalIds);
+      setBaselineOrder(finalIds);
+      visibleOrderRef.current = finalIds;
+      baselineOrderRef.current = finalIds;
+      setDirty(false);
       emitReorderCommit();
       setFeedback({
         type: 'success',
@@ -1200,6 +1210,7 @@ const PromptsPage = () => {
 
       reportError('reorder', error, { promptIds: normalizedNext.map((item) => item.id) });
       emitReorderError(errorMessage);
+      throw error;
     }
   };
 
@@ -1265,6 +1276,8 @@ const PromptsPage = () => {
       previousIds: [...completePreviousIds],
     };
 
+    setDirty(true);
+
     console.log('[REORDER] scheduleReorderPersist scheduling debounce', {
       delayMs: REORDER_DEBOUNCE_MS,
     });
@@ -1283,7 +1296,7 @@ const PromptsPage = () => {
         previousIds: payload.previousIds,
       });
 
-      void persistReorder(payload.nextIds, payload.previousIds);
+      void persistReorder(payload.previousIds, payload.nextIds).catch(() => {});
     }, REORDER_DEBOUNCE_MS);
   };
 
@@ -1295,121 +1308,107 @@ const PromptsPage = () => {
     cancelScheduledReorderPersist();
 
     const nextIds = [...sortedIdsRef.current];
-    const previousIds = [...lastSyncedIdsRef.current];
+    const previousIds = [...baselineOrderRef.current];
 
     console.log('[REORDER] Forçar salvar ordem clicado', {
       nextIds,
       previousIds,
     });
 
-    void persistReorder(nextIds, previousIds);
+    void persistReorder(previousIds, nextIds).catch(() => {});
   };
 
   const handleDragStart = (event: DragStartEvent) => {
-    if (!canReorder) {
-      return;
-    }
+    const id = event?.active?.id ? String(event.active.id) : null;
+
+    setActiveId(id);
+    console.log('[REORDER] handleDragStart', {
+      activeId: id,
+      currentOrder: [...visibleOrderRef.current],
+    });
 
     cancelScheduledReorderPersist();
     updateReorderUndoState(null);
-    dragStartOrderRef.current = [...sortedIds];
+
+    if (!id) {
+      return;
+    }
+
+    dragStartOrderRef.current = [...visibleOrderRef.current];
     keyboardStartOrderRef.current = null;
     setKeyboardActiveId(null);
 
-    const activeIdValue = String(event.active.id);
+    measurePromptDimensions(id);
 
-    console.log('[REORDER] handleDragStart', {
-      activeId: activeIdValue,
-      currentOrder: [...sortedIdsRef.current],
-    });
+    if (!canReorder) {
+      return;
+    }
 
-    setActiveId(activeIdValue);
-    measurePromptDimensions(activeIdValue);
-    startReorderSession(activeIdValue, sortedIdsRef.current.indexOf(activeIdValue), 'pointer');
+    startReorderSession(id, visibleOrderRef.current.indexOf(id), 'pointer');
   };
 
   const handleDragOver = (event: DragOverEvent) => {
-    if (!canReorder) {
+    const overId = event?.over?.id ? String(event.over.id) : null;
+    const currActive = event?.active?.id ? String(event.active.id) : null;
+
+    console.log('[REORDER] onDragOver', { overId });
+
+    if (!overId || !currActive || overId === currActive) {
       return;
     }
 
-    const { active, over } = event;
+    const currentOrder = visibleOrderRef.current;
+    const oldIndex = currentOrder.indexOf(currActive);
 
-    if (!over) {
+    if (oldIndex === -1) {
       return;
     }
 
-    const activeIdValue = String(active.id);
+    let newIndex: number | null = null;
 
-    setSortedIds((current) => {
-      const activeIndex = current.indexOf(activeIdValue);
-
-      if (activeIndex === -1) {
-        return current;
+    if (overId === DROP_ZONE_ID) {
+      newIndex = currentOrder.length - 1;
+    } else {
+      newIndex = currentOrder.indexOf(overId);
+      if (newIndex === -1) {
+        return;
       }
+    }
 
-      if (over.id === DROP_ZONE_ID) {
-        const lastIndex = current.length - 1;
-        if (activeIndex === lastIndex) {
-          return current;
-        }
+    if (newIndex === oldIndex) {
+      return;
+    }
 
-        return arrayMove(current, activeIndex, lastIndex);
-      }
+    const next = arrayMove(currentOrder, oldIndex, newIndex);
 
-      const overIdValue = String(over.id);
-      const overIndex = current.indexOf(overIdValue);
+    setVisibleOrder(next);
+    visibleOrderRef.current = next;
+    setDirty(true);
 
-      if (overIndex === -1 || overIndex === activeIndex) {
-        return current;
-      }
-
-      return arrayMove(current, activeIndex, overIndex);
+    console.log('[REORDER] optimistically moved', {
+      currActive,
+      overId,
+      oldIndex,
+      newIndex,
+      next,
     });
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    if (!canReorder) {
-      const activeIdValue = String(event.active.id);
-      const overIdValue = event.over ? String(event.over.id) : null;
-      const startingOrderSnapshot = dragStartOrderRef.current ? [...dragStartOrderRef.current] : null;
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const currActive = event?.active?.id ? String(event.active.id) : null;
+    const overId = event?.over?.id ? String(event.over.id) : null;
+    const startingOrder = [...baselineOrderRef.current];
+    const nextOrder = [...visibleOrderRef.current];
+    const moved = dirty && !arraysShallowEqual(nextOrder, startingOrder);
 
-      setActiveId(null);
-      setKeyboardActiveId(null);
-      setSortedIds(promptIdList);
-      dragStartOrderRef.current = null;
-      keyboardStartOrderRef.current = null;
-      clearActiveOverlayDimensions();
-
-      console.log('[REORDER] handleDragEnd', {
-        activeId: activeIdValue,
-        overId: overIdValue,
-        startingOrder: startingOrderSnapshot,
-        nextOrder: [...promptIdList],
-        canReorder,
-        scheduledPersist: false,
-      });
-
-      return;
-    }
-
-    const { active, over } = event;
-    const startingOrder = dragStartOrderRef.current ? [...dragStartOrderRef.current] : null;
-    const activeIdValue = String(active.id);
-    const overIdValue = over ? String(over.id) : null;
-    let nextOrderSnapshot: string[] | null = null;
-    let persistScheduled = false;
-
-    const logResult = (nextOrder: string[], scheduled: boolean) => {
-      console.log('[REORDER] handleDragEnd', {
-        activeId: activeIdValue,
-        overId: overIdValue,
-        startingOrder,
-        nextOrder,
-        canReorder,
-        scheduledPersist: scheduled,
-      });
-    };
+    console.log('[REORDER] handleDragEnd', {
+      activeId: currActive,
+      overId,
+      startingOrder,
+      nextOrder,
+      canReorder,
+      moved,
+    });
 
     setActiveId(null);
     setKeyboardActiveId(null);
@@ -1417,65 +1416,27 @@ const PromptsPage = () => {
     keyboardStartOrderRef.current = null;
     clearActiveOverlayDimensions();
 
-    if (!over) {
-      cancelScheduledReorderPersist();
-      const fallbackOrder = startingOrder ?? promptIdList;
-      setSortedIds([...fallbackOrder]);
-      logResult([...fallbackOrder], false);
+    if (!canReorder || !moved) {
+      setVisibleOrder(startingOrder);
+      visibleOrderRef.current = startingOrder;
+      setDirty(false);
+      console.log('[REORDER] no-op, restoring baseline');
       return;
     }
 
-    setSortedIds((current) => {
-      const currentIndex = current.indexOf(activeIdValue);
-
-      if (currentIndex === -1) {
-        cancelScheduledReorderPersist();
-        const fallbackOrder = startingOrder ?? promptIdList;
-        nextOrderSnapshot = [...fallbackOrder];
-        return [...fallbackOrder];
-      }
-
-      if (over.id === DROP_ZONE_ID) {
-        const targetIndex = current.length - 1;
-        const nextOrder = arrayMove(current, currentIndex, targetIndex);
-
-        if (arraysShallowEqual(nextOrder, current)) {
-          nextOrderSnapshot = [...current];
-          return current;
-        }
-
-        persistScheduled = true;
-        nextOrderSnapshot = [...nextOrder];
-        scheduleReorderPersist(nextOrder, current);
-        return nextOrder;
-      }
-
-      const targetIndex = overIdValue ? current.indexOf(overIdValue) : -1;
-
-      if (targetIndex === -1) {
-        cancelScheduledReorderPersist();
-        const fallbackOrder = startingOrder ?? promptIdList;
-        nextOrderSnapshot = [...fallbackOrder];
-        return [...fallbackOrder];
-      }
-
-      const nextOrder = arrayMove(current, currentIndex, targetIndex);
-
-      if (arraysShallowEqual(nextOrder, current)) {
-        nextOrderSnapshot = [...current];
-        return current;
-      }
-
-      persistScheduled = true;
-      nextOrderSnapshot = [...nextOrder];
-      scheduleReorderPersist(nextOrder, current);
-      return nextOrder;
-    });
-
-    const resolvedNextOrder =
-      nextOrderSnapshot ?? (startingOrder ? [...startingOrder] : [...promptIdList]);
-
-    logResult(resolvedNextOrder, persistScheduled);
+    try {
+      console.log('[REORDER] scheduling persist...');
+      await persistReorder(startingOrder, nextOrder);
+      setBaselineOrder(nextOrder);
+      baselineOrderRef.current = nextOrder;
+      setDirty(false);
+      console.log('[REORDER] persisted successfully');
+    } catch (error) {
+      console.log('[REORDER][error] persist failed', error);
+      setVisibleOrder(startingOrder);
+      visibleOrderRef.current = startingOrder;
+      setDirty(false);
+    }
   };
 
   const handleDragCancel = () => {
@@ -1483,8 +1444,11 @@ const PromptsPage = () => {
     setKeyboardActiveId(null);
     cancelScheduledReorderPersist();
     cancelReorderTelemetry();
-    const fallbackOrder = dragStartOrderRef.current ?? promptIdList;
-    setSortedIds([...fallbackOrder]);
+    const fallbackOrder = dragStartOrderRef.current ?? baselineOrderRef.current ?? promptIdList;
+    const restored = [...fallbackOrder];
+    setVisibleOrder(restored);
+    visibleOrderRef.current = restored;
+    setDirty(false);
     dragStartOrderRef.current = null;
     keyboardStartOrderRef.current = null;
     clearActiveOverlayDimensions();
@@ -2308,16 +2272,12 @@ const PromptsPage = () => {
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragStart={handleDragStart}
-              onDragOver={(event) => {
-                const overId = event?.over?.id ?? null;
-                console.log('[REORDER] onDragOver', { overId });
-                handleDragOver(event);
-              }}
+              onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
               modifiers={[restrictToVerticalAxis]}
             >
-              <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
+              <SortableContext items={visibleOrder} strategy={verticalListSortingStrategy}>
                 {shouldVirtualize ? (
                   <div
                     ref={(element) => {
