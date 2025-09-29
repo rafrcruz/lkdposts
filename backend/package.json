@@ -24,7 +24,7 @@
         "test:ci": "jest --coverage --coverageReporters=lcov",
         "postinstall": "prisma generate",
         "db:migrate:deploy:vercel": "node scripts/db-migrate-deploy-vercel.js",
-        "copylkd": "robocopy \"C:\\projetos\\lkdposts\" \"C:\\projetos\\lkd\" /E /XD node_modules || exit 0"
+        "copylkd": "robocopy \"C:\\projects\\lkdposts\" \"C:\\projects\\lkd\" /E /XD node_modules || exit 0"
     },
     "keywords": [],
     "author": "",
