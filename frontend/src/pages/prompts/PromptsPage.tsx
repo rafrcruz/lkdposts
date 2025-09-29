@@ -514,23 +514,24 @@ const PromptsPage = () => {
   }, [isSorting]);
 
   useEffect(() => {
-    if (isSorting) {
+    if (isSorting || reorderPrompts.isPending || dirty) {
       return;
     }
 
-    if (reorderPrompts.isPending) {
+    const nextIds = promptIdList;
+    if (arraysShallowEqual(baselineOrderRef.current, nextIds) && arraysShallowEqual(visibleOrderRef.current, nextIds)) {
       return;
     }
 
-    if (arraysShallowEqual(visibleOrderRef.current, promptIdList) && arraysShallowEqual(baselineOrderRef.current, promptIdList)) {
-      return;
-    }
-
-    setVisibleOrder(promptIdList);
-    setBaselineOrder(promptIdList);
+    const nextVisible = [...nextIds];
+    const nextBaseline = [...nextIds];
+    setVisibleOrder(nextVisible);
+    setBaselineOrder(nextBaseline);
+    visibleOrderRef.current = [...nextVisible];
+    baselineOrderRef.current = [...nextBaseline];
     setDirty(false);
     setActiveId(null);
-  }, [isSorting, reorderPrompts.isPending, promptIdList]);
+  }, [dirty, isSorting, reorderPrompts.isPending, promptIdList]);
 
   useEffect(() => {
     if (!promptList.error || !shouldReportError(promptList.error)) {
@@ -1023,11 +1024,12 @@ const PromptsPage = () => {
     const { previousIds, previousPrompts } = undoState;
     const normalizedPrevious = normalizePromptOrder(previousPrompts);
 
-    const restoredIds = [...previousIds];
-    setVisibleOrder(restoredIds);
-    setBaselineOrder(restoredIds);
-    visibleOrderRef.current = restoredIds;
-    baselineOrderRef.current = restoredIds;
+    const restoredVisible = [...previousIds];
+    const restoredBaseline = [...previousIds];
+    setVisibleOrder(restoredVisible);
+    setBaselineOrder(restoredBaseline);
+    visibleOrderRef.current = [...restoredVisible];
+    baselineOrderRef.current = [...restoredBaseline];
     setDirty(false);
     updateReorderUndoState(null);
 
@@ -1137,10 +1139,12 @@ const PromptsPage = () => {
         const normalizedServer = normalizePromptOrder(serverPrompts);
         queryClient.setQueryData(PROMPTS_QUERY_KEY, normalizedServer);
         const conflictIds = normalizedServer.map((item) => item.id);
-        setVisibleOrder(conflictIds);
-        setBaselineOrder(conflictIds);
-        visibleOrderRef.current = conflictIds;
-        baselineOrderRef.current = conflictIds;
+        const conflictVisible = [...conflictIds];
+        const conflictBaseline = [...conflictIds];
+        setVisibleOrder(conflictVisible);
+        setBaselineOrder(conflictBaseline);
+        visibleOrderRef.current = [...conflictVisible];
+        baselineOrderRef.current = [...conflictBaseline];
         setDirty(false);
         setFeedback({
           type: 'error',
@@ -1175,10 +1179,12 @@ const PromptsPage = () => {
         .filter((item): item is Prompt => Boolean(item));
 
       queryClient.setQueryData(PROMPTS_QUERY_KEY, finalPrompts);
-      setVisibleOrder(finalIds);
-      setBaselineOrder(finalIds);
-      visibleOrderRef.current = finalIds;
-      baselineOrderRef.current = finalIds;
+      const finalVisible = [...finalIds];
+      const finalBaseline = [...finalIds];
+      setVisibleOrder(finalVisible);
+      setBaselineOrder(finalBaseline);
+      visibleOrderRef.current = [...finalVisible];
+      baselineOrderRef.current = [...finalBaseline];
       setDirty(false);
       emitReorderCommit();
       setFeedback({
@@ -1427,15 +1433,14 @@ const PromptsPage = () => {
     try {
       console.log('[REORDER] scheduling persist...');
       await persistReorder(startingOrder, nextOrder);
-      setBaselineOrder(nextOrder);
-      baselineOrderRef.current = nextOrder;
+      const persistedOrder = [...nextOrder];
+      setBaselineOrder(persistedOrder);
+      baselineOrderRef.current = [...persistedOrder];
       setDirty(false);
       console.log('[REORDER] persisted successfully');
     } catch (error) {
       console.log('[REORDER][error] persist failed', error);
-      setVisibleOrder(startingOrder);
-      visibleOrderRef.current = startingOrder;
-      setDirty(false);
+      setDirty(true);
     }
   };
 
