@@ -1,20 +1,18 @@
 import type { Prompt } from '../types/prompt';
 
-type PromptId = string;
-
 export const normalizePromptOrder = (prompts: Prompt[]): Prompt[] => {
   return prompts.map((item, index) => ({ ...item, position: index + 1 }));
 };
 
 const findMovedPromptId = (
-  previousIds: readonly PromptId[],
-  nextIds: readonly PromptId[],
-): PromptId | null => {
+  previousIds: readonly string[],
+  nextIds: readonly string[],
+): string | null => {
   if (previousIds.length !== nextIds.length) {
     return null;
   }
 
-  let resolvedId: PromptId | null = null;
+  let resolvedId: string | null = null;
   let largestDelta = -1;
 
   for (const id of previousIds) {
@@ -40,19 +38,16 @@ const findMovedPromptId = (
 };
 
 export const derivePromptMove = (
-  previousIds: readonly PromptId[],
-  nextIds: readonly PromptId[],
-  hintId?: PromptId | null,
-): { promptId: PromptId; fromIndex: number; toIndex: number } | null => {
+  previousIds: readonly string[],
+  nextIds: readonly string[],
+  hintId: string | null = null,
+): { promptId: string; fromIndex: number; toIndex: number } | null => {
   if (previousIds.length !== nextIds.length || previousIds.length === 0) {
     return null;
   }
 
-  const normalizedHintId = hintId ?? null;
   const candidateId =
-    normalizedHintId && nextIds.includes(normalizedHintId)
-      ? normalizedHintId
-      : findMovedPromptId(previousIds, nextIds);
+    hintId && nextIds.includes(hintId) ? hintId : findMovedPromptId(previousIds, nextIds);
 
   if (!candidateId) {
     return null;

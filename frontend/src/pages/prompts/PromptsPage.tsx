@@ -156,6 +156,13 @@ const PromptsPage = () => {
   }, [t]);
 
   const promptList = usePromptList();
+  const refetchPromptList = useCallback(() => {
+    return promptList
+      .refetch()
+      .catch((error) => {
+        console.error('[PromptsPage] Failed to refetch prompts', error);
+      });
+  }, [promptList]);
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
@@ -236,7 +243,6 @@ const PromptsPage = () => {
   const visibleOrderRef = useRef(visibleOrder);
   const baselineOrderRef = useRef(baselineOrder);
   const sortedIdsRef = visibleOrderRef;
-  const sortedIds = visibleOrder;
   const setSortedIds = setVisibleOrder;
   const reorderSessionRef = useRef<ReorderSession | null>(null);
   const pendingCommitTelemetryRef = useRef<ReorderCommitTelemetry | null>(null);
@@ -1061,7 +1067,7 @@ const PromptsPage = () => {
     }
     lastReorderOutcomeRef.current = null;
 
-    void promptList.refetch();
+    refetchPromptList();
   };
 
   const persistReorder = async (previousIds: string[], nextIds: string[]) => {
@@ -1155,7 +1161,7 @@ const PromptsPage = () => {
           action: {
             label: t('prompts.reorder.reload', 'Reload'),
             onClick: () => {
-              void promptList.refetch();
+              refetchPromptList();
             },
           },
         });
@@ -1302,7 +1308,7 @@ const PromptsPage = () => {
         previousIds: payload.previousIds,
       });
 
-      void persistReorder(payload.previousIds, payload.nextIds).catch(() => {});
+      persistReorder(payload.previousIds, payload.nextIds).catch(() => {});
     }, REORDER_DEBOUNCE_MS);
   };
 
@@ -1321,7 +1327,7 @@ const PromptsPage = () => {
       previousIds,
     });
 
-    void persistReorder(previousIds, nextIds).catch(() => {});
+    persistReorder(previousIds, nextIds).catch(() => {});
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -1498,6 +1504,105 @@ const PromptsPage = () => {
     });
   };
 
+  const isActivationKey = (key: string) => key === 'Enter' || key === ' ';
+
+  const grabPromptForKeyboard = (prompt: Prompt) => {
+    cancelScheduledReorderPersist();
+    updateReorderUndoState(null);
+    const currentOrder = [...sortedIdsRef.current];
+    dragStartOrderRef.current = currentOrder;
+    keyboardStartOrderRef.current = currentOrder;
+    setKeyboardActiveId(prompt.id);
+    setActiveId(prompt.id);
+    measurePromptDimensions(prompt.id);
+    startReorderSession(prompt.id, currentOrder.indexOf(prompt.id), 'keyboard');
+    announce(
+      t('prompts.reorder.keyboardGrabbed', {
+        title: prompt.title,
+      }),
+    );
+  };
+
+  const cancelKeyboardReorder = (prompt: Prompt) => {
+    cancelScheduledReorderPersist();
+    const startingOrder = keyboardStartOrderRef.current;
+    if (startingOrder) {
+      setSortedIds([...startingOrder]);
+    }
+    setKeyboardActiveId(null);
+    setActiveId(null);
+    dragStartOrderRef.current = null;
+    keyboardStartOrderRef.current = null;
+    cancelReorderTelemetry();
+    clearActiveOverlayDimensions();
+    announce(
+      t('prompts.reorder.keyboardCancelled', {
+        title: prompt.title,
+      }),
+    );
+  };
+
+  const finalizeKeyboardReorder = (prompt: Prompt) => {
+    const baselineOrder = keyboardStartOrderRef.current ?? sortedIdsRef.current;
+    const currentOrder = [...sortedIdsRef.current];
+    setKeyboardActiveId(null);
+    setActiveId(null);
+    dragStartOrderRef.current = null;
+    keyboardStartOrderRef.current = null;
+    clearActiveOverlayDimensions();
+
+    if (!arraysShallowEqual(currentOrder, baselineOrder)) {
+      scheduleReorderPersist([...currentOrder], [...baselineOrder]);
+      announce(
+        t('prompts.reorder.keyboardDropped', {
+          title: prompt.title,
+          position: currentOrder.indexOf(prompt.id) + 1,
+          total: currentOrder.length,
+        }),
+      );
+    } else {
+      announce(
+        t('prompts.reorder.keyboardCancelled', {
+          title: prompt.title,
+        }),
+      );
+    }
+  };
+
+  const movePromptWithKeyboard = (prompt: Prompt, direction: 'up' | 'down') => {
+    setSortedIds((current) => {
+      const currentIndex = current.indexOf(prompt.id);
+
+      if (currentIndex === -1) {
+        return current;
+      }
+
+      const targetIndex =
+        direction === 'up'
+          ? Math.max(currentIndex - 1, 0)
+          : Math.min(currentIndex + 1, current.length - 1);
+
+      if (targetIndex === currentIndex) {
+        announce(
+          direction === 'up'
+            ? t('prompts.reorder.keyboardAtStart', 'Item is already in the first position.')
+            : t('prompts.reorder.keyboardAtEnd', 'Item is already in the last position.'),
+        );
+        return current;
+      }
+
+      const nextOrder = arrayMove(current, currentIndex, targetIndex);
+      announce(
+        t('prompts.reorder.keyboardMoved', {
+          title: prompt.title,
+          position: targetIndex + 1,
+          total: nextOrder.length,
+        }),
+      );
+      return nextOrder;
+    });
+  };
+
   const handlePromptKeyDown = (
     event: ReactKeyboardEvent<HTMLDivElement>,
     prompt: Prompt,
@@ -1506,127 +1611,43 @@ const PromptsPage = () => {
       return;
     }
 
-    const isGrabbed = keyboardActiveId === prompt.id;
     const hasModifier = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
+    const isGrabbed = keyboardActiveId === prompt.id;
+    const isActivation = isActivationKey(event.key);
 
-    if (!isGrabbed && (event.key === 'Enter' || event.key === ' ')) {
-      if (hasModifier) {
+    if (!isGrabbed) {
+      if (!isActivation || hasModifier) {
         return;
       }
 
       event.preventDefault();
       event.stopPropagation();
-      cancelScheduledReorderPersist();
-      updateReorderUndoState(null);
-      const currentOrder = [...sortedIdsRef.current];
-      dragStartOrderRef.current = currentOrder;
-      keyboardStartOrderRef.current = currentOrder;
-      setKeyboardActiveId(prompt.id);
-      setActiveId(prompt.id);
-      measurePromptDimensions(prompt.id);
-      startReorderSession(prompt.id, currentOrder.indexOf(prompt.id), 'keyboard');
-      announce(
-        t('prompts.reorder.keyboardGrabbed', {
-          title: prompt.title,
-        }),
-      );
-      return;
-    }
-
-    if (!isGrabbed) {
+      grabPromptForKeyboard(prompt);
       return;
     }
 
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      cancelScheduledReorderPersist();
-      const startingOrder = keyboardStartOrderRef.current;
-      if (startingOrder) {
-        setSortedIds([...startingOrder]);
-      }
-      setKeyboardActiveId(null);
-      setActiveId(null);
-      dragStartOrderRef.current = null;
-      keyboardStartOrderRef.current = null;
-      cancelReorderTelemetry();
-      clearActiveOverlayDimensions();
-      announce(
-        t('prompts.reorder.keyboardCancelled', {
-          title: prompt.title,
-        }),
-      );
+      cancelKeyboardReorder(prompt);
       return;
     }
 
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (isActivation) {
       if (hasModifier) {
         return;
       }
 
       event.preventDefault();
       event.stopPropagation();
-      const baselineOrder = keyboardStartOrderRef.current ?? sortedIdsRef.current;
-      const currentOrder = [...sortedIdsRef.current];
-      setKeyboardActiveId(null);
-      setActiveId(null);
-      dragStartOrderRef.current = null;
-      keyboardStartOrderRef.current = null;
-      clearActiveOverlayDimensions();
-
-      if (!arraysShallowEqual(currentOrder, baselineOrder)) {
-        scheduleReorderPersist([...currentOrder], [...baselineOrder]);
-        announce(
-          t('prompts.reorder.keyboardDropped', {
-            title: prompt.title,
-            position: currentOrder.indexOf(prompt.id) + 1,
-            total: currentOrder.length,
-          }),
-        );
-      } else {
-        announce(
-          t('prompts.reorder.keyboardCancelled', {
-            title: prompt.title,
-          }),
-        );
-      }
+      finalizeKeyboardReorder(prompt);
       return;
     }
 
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault();
       event.stopPropagation();
-      setSortedIds((current) => {
-        const currentIndex = current.indexOf(prompt.id);
-
-        if (currentIndex === -1) {
-          return current;
-        }
-
-        const targetIndex =
-          event.key === 'ArrowUp'
-            ? Math.max(currentIndex - 1, 0)
-            : Math.min(currentIndex + 1, current.length - 1);
-
-        if (targetIndex === currentIndex) {
-          announce(
-            event.key === 'ArrowUp'
-              ? t('prompts.reorder.keyboardAtStart', 'Item is already in the first position.')
-              : t('prompts.reorder.keyboardAtEnd', 'Item is already in the last position.'),
-          );
-          return current;
-        }
-
-        const nextOrder = arrayMove(current, currentIndex, targetIndex);
-        announce(
-          t('prompts.reorder.keyboardMoved', {
-            title: prompt.title,
-            position: targetIndex + 1,
-            total: nextOrder.length,
-          }),
-        );
-        return nextOrder;
-      });
+      movePromptWithKeyboard(prompt, event.key === 'ArrowUp' ? 'up' : 'down');
     }
   };
 
@@ -2212,9 +2233,7 @@ const PromptsPage = () => {
               type="button"
               onClick={() => {
                 setFeedback(null);
-                Promise.resolve(promptList.refetch()).catch(() => {
-                  // the query already exposes the error state
-                });
+                refetchPromptList();
               }}
               className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
             >
@@ -2462,7 +2481,9 @@ const PromptsPage = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      void handleCopyExportContent(exportContent);
+                      handleCopyExportContent(exportContent).catch((error) => {
+                        console.error('[PromptsPage] Failed to copy export content', error);
+                      });
                     }}
                     className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
                   >
