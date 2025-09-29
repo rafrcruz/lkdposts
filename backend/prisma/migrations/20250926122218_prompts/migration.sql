@@ -2,7 +2,7 @@
 CREATE TABLE "public"."Prompt" (
     "id" TEXT NOT NULL,
     "userId" INTEGER NOT NULL,
-    "title" VARCHAR(120) NOT NULL,
+    "title" TEXT NOT NULL CHECK (char_length("title") <= 120),
     "content" TEXT NOT NULL,
     "position" INTEGER NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

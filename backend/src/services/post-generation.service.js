@@ -393,6 +393,132 @@ const ensureOpenAIClient = (client) => {
   return getOpenAIClient();
 };
 
+const buildGenerationPayload = ({ article, basePrompt, model }) => {
+  const context = buildArticleContext(article);
+
+  return {
+    model,
+    input: [
+      {
+        role: 'system',
+        content: basePrompt
+          ? [
+              {
+                type: 'text',
+                text: basePrompt,
+                cache_control: 'cache',
+              },
+            ]
+          : [],
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: context,
+          },
+        ],
+      },
+    ],
+  };
+};
+
+const createPromptBaseOrRecordFailure = async ({ ownerKey, startedAt }) => {
+  try {
+    return await buildPromptBase({ ownerKey });
+  } catch (error) {
+    const reason = truncateError(error instanceof Error ? error.message : String(error));
+    const summary = computeSummary({
+      ownerKey,
+      startedAt,
+      finishedAt: ensureDate(new Date()),
+      eligibleCount: 0,
+      generatedCount: 0,
+      failedCount: 0,
+      skippedCount: 0,
+      promptBaseHash: null,
+      model: null,
+      errors: [{ articleId: null, reason }],
+    });
+    recordStatus(ownerKey, summary);
+    throw error;
+  }
+};
+
+const recordEmptySummary = ({ ownerKey, startedAt, skippedCount, promptBaseHash, errors }) => {
+  const summary = computeSummary({
+    ownerKey,
+    startedAt,
+    finishedAt: ensureDate(new Date()),
+    eligibleCount: 0,
+    generatedCount: 0,
+    failedCount: 0,
+    skippedCount,
+    promptBaseHash,
+    model: null,
+    errors,
+  });
+  recordStatus(ownerKey, summary);
+  return summary;
+};
+
+const generatePostForArticle = async ({
+  article,
+  basePrompt,
+  model,
+  client,
+  timeoutMs,
+  promptBaseHash,
+}) => {
+  const payload = buildGenerationPayload({ article, basePrompt, model });
+  const nextAttemptCount = (article.post?.attemptCount ?? 0) + 1;
+
+  try {
+    const response = await callOpenAIWithRetry({
+      client,
+      payload,
+      maxRetries: 2,
+      timeoutMs,
+    });
+
+    const generatedText = extractGeneratedText(response);
+    if (!generatedText) {
+      throw new Error('OpenAI response did not contain text output');
+    }
+
+    const usage = response?.usage ?? {};
+    await postRepository.upsertForArticle({
+      articleId: article.id,
+      data: {
+        content: generatedText,
+        status: 'SUCCESS',
+        generatedAt: ensureDate(new Date()),
+        modelUsed: response?.model ?? model,
+        tokensInput: usage?.input_tokens ?? usage?.prompt_tokens ?? null,
+        tokensOutput: usage?.output_tokens ?? usage?.completion_tokens ?? null,
+        errorReason: null,
+        promptBaseHash,
+        attemptCount: nextAttemptCount,
+      },
+    });
+
+    return { success: true };
+  } catch (error) {
+    const reason = truncateError(error instanceof Error ? error.message : String(error));
+    await postRepository.upsertForArticle({
+      articleId: article.id,
+      data: {
+        status: 'FAILED',
+        errorReason: reason,
+        promptBaseHash,
+        attemptCount: nextAttemptCount,
+      },
+    });
+    return { success: false, reason };
+  }
+};
+
 const computeSummary = ({
   ownerKey,
   startedAt,
@@ -444,27 +570,7 @@ const generatePostsForOwner = async ({
     const errors = [];
 
     const operationalParams = await resolveOperationalParams(overrides);
-    let promptBase;
-    try {
-      promptBase = await buildPromptBase({ ownerKey });
-    } catch (error) {
-      const reason = truncateError(error instanceof Error ? error.message : String(error));
-      const summary = computeSummary({
-        ownerKey,
-        startedAt,
-        finishedAt: ensureDate(new Date()),
-        eligibleCount: 0,
-        generatedCount: 0,
-        failedCount: 0,
-        skippedCount: 0,
-        promptBaseHash: null,
-        model: null,
-        errors: [{ articleId: null, reason }],
-      });
-      recordStatus(ownerKey, summary);
-      throw error;
-    }
-
+    const promptBase = await createPromptBaseOrRecordFailure({ ownerKey, startedAt });
     const promptBaseHash = promptBase.promptBaseHash;
     const basePrompt = promptBase.basePrompt;
 
@@ -474,22 +580,15 @@ const generatePostsForOwner = async ({
       operationalParams,
       maxAttempts,
     });
-    const eligibleCount = eligible.length;
-    if (eligibleCount === 0) {
-      const summary = computeSummary({
+
+    if (eligible.length === 0) {
+      return recordEmptySummary({
         ownerKey,
         startedAt,
-        finishedAt: ensureDate(new Date()),
-        eligibleCount,
-        generatedCount: 0,
-        failedCount: 0,
         skippedCount,
         promptBaseHash,
-        model: null,
         errors,
       });
-      recordStatus(ownerKey, summary);
-      return summary;
     }
 
     const model = await getOpenAIModel();
@@ -500,88 +599,29 @@ const generatePostsForOwner = async ({
     let failedCount = 0;
 
     for (const article of eligible) {
-      const context = buildArticleContext(article);
-      const payload = {
+      const result = await generatePostForArticle({
+        article,
+        basePrompt,
         model,
-        input: [
-          {
-            role: 'system',
-            content: basePrompt
-              ? [
-                  {
-                    type: 'text',
-                    text: basePrompt,
-                    cache_control: 'cache',
-                  },
-                ]
-              : [],
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: context,
-              },
-            ],
-          },
-        ],
-      };
+        client: openAiClient,
+        timeoutMs,
+        promptBaseHash,
+      });
 
-      const currentAttempts = article.post?.attemptCount ?? 0;
-      const nextAttemptCount = currentAttempts + 1;
-
-      try {
-        const response = await callOpenAIWithRetry({
-          client: openAiClient,
-          payload,
-          maxRetries: 2,
-          timeoutMs,
-        });
-
-        const generatedText = extractGeneratedText(response);
-        if (!generatedText) {
-          throw new Error('OpenAI response did not contain text output');
-        }
-
-        const usage = response?.usage ?? {};
-        await postRepository.upsertForArticle({
-          articleId: article.id,
-          data: {
-            content: generatedText,
-            status: 'SUCCESS',
-            generatedAt: ensureDate(new Date()),
-            modelUsed: response?.model ?? model,
-            tokensInput: usage?.input_tokens ?? usage?.prompt_tokens ?? null,
-            tokensOutput: usage?.output_tokens ?? usage?.completion_tokens ?? null,
-            errorReason: null,
-            promptBaseHash,
-            attemptCount: nextAttemptCount,
-          },
-        });
+      if (result.success) {
         generatedCount += 1;
-      } catch (error) {
-        failedCount += 1;
-        const reason = truncateError(error instanceof Error ? error.message : String(error));
-        errors.push({ articleId: article.id, reason });
-        await postRepository.upsertForArticle({
-          articleId: article.id,
-          data: {
-            status: 'FAILED',
-            errorReason: reason,
-            promptBaseHash,
-            attemptCount: nextAttemptCount,
-          },
-        });
+        continue;
       }
+
+      failedCount += 1;
+      errors.push({ articleId: article.id, reason: result.reason });
     }
 
-    const finishedAt = ensureDate(new Date());
     const summary = computeSummary({
       ownerKey,
       startedAt,
-      finishedAt,
-      eligibleCount,
+      finishedAt: ensureDate(new Date()),
+      eligibleCount: eligible.length,
       generatedCount,
       failedCount,
       skippedCount,
@@ -592,10 +632,9 @@ const generatePostsForOwner = async ({
 
     recordStatus(ownerKey, summary);
     return summary;
-  })()
-    .finally(() => {
-      generationLocks.delete(ownerKey);
-    });
+  })().finally(() => {
+    generationLocks.delete(ownerKey);
+  });
 
   generationLocks.set(ownerKey, promise);
   return promise;

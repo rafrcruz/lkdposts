@@ -19,8 +19,8 @@ UPDATE "public"."Post"
 SET
   "generated_at" = "createdAt",
   "status" = CASE
-    WHEN COALESCE("content", '') = '' THEN 'PENDING'::"public"."PostGenerationStatus"
-    ELSE 'SUCCESS'::"public"."PostGenerationStatus"
+    WHEN COALESCE("content", '') <> '' THEN 'SUCCESS'::"public"."PostGenerationStatus"
+    ELSE "status"
   END;
 
 -- CreateIndex
