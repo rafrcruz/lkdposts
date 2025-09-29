@@ -230,6 +230,7 @@ const PromptsPage = () => {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [keyboardActiveId, setKeyboardActiveId] = useState<string | null>(null);
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
+  const isSorting = activeId !== null;
   const sortedIdsRef = useRef(sortedIds);
   const reorderSessionRef = useRef<ReorderSession | null>(null);
   const pendingCommitTelemetryRef = useRef<ReorderCommitTelemetry | null>(null);
@@ -390,7 +391,6 @@ const PromptsPage = () => {
       .map((id) => promptMap.get(id))
       .filter((prompt): prompt is Prompt => Boolean(prompt));
   }, [promptMap, sortedIds]);
-  const isSorting = activeId !== null;
   const shouldVirtualize = orderedPrompts.length > VIRTUALIZATION_THRESHOLD;
   const isReorderEnabled = normalizedSearch.length === 0 && statusFilter === 'all';
   const isReorderPending = reorderPrompts.isPending || hasReorderSaveQueued;
