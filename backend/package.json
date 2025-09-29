@@ -23,7 +23,8 @@
         "lint:ci": "eslint \"src/**/*.{ts,tsx,js,jsx}\" -f json -o eslint-report.json",
         "test:ci": "jest --coverage --coverageReporters=lcov",
         "postinstall": "prisma generate",
-        "db:migrate:deploy:vercel": "node scripts/db-migrate-deploy-vercel.js"
+        "db:migrate:deploy:vercel": "node scripts/db-migrate-deploy-vercel.js",
+        "copylkd": "robocopy \"C:\\projetos\\lkdposts\" \"C:\\projetos\\lkd\" /E /XD node_modules || exit 0"
     },
     "keywords": [],
     "author": "",
