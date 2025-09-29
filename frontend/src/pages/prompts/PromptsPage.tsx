@@ -396,6 +396,18 @@ const PromptsPage = () => {
   const isReorderEnabled = normalizedSearch.length === 0 && statusFilter === 'all';
   const isReorderPending = reorderPrompts.isPending || hasReorderSaveQueued;
   const canReorder = isReorderEnabled;
+
+  useEffect(() => {
+    console.log('[REORDER] canReorder computed', {
+      canReorder,
+      statusFilter,
+      searchLength: normalizedSearch.length,
+    });
+  }, [canReorder, statusFilter, normalizedSearch]);
+
+  const showForceSaveButton =
+    canReorder && !arraysShallowEqual(sortedIds, lastSyncedIdsRef.current);
+
   const activePrompt = useMemo(() => {
     if (!activeId) {
       return null;
@@ -1050,8 +1062,18 @@ const PromptsPage = () => {
     const completeNextIds = completeOrder(nextIds);
     const completePreviousIds = completeOrder(previousIds);
 
+    console.log('[REORDER] persistReorder sizes', {
+      allPromptIdsLength: allPromptIds.length,
+      completeNextIdsLength: completeNextIds.length,
+      completePreviousIdsLength: completePreviousIds.length,
+    });
+
     if (completeNextIds.length !== allPromptIds.length) {
       setHasReorderSaveQueued(false);
+      console.log('[REORDER] persistReorder skipped: length mismatch', {
+        expectedLength: allPromptIds.length,
+        completeNextIdsLength: completeNextIds.length,
+      });
       return;
     }
 
@@ -1062,6 +1084,10 @@ const PromptsPage = () => {
 
     if (nextPrompts.length !== prompts.length) {
       setHasReorderSaveQueued(false);
+      console.log('[REORDER] persistReorder skipped: prompt mismatch', {
+        nextPromptsLength: nextPrompts.length,
+        expectedPromptsLength: prompts.length,
+      });
       return;
     }
 
@@ -1070,6 +1096,14 @@ const PromptsPage = () => {
       .map((id) => itemsById.get(id))
       .filter((item): item is Prompt => Boolean(item));
     const normalizedPrevious = normalizePromptOrder(previousPrompts);
+
+    const payloadItems = normalizedNext.map((item) => ({ id: item.id, position: item.position }));
+
+    console.log('[REORDER] persistReorder payload', {
+      items: payloadItems,
+      nextIds: completeNextIds,
+      previousIds: completePreviousIds,
+    });
 
     const requestId = activeReorderRequestIdRef.current + 1;
     activeReorderRequestIdRef.current = requestId;
@@ -1080,12 +1114,17 @@ const PromptsPage = () => {
 
     try {
       const serverPrompts = await reorderPrompts.mutateAsync(normalizedNext);
+      const serverIds = serverPrompts.map((item) => item.id);
+
+      console.log('[REORDER] persistReorder response', {
+        serverIds,
+        requestId,
+      });
 
       if (activeReorderRequestIdRef.current !== requestId) {
         return;
       }
 
-      const serverIds = serverPrompts.map((item) => item.id);
       const requestedSet = new Set(completeNextIds);
       const serverSet = new Set(serverIds);
       const missingInServer = completeNextIds.filter((id) => !serverSet.has(id));
@@ -1137,6 +1176,8 @@ const PromptsPage = () => {
         message: t('prompts.feedback.reordered', 'Ordem salva.'),
       });
     } catch (error) {
+      console.error('[REORDER][error] persistReorder failed', error);
+
       if (activeReorderRequestIdRef.current !== requestId) {
         return;
       }
@@ -1207,6 +1248,11 @@ const PromptsPage = () => {
       return;
     }
 
+    console.log('[REORDER] scheduleReorderPersist', {
+      previousIds: completePreviousIds,
+      nextIds: completeNextIds,
+    });
+
     cancelScheduledReorderPersist();
 
     setFeedback(null);
@@ -1218,6 +1264,11 @@ const PromptsPage = () => {
       nextIds: [...completeNextIds],
       previousIds: [...completePreviousIds],
     };
+
+    console.log('[REORDER] scheduleReorderPersist scheduling debounce', {
+      delayMs: REORDER_DEBOUNCE_MS,
+    });
+
     reorderPersistTimeoutRef.current = setTimeout(() => {
       const payload = pendingReorderRef.current;
       reorderPersistTimeoutRef.current = null;
@@ -1227,8 +1278,31 @@ const PromptsPage = () => {
         return;
       }
 
+      console.log('[REORDER] scheduleReorderPersist debounce payload', {
+        nextIds: payload.nextIds,
+        previousIds: payload.previousIds,
+      });
+
       void persistReorder(payload.nextIds, payload.previousIds);
     }, REORDER_DEBOUNCE_MS);
+  };
+
+  const handleForceSaveClick = () => {
+    if (!canReorder) {
+      return;
+    }
+
+    cancelScheduledReorderPersist();
+
+    const nextIds = [...sortedIdsRef.current];
+    const previousIds = [...lastSyncedIdsRef.current];
+
+    console.log('[REORDER] Forçar salvar ordem clicado', {
+      nextIds,
+      previousIds,
+    });
+
+    void persistReorder(nextIds, previousIds);
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -1243,6 +1317,12 @@ const PromptsPage = () => {
     setKeyboardActiveId(null);
 
     const activeIdValue = String(event.active.id);
+
+    console.log('[REORDER] handleDragStart', {
+      activeId: activeIdValue,
+      currentOrder: [...sortedIdsRef.current],
+    });
+
     setActiveId(activeIdValue);
     measurePromptDimensions(activeIdValue);
     startReorderSession(activeIdValue, sortedIdsRef.current.indexOf(activeIdValue), 'pointer');
@@ -1290,17 +1370,47 @@ const PromptsPage = () => {
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (!canReorder) {
+      const activeIdValue = String(event.active.id);
+      const overIdValue = event.over ? String(event.over.id) : null;
+      const startingOrderSnapshot = dragStartOrderRef.current ? [...dragStartOrderRef.current] : null;
+
       setActiveId(null);
       setKeyboardActiveId(null);
       setSortedIds(promptIdList);
       dragStartOrderRef.current = null;
       keyboardStartOrderRef.current = null;
       clearActiveOverlayDimensions();
+
+      console.log('[REORDER] handleDragEnd', {
+        activeId: activeIdValue,
+        overId: overIdValue,
+        startingOrder: startingOrderSnapshot,
+        nextOrder: [...promptIdList],
+        canReorder,
+        scheduledPersist: false,
+      });
+
       return;
     }
 
     const { active, over } = event;
     const startingOrder = dragStartOrderRef.current ? [...dragStartOrderRef.current] : null;
+    const activeIdValue = String(active.id);
+    const overIdValue = over ? String(over.id) : null;
+    let nextOrderSnapshot: string[] | null = null;
+    let persistScheduled = false;
+
+    const logResult = (nextOrder: string[], scheduled: boolean) => {
+      console.log('[REORDER] handleDragEnd', {
+        activeId: activeIdValue,
+        overId: overIdValue,
+        startingOrder,
+        nextOrder,
+        canReorder,
+        scheduledPersist: scheduled,
+      });
+    };
+
     setActiveId(null);
     setKeyboardActiveId(null);
     dragStartOrderRef.current = null;
@@ -1311,11 +1421,9 @@ const PromptsPage = () => {
       cancelScheduledReorderPersist();
       const fallbackOrder = startingOrder ?? promptIdList;
       setSortedIds([...fallbackOrder]);
-      dragStartOrderRef.current = null;
+      logResult([...fallbackOrder], false);
       return;
     }
-
-    const activeIdValue = String(active.id);
 
     setSortedIds((current) => {
       const currentIndex = current.indexOf(activeIdValue);
@@ -1323,6 +1431,7 @@ const PromptsPage = () => {
       if (currentIndex === -1) {
         cancelScheduledReorderPersist();
         const fallbackOrder = startingOrder ?? promptIdList;
+        nextOrderSnapshot = [...fallbackOrder];
         return [...fallbackOrder];
       }
 
@@ -1331,31 +1440,42 @@ const PromptsPage = () => {
         const nextOrder = arrayMove(current, currentIndex, targetIndex);
 
         if (arraysShallowEqual(nextOrder, current)) {
+          nextOrderSnapshot = [...current];
           return current;
         }
 
+        persistScheduled = true;
+        nextOrderSnapshot = [...nextOrder];
         scheduleReorderPersist(nextOrder, current);
         return nextOrder;
       }
 
-      const overIdValue = String(over.id);
-      const targetIndex = current.indexOf(overIdValue);
+      const targetIndex = overIdValue ? current.indexOf(overIdValue) : -1;
 
       if (targetIndex === -1) {
         cancelScheduledReorderPersist();
         const fallbackOrder = startingOrder ?? promptIdList;
+        nextOrderSnapshot = [...fallbackOrder];
         return [...fallbackOrder];
       }
 
       const nextOrder = arrayMove(current, currentIndex, targetIndex);
 
       if (arraysShallowEqual(nextOrder, current)) {
+        nextOrderSnapshot = [...current];
         return current;
       }
 
+      persistScheduled = true;
+      nextOrderSnapshot = [...nextOrder];
       scheduleReorderPersist(nextOrder, current);
       return nextOrder;
     });
+
+    const resolvedNextOrder =
+      nextOrderSnapshot ?? (startingOrder ? [...startingOrder] : [...promptIdList]);
+
+    logResult(resolvedNextOrder, persistScheduled);
   };
 
   const handleDragCancel = () => {
@@ -2172,6 +2292,18 @@ const PromptsPage = () => {
                 <p className="text-xs font-medium text-primary" role="status" aria-live="polite">
                   {t('prompts.reorder.pending', 'Updating order...')}
                 </p>
+              ) : null}
+              {showForceSaveButton ? (
+                <button
+                  type="button"
+                  onClick={handleForceSaveClick}
+                  className="inline-flex items-center justify-center rounded-md border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={reorderPrompts.isPending}
+                >
+                  {reorderPrompts.isPending
+                    ? t('prompts.reorder.forceSaveSaving', 'Salvando...')
+                    : t('prompts.reorder.forceSave', 'Forçar salvar ordem')}
+                </button>
               ) : null}
             </div>
             <DndContext
