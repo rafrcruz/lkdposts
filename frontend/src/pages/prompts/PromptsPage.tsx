@@ -1693,7 +1693,7 @@ const PromptsPage = () => {
 
   type PromptCardRenderOptions = {
     setNodeRef?: (element: HTMLDivElement | null) => void;
-    handleAttributes?: DraggableAttributes;
+    containerAttributes?: DraggableAttributes;
     handleListeners?: SyntheticListenerMap;
     style?: CSSProperties;
     isDragging?: boolean;
@@ -1748,11 +1748,8 @@ const PromptsPage = () => {
       'prompts.list.dropPlaceholder',
       'Release to place the prompt here.',
     );
-    const handleAttributes = options?.handleAttributes ?? {};
-    const handleListeners = options?.handleListeners ?? {};
-    const handleProps = canReorder
-      ? ({ ...handleAttributes, ...handleListeners } as DraggableAttributes & SyntheticListenerMap)
-      : undefined;
+    const containerAttributes = options?.containerAttributes ?? {};
+    const handleListeners = canReorder ? options?.handleListeners ?? {} : {};
 
     const assignRef = (element: HTMLDivElement | null) => {
       if (!options?.isOverlay) {
@@ -1767,6 +1764,8 @@ const PromptsPage = () => {
     return (
       <div
         key={prompt.id}
+        ref={assignRef}
+        {...containerAttributes}
         role="listitem"
         className={clsx(
           'relative card flex flex-col gap-4 p-4 outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary',
@@ -1779,7 +1778,6 @@ const PromptsPage = () => {
           !isEnabled ? 'border-dashed border-border/70 bg-muted/30' : '',
         )}
         tabIndex={0}
-        ref={assignRef}
         style={options?.style}
         data-dragging={isDragging}
         data-keyboard-grabbed={isKeyboardActive ? 'true' : undefined}
@@ -1816,7 +1814,7 @@ const PromptsPage = () => {
                         : 'cursor-not-allowed opacity-60',
                       isDragging ? 'cursor-grabbing border-primary bg-background text-foreground shadow-sm' : '',
                     )}
-                    {...(handleProps ?? {})}
+                    {...handleListeners}
                     disabled={!canReorder}
                     aria-label={reorderHandleLabel}
                     data-active={options?.isActive ? 'true' : undefined}
@@ -1997,7 +1995,7 @@ const PromptsPage = () => {
 
     return renderPromptCard(prompt, {
       setNodeRef,
-      handleAttributes: attributes,
+      containerAttributes: attributes,
       handleListeners: listeners,
       style,
       isDragging,
