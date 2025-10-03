@@ -1268,6 +1268,7 @@ jest.mock('../src/lib/openai-client', () => {
   return {
     getOpenAIClient: jest.fn(() => client),
     resetOpenAIClient: jest.fn(),
+    getOpenAIEnvironment: jest.fn(() => ({ baseUrl: 'https://api.openai.com/v1', timeoutMs: 30000 })),
     __mockClient: client,
   };
 });

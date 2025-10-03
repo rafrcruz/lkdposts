@@ -8,6 +8,7 @@ const appParamsRoutes = require('./app-params.routes');
 const allowlistRoutes = require('./allowlist.routes');
 const diagnosticsRoutes = require('./diagnostics.routes');
 const adminNewsRoutes = require('./admin/news.routes');
+const adminOpenAiRoutes = require('./admin/openai.routes');
 const { requireAuth } = require('../../middlewares/authentication');
 const { requireRole, ROLES } = require('../../middlewares/authorization');
 
@@ -23,5 +24,6 @@ router.use('/app-params', appParamsRoutes);
 router.use('/allowlist', requireRole(ROLES.ADMIN), allowlistRoutes);
 router.use('/diagnostics', requireRole(ROLES.ADMIN), diagnosticsRoutes);
 router.use('/admin/news', requireRole(ROLES.ADMIN), adminNewsRoutes);
+router.use('/admin/openai', requireRole(ROLES.ADMIN), adminOpenAiRoutes);
 
 module.exports = router;
