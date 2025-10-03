@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const config = require('../src/config');
 const { ROLES } = require('../src/constants/roles');
+const { OPENAI_MODEL_OPTIONS, DEFAULT_OPENAI_MODEL } = require('../src/services/app-params.service');
 
 const prisma = new PrismaClient();
 
@@ -35,10 +36,34 @@ const ensureSuperAdmin = async () => {
   });
 };
 
+const SUPPORTED_OPENAI_MODELS = new Set(OPENAI_MODEL_OPTIONS);
+
+const normalizeOpenAiModel = (value) => {
+  if (typeof value !== 'string') {
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  const normalized = value.trim();
+  if (!SUPPORTED_OPENAI_MODELS.has(normalized)) {
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  return normalized;
+};
+
 const ensureAppParams = async () => {
   const existing = await prisma.appParams.findFirst();
 
   if (existing) {
+    const normalized = normalizeOpenAiModel(existing.openAiModel);
+
+    if (normalized !== existing.openAiModel) {
+      return prisma.appParams.update({
+        where: { id: existing.id },
+        data: { openAiModel: normalized },
+      });
+    }
+
     return existing;
   }
 
@@ -47,7 +72,7 @@ const ensureAppParams = async () => {
       id: 1,
       postsRefreshCooldownSeconds: 3600,
       postsTimeWindowDays: 7,
-      openAiModel: 'gpt-5-nano',
+      openAiModel: DEFAULT_OPENAI_MODEL,
     },
   });
 };

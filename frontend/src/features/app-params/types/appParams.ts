@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
-export const openAiModelOptions = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'] as const;
+export const openAiModelOptions = [
+  'gpt-5-nano',
+  'gpt-5-mini',
+  'gpt-5',
+  'gpt-5-nano-2025-08-07',
+  'gpt-5-mini-2025-08-07',
+  'gpt-5-2025-08-07',
+] as const;
 
 export const appParamsSchema = z.object({
   posts_refresh_cooldown_seconds: z.number().int().nonnegative(),

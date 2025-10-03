@@ -98,7 +98,14 @@ const definition = {
           posts_time_window_days: { type: 'integer', minimum: 1, example: 7 },
           'openai.model': {
             type: 'string',
-            enum: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'],
+            enum: [
+              'gpt-5-nano',
+              'gpt-5-mini',
+              'gpt-5',
+              'gpt-5-nano-2025-08-07',
+              'gpt-5-mini-2025-08-07',
+              'gpt-5-2025-08-07',
+            ],
             example: 'gpt-5-nano',
             description: 'Identificador do modelo OpenAI usado para gerar os posts.',
           },

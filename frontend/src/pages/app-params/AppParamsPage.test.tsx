@@ -5,7 +5,10 @@ import { vi } from 'vitest';
 
 import AppParamsPage from './AppParamsPage';
 import { useAppParams } from '@/features/app-params/hooks/useAppParams';
-import type { AppParams } from '@/features/app-params/types/appParams';
+import {
+  openAiModelOptions,
+  type AppParams,
+} from '@/features/app-params/types/appParams';
 import { useResetFeeds } from '@/features/feeds/hooks/useFeeds';
 import i18n from '@/config/i18n';
 import { HttpError } from '@/lib/api/http';
@@ -26,6 +29,7 @@ const renderPage = () =>
 const buildAppParams = (override: Partial<AppParams> = {}): AppParams => ({
   posts_refresh_cooldown_seconds: override.posts_refresh_cooldown_seconds ?? 0,
   posts_time_window_days: override.posts_time_window_days ?? 7,
+  'openai.model': override['openai.model'] ?? openAiModelOptions[0],
   updated_at: override.updated_at ?? '2024-01-01T00:00:00.000Z',
   updated_by: Object.hasOwn(override, 'updated_by') ? override.updated_by ?? null : 'admin@example.com',
 });
@@ -115,11 +119,23 @@ describe('AppParamsPage', () => {
 
     const cooldownInput = screen.getByLabelText('Cooldown de atualizacao (segundos)');
     const timeWindowInput = screen.getByLabelText('Janela de tempo dos posts (dias)');
+    const openAiModelSelect = screen.getByLabelText(/Modelo da OpenAI/i);
     const saveButton = screen.getByRole('button', { name: 'Salvar' });
 
     expect(cooldownInput).toHaveValue(0);
     expect(timeWindowInput).toHaveValue(7);
+    expect(openAiModelSelect).toHaveValue(openAiModelOptions[0]);
     expect(saveButton).toBeDisabled();
+  });
+
+  it('renders only supported OpenAI model options', () => {
+    renderPage();
+
+    const openAiModelSelect = screen.getByLabelText(/Modelo da OpenAI/i) as HTMLSelectElement;
+
+    const optionValues = Array.from(openAiModelSelect.options).map((option) => option.value);
+    expect(optionValues).toEqual([...openAiModelOptions]);
+    expect(openAiModelSelect).toHaveValue(openAiModelOptions[0]);
   });
 
   it('validates integer-only inputs and prevents submission when invalid', async () => {
@@ -176,6 +192,27 @@ describe('AppParamsPage', () => {
     expect(timeWindowInput).toHaveValue(5);
   });
 
+  it('allows updating the OpenAI model with supported values', async () => {
+    const nextModel = openAiModelOptions[1];
+    const updatedParams = buildAppParams({ 'openai.model': nextModel });
+    const updateMock = vi.fn(async () => updatedParams);
+    mockedUseAppParams.mockReturnValue(buildAppParamsHook({}, { update: updateMock }));
+
+    const user = userEvent.setup();
+
+    renderPage();
+
+    const select = screen.getByLabelText(/Modelo da OpenAI/i);
+    await user.selectOptions(select, nextModel);
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => {
+      expect(updateMock).toHaveBeenCalledWith({ 'openai.model': nextModel });
+    });
+
+    expect(select).toHaveValue(nextModel);
+  });
+
   it('shows a warning when the feed reset fails after saving', async () => {
     const updatedParams = buildAppParams({ posts_refresh_cooldown_seconds: 90, posts_time_window_days: 4 });
     const updateMock = vi.fn(async () => updatedParams);
@@ -226,6 +263,23 @@ describe('AppParamsPage', () => {
     });
 
     expect(screen.getByText('Acesso negado')).toBeInTheDocument();
+  });
+
+  it('falls back to the default OpenAI model when the API returns an unsupported value', () => {
+    const invalidParams = {
+      ...buildAppParams(),
+      'openai.model': 'gpt-5-ultra',
+    } as unknown as AppParams;
+
+    mockedUseAppParams.mockReturnValue(
+      buildAppParamsHook({}, {
+        params: invalidParams,
+      }),
+    );
+
+    renderPage();
+
+    expect(screen.getByLabelText(/Modelo da OpenAI/i)).toHaveValue(openAiModelOptions[0]);
   });
 
   it('surfaces background refresh errors while keeping the form available', () => {

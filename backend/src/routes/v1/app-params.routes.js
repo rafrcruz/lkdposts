@@ -66,7 +66,7 @@ const router = express.Router();
  *                 minimum: 1
  *               'openai.model':
  *                 type: string
- *                 enum: [gpt-5, gpt-5-mini, gpt-5-nano]
+ *                 enum: [gpt-5-nano, gpt-5-mini, gpt-5, gpt-5-nano-2025-08-07, gpt-5-mini-2025-08-07, gpt-5-2025-08-07]
  *                 description: Modelo da OpenAI utilizado na geração dos posts.
  *           examples:
  *             updateCooldown:
@@ -127,7 +127,7 @@ const router = express.Router();
  *                 minimum: 1
  *               'openai.model':
  *                 type: string
- *                 enum: [gpt-5, gpt-5-mini, gpt-5-nano]
+ *                 enum: [gpt-5-nano, gpt-5-mini, gpt-5, gpt-5-nano-2025-08-07, gpt-5-mini-2025-08-07, gpt-5-2025-08-07]
  *     responses:
  *       '200':
  *         description: Parâmetros atualizados com sucesso

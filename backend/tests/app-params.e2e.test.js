@@ -18,6 +18,7 @@ const TOKENS = {
   admin: 'token-admin',
   user: 'token-user',
 };
+const SUPPORTED_MODELS = appParamsService.OPENAI_MODEL_OPTIONS;
 
 const sessionForUser = (userId, email, role) => ({
   session: {
@@ -126,13 +127,31 @@ describe('Application parameters API', () => {
       .expect(400);
   });
 
-  it('rejects unsupported OpenAI model values', async () => {
-    await withAuth(
+  it('allows updating the OpenAI model with any supported value', async () => {
+    for (const model of SUPPORTED_MODELS) {
+      const response = await withAuth(
+        TOKENS.admin,
+        request(app)
+          .patch('/api/v1/app-params')
+          .send({ 'openai.model': model })
+      )
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data['openai.model']).toBe(model);
+    }
+  });
+
+  it('rejects unsupported OpenAI model values with a 422 error', async () => {
+    const response = await withAuth(
       TOKENS.admin,
       request(app).patch('/api/v1/app-params').send({ 'openai.model': 'gpt-5-ultra' })
     )
       .expect('Content-Type', /json/)
-      .expect(400);
+      .expect(422);
+
+    expect(response.body.error.code).toBe('UNSUPPORTED_OPENAI_MODEL');
+    expect(response.body.error.message).toContain('openai.model must be one of');
   });
 
   it('is idempotent when ensuring default parameters', async () => {
