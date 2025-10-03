@@ -214,4 +214,194 @@ describe('post-generation.service integration', () => {
     const storedPosts = await prisma.post.findMany();
     expect(storedPosts.filter((post) => post.status === 'SUCCESS')).toHaveLength(2);
   });
+  it('retries transient 429 errors and succeeds on the next attempt', async () => {
+    const now = new Date('2025-01-01T12:00:00Z');
+    const feed = await createFeed();
+    await createArticle({
+      feedId: feed.id,
+      title: 'Notícia para retry',
+      contentSnippet: 'Resumo',
+      publishedAt: new Date('2025-01-01T10:00:00Z').toISOString(),
+      guid: 'retry-1',
+      link: 'https://example.com/retry-1',
+      dedupeKey: 'retry-1',
+    });
+
+    const payloads = [];
+    __mockClient.responses.create
+      .mockImplementationOnce(() => {
+        const error = new Error('Rate limited');
+        error.status = 429;
+        return Promise.reject(error);
+      })
+      .mockImplementationOnce(async (payload) => {
+        payloads.push(payload);
+        return {
+          id: 'resp-retry',
+          model: 'gpt-5-nano',
+          output_text: 'Conteúdo após retry.',
+          usage: { input_tokens: 120, output_tokens: 90 },
+        };
+      });
+
+    const summary = await postGenerationService.generatePostsForOwner({ ownerKey: OWNER_KEY, now });
+
+    expect(__mockClient.responses.create).toHaveBeenCalledTimes(2);
+    expect(payloads).toHaveLength(1);
+    expect(summary).toEqual(
+      expect.objectContaining({
+        generatedCount: 1,
+        failedCount: 0,
+      }),
+    );
+  });
+
+  it('reports a friendly timeout message when OpenAI exceeds the configured deadline', async () => {
+    const now = new Date('2025-01-01T12:00:00Z');
+    const feed = await createFeed();
+    await createArticle({
+      feedId: feed.id,
+      title: 'Notícia com timeout',
+      contentSnippet: 'Resumo timeout',
+      publishedAt: new Date('2025-01-01T10:05:00Z').toISOString(),
+      guid: 'timeout-1',
+      link: 'https://example.com/timeout-1',
+      dedupeKey: 'timeout-1',
+    });
+
+    const timeoutError = new Error('OpenAI request timed out');
+    timeoutError.status = 408;
+    __mockClient.responses.create.mockRejectedValueOnce(timeoutError);
+
+    const summary = await postGenerationService.generatePostsForOwner({ ownerKey: OWNER_KEY, now });
+
+    expect(summary.failedCount).toBe(1);
+    expect(summary.errors).toEqual([
+      {
+        articleId: expect.any(Number),
+        reason: 'A solicitação à OpenAI excedeu o tempo limite. Tente novamente em instantes.',
+      },
+    ]);
+  });
+
+  it('truncates oversized article content and annotates the payload', async () => {
+    const now = new Date('2025-01-01T12:00:00Z');
+    const feed = await createFeed();
+    const largeHtml = `<p>${'a'.repeat(9000)}</p>`;
+
+    await createArticle({
+      feedId: feed.id,
+      title: 'Notícia extensa',
+      contentSnippet: 'Resumo longo',
+      articleHtml: largeHtml,
+      publishedAt: new Date('2025-01-01T11:00:00Z').toISOString(),
+      guid: 'long-1',
+      link: 'https://example.com/long-1',
+      dedupeKey: 'long-1',
+    });
+
+    const payloads = [];
+    __mockClient.responses.create.mockImplementation(async (payload) => {
+      payloads.push(payload);
+      return {
+        id: 'resp-long',
+        model: payload.model,
+        output_text: 'Conteúdo gerado.',
+        usage: { input_tokens: 200, output_tokens: 150 },
+      };
+    });
+
+    await postGenerationService.generatePostsForOwner({ ownerKey: OWNER_KEY, now });
+
+    expect(payloads).toHaveLength(1);
+    const userText = payloads[0].input[1].content[0].text;
+    const htmlSection = userText.split('Conteúdo HTML:\n')[1] ?? '';
+    const [newsBody] = htmlSection.split('\n\nLink:');
+    const truncationIndicator = '\n\n[Conteúdo truncado para atender limites]';
+
+    expect(newsBody).toBeDefined();
+    expect(newsBody.endsWith(truncationIndicator)).toBe(true);
+    expect(newsBody.length).toBeLessThanOrEqual(8000 + truncationIndicator.length);
+  });
+
+  it('falls back to gpt-5-nano when the configured model is not supported', async () => {
+    const now = new Date('2025-01-01T12:00:00Z');
+    const feed = await createFeed();
+    await createArticle({
+      feedId: feed.id,
+      title: 'Notícia fallback',
+      contentSnippet: 'Resumo fallback',
+      publishedAt: new Date('2025-01-01T09:45:00Z').toISOString(),
+      guid: 'fallback-1',
+      link: 'https://example.com/fallback-1',
+      dedupeKey: 'fallback-1',
+    });
+
+    await prisma.appParams.update({
+      data: { openAiModel: 'gpt-5-ultra' },
+    });
+
+    const payloads = [];
+    __mockClient.responses.create.mockImplementation(async (payload) => {
+      payloads.push(payload);
+      return {
+        id: 'resp-fallback',
+        model: payload.model,
+        output_text: 'Fallback aplicado.',
+        usage: { input_tokens: 118, output_tokens: 92 },
+      };
+    });
+
+    const summary = await postGenerationService.generatePostsForOwner({ ownerKey: OWNER_KEY, now });
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0].model).toBe('gpt-5-nano');
+    expect(summary.modelUsed).toBe('gpt-5-nano');
+  });
+
+
+  it('retries transient 429 errors and succeeds on the next attempt', async () => {
+    const now = new Date('2025-01-01T12:00:00Z');
+    const feed = await createFeed();
+    await createArticle({
+      feedId: feed.id,
+      title: 'Notícia para retry',
+      contentSnippet: 'Resumo',
+      publishedAt: new Date('2025-01-01T10:00:00Z').toISOString(),
+      guid: 'retry-1',
+      link: 'https://example.com/retry-1',
+      dedupeKey: 'retry-1',
+    });
+
+    const payloads = [];
+    __mockClient.responses.create
+      .mockImplementationOnce(() => {
+        const error = new Error('Rate limited');
+        error.status = 429;
+        return Promise.reject(error);
+      })
+      .mockImplementationOnce(async (payload) => {
+        payloads.push(payload);
+        return {
+          id: 'resp-retry',
+          model: 'gpt-5-nano',
+          output_text: 'Conteúdo após retry.',
+          usage: { input_tokens: 120, output_tokens: 90 },
+        };
+      });
+
+    const summary = await postGenerationService.generatePostsForOwner({ ownerKey: OWNER_KEY, now });
+
+    expect(__mockClient.responses.create).toHaveBeenCalledTimes(2);
+    expect(payloads).toHaveLength(1);
+    expect(summary).toEqual(
+      expect.objectContaining({
+        generatedCount: 1,
+        failedCount: 0,
+      }),
+    );
+  });
+
+
+
 });

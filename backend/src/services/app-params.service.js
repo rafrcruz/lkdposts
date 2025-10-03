@@ -38,19 +38,6 @@ const toDomainModel = (record) => ({
 
 const ensureDefaultAppParams = async () => {
   const record = await appParamsRepository.ensureDefaultSingleton(DEFAULT_APP_PARAMS);
-
-  const normalizedModel = normalizeOpenAiModelValue(record.openAiModel);
-
-  if (!normalizedModel) {
-    const updated = await appParamsRepository.updateSingleton({ openAiModel: DEFAULT_OPENAI_MODEL });
-    return toDomainModel(updated);
-  }
-
-  if (record.openAiModel !== normalizedModel) {
-    const updated = await appParamsRepository.updateSingleton({ openAiModel: normalizedModel });
-    return toDomainModel(updated);
-  }
-
   return toDomainModel(record);
 };
 
@@ -201,8 +188,32 @@ const updateAppParams = async ({ updates, updatedBy }) => {
 };
 
 const getOpenAIModel = async () => {
-  const params = await ensureDefaultAppParams();
-  return normalizeOpenAiModelValue(params.openAiModel) ?? DEFAULT_OPENAI_MODEL;
+  const record = await appParamsRepository.ensureDefaultSingleton(DEFAULT_APP_PARAMS);
+
+  if (!record || typeof record.openAiModel !== 'string') {
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  const trimmed = record.openAiModel.trim();
+  return trimmed !== '' ? trimmed : DEFAULT_OPENAI_MODEL;
+};
+
+const normalizePersistedOpenAiModel = async () => {
+  const record = await appParamsRepository.findSingleton();
+
+  if (!record) {
+    return null;
+  }
+
+  const normalized = normalizeOpenAiModelValue(record.openAiModel);
+  const targetModel = normalized ?? DEFAULT_OPENAI_MODEL;
+
+  if (record.openAiModel === targetModel) {
+    return targetModel;
+  }
+
+  await appParamsRepository.updateSingleton({ openAiModel: targetModel });
+  return targetModel;
 };
 
 module.exports = {
@@ -213,4 +224,5 @@ module.exports = {
   getAppParams,
   updateAppParams,
   getOpenAIModel,
+  normalizePersistedOpenAiModel,
 };

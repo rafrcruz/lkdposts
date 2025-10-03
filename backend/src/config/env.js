@@ -59,7 +59,7 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.preprocess((value) => toNumber(value, 60000), z.number().int().positive()),
   RATE_LIMIT_MAX: z.preprocess((value) => toNumber(value, 100), z.number().int().positive()),
   OPENAI_API_KEY: z.string().min(1).default('test-openai-key'),
-  OPENAI_TIMEOUT_MS: z.preprocess((value) => toNumber(value, 60000), z.number().int().positive()),
+  OPENAI_TIMEOUT_MS: z.preprocess((value) => toNumber(value, 30000), z.number().int().positive()),
   OPENAI_BASE_URL: z
     .string()
     .url()
