@@ -17,4 +17,19 @@ describe('App parameters service', () => {
 
     expect(model).toBe('gpt-5-nano');
   });
+
+  it('falls back to the default model and normalizes stored values when unsupported values are persisted', async () => {
+    await appParamsService.ensureDefaultAppParams();
+
+    await prisma.appParams.update({
+      data: { openAiModel: 'gpt-5-ultra' },
+    });
+
+    const params = await appParamsService.getAppParams();
+
+    expect(params.openAiModel).toBe(appParamsService.DEFAULT_OPENAI_MODEL);
+
+    const record = await prisma.appParams.findFirst();
+    expect(record.openAiModel).toBe(appParamsService.DEFAULT_OPENAI_MODEL);
+  });
 });

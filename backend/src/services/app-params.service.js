@@ -2,8 +2,25 @@ const ApiError = require('../utils/api-error');
 const { Sentry } = require('../lib/sentry');
 const appParamsRepository = require('../repositories/app-params.repository');
 
-const OPENAI_MODEL_OPTIONS = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'];
-const DEFAULT_OPENAI_MODEL = 'gpt-5-nano';
+const OPENAI_MODEL_OPTIONS = Object.freeze([
+  'gpt-5-nano',
+  'gpt-5-mini',
+  'gpt-5',
+  'gpt-5-nano-2025-08-07',
+  'gpt-5-mini-2025-08-07',
+  'gpt-5-2025-08-07',
+]);
+const OPENAI_MODEL_SET = new Set(OPENAI_MODEL_OPTIONS);
+const DEFAULT_OPENAI_MODEL = OPENAI_MODEL_OPTIONS[0];
+
+const normalizeOpenAiModelValue = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return OPENAI_MODEL_SET.has(normalized) ? normalized : null;
+};
 
 const DEFAULT_APP_PARAMS = {
   postsRefreshCooldownSeconds: 3600,
@@ -14,10 +31,7 @@ const DEFAULT_APP_PARAMS = {
 const toDomainModel = (record) => ({
   postsRefreshCooldownSeconds: record.postsRefreshCooldownSeconds,
   postsTimeWindowDays: record.postsTimeWindowDays,
-  openAiModel:
-    typeof record.openAiModel === 'string' && OPENAI_MODEL_OPTIONS.includes(record.openAiModel)
-      ? record.openAiModel
-      : DEFAULT_OPENAI_MODEL,
+  openAiModel: normalizeOpenAiModelValue(record.openAiModel) ?? DEFAULT_OPENAI_MODEL,
   updatedAt: record.updatedAt instanceof Date ? record.updatedAt : new Date(record.updatedAt),
   updatedBy: record.updatedBy ?? null,
 });
@@ -25,8 +39,15 @@ const toDomainModel = (record) => ({
 const ensureDefaultAppParams = async () => {
   const record = await appParamsRepository.ensureDefaultSingleton(DEFAULT_APP_PARAMS);
 
-  if (typeof record.openAiModel !== 'string' || !OPENAI_MODEL_OPTIONS.includes(record.openAiModel)) {
+  const normalizedModel = normalizeOpenAiModelValue(record.openAiModel);
+
+  if (!normalizedModel) {
     const updated = await appParamsRepository.updateSingleton({ openAiModel: DEFAULT_OPENAI_MODEL });
+    return toDomainModel(updated);
+  }
+
+  if (record.openAiModel !== normalizedModel) {
+    const updated = await appParamsRepository.updateSingleton({ openAiModel: normalizedModel });
     return toDomainModel(updated);
   }
 
@@ -80,11 +101,11 @@ const validateOpenAiModel = (value) => {
     });
   }
 
-  const normalized = value.trim();
+  const normalized = normalizeOpenAiModelValue(value);
 
-  if (!OPENAI_MODEL_OPTIONS.includes(normalized)) {
+  if (!normalized) {
     throw new ApiError({
-      statusCode: 400,
+      statusCode: 422,
       code: 'UNSUPPORTED_OPENAI_MODEL',
       message: `openai.model must be one of: ${OPENAI_MODEL_OPTIONS.join(', ')}`,
     });
@@ -181,13 +202,7 @@ const updateAppParams = async ({ updates, updatedBy }) => {
 
 const getOpenAIModel = async () => {
   const params = await ensureDefaultAppParams();
-  const model = params.openAiModel;
-
-  if (!OPENAI_MODEL_OPTIONS.includes(model)) {
-    return DEFAULT_OPENAI_MODEL;
-  }
-
-  return model;
+  return normalizeOpenAiModelValue(params.openAiModel) ?? DEFAULT_OPENAI_MODEL;
 };
 
 module.exports = {

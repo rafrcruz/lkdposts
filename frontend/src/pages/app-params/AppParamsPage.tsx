@@ -45,16 +45,19 @@ const resolveErrorMessage = (error: unknown, fallback: string) => {
 
 type OpenAiModel = (typeof openAiModelOptions)[number];
 
-const DEFAULT_OPENAI_MODEL: OpenAiModel = 'gpt-5-nano';
+const DEFAULT_OPENAI_MODEL: OpenAiModel = openAiModelOptions[0];
 
 const openAiModelLabels: Record<OpenAiModel, string> = {
-  'gpt-5': 'GPT-5',
-  'gpt-5-mini': 'GPT-5 mini',
   'gpt-5-nano': 'GPT-5 nano',
+  'gpt-5-mini': 'GPT-5 mini',
+  'gpt-5': 'GPT-5',
+  'gpt-5-nano-2025-08-07': 'GPT-5 nano (2025-08-07)',
+  'gpt-5-mini-2025-08-07': 'GPT-5 mini (2025-08-07)',
+  'gpt-5-2025-08-07': 'GPT-5 (2025-08-07)',
 };
 
 const isOpenAiModel = (value: string | null | undefined): value is OpenAiModel => {
-  if (!value) {
+  if (typeof value !== 'string') {
     return false;
   }
 
@@ -62,7 +65,12 @@ const isOpenAiModel = (value: string | null | undefined): value is OpenAiModel =
 };
 
 const normalizeOpenAiModel = (value: string | null | undefined): OpenAiModel => {
-  return isOpenAiModel(value) ? value : DEFAULT_OPENAI_MODEL;
+  if (typeof value !== 'string') {
+    return DEFAULT_OPENAI_MODEL;
+  }
+
+  const trimmed = value.trim() as OpenAiModel;
+  return openAiModelOptions.includes(trimmed) ? trimmed : DEFAULT_OPENAI_MODEL;
 };
 
 const resolveOpenAiModelFromParams = (params: AppParams | null | undefined): OpenAiModel => {

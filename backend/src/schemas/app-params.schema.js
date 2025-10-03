@@ -1,6 +1,6 @@
 const { z } = require('zod');
 
-const openAiModelSchema = z.enum(['gpt-5', 'gpt-5-mini', 'gpt-5-nano']);
+const openAiModelSchema = z.string();
 
 const updateAppParamsBodySchema = z
   .object({
