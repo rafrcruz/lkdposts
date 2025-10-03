@@ -12,12 +12,15 @@ import {
 import { useResetFeeds } from '@/features/feeds/hooks/useFeeds';
 import i18n from '@/config/i18n';
 import { HttpError } from '@/lib/api/http';
+import { runOpenAiDiagnostics } from '@/features/app-params/api/openAiDiagnostics';
 
 vi.mock('@/features/app-params/hooks/useAppParams');
 vi.mock('@/features/feeds/hooks/useFeeds');
+vi.mock('@/features/app-params/api/openAiDiagnostics');
 
 const mockedUseAppParams = vi.mocked(useAppParams);
 const mockedUseResetFeeds = vi.mocked(useResetFeeds);
+const mockedRunOpenAiDiagnostics = vi.mocked(runOpenAiDiagnostics);
 
 const renderPage = () =>
   render(
@@ -71,6 +74,7 @@ describe('AppParamsPage', () => {
     resetFeedsMock = createResetFeedsMock();
     mockedUseResetFeeds.mockReturnValue(resetFeedsMock as unknown as ReturnType<typeof useResetFeeds>);
     mockedUseAppParams.mockReturnValue(buildAppParamsHook());
+    mockedRunOpenAiDiagnostics.mockReset();
   });
 
   afterEach(() => {
@@ -280,6 +284,80 @@ describe('AppParamsPage', () => {
     renderPage();
 
     expect(screen.getByLabelText(/Modelo da OpenAI/i)).toHaveValue(openAiModelOptions[0]);
+  });
+
+  it('validates the OpenAI configuration and surfaces success feedback', async () => {
+    mockedRunOpenAiDiagnostics.mockResolvedValueOnce({
+      ok: true,
+      model: 'gpt-5-nano',
+      baseURL: 'https://api.openai.com/v1',
+      timeoutMs: 30000,
+      latencyMs: 45,
+      usage: { input_tokens: 10 },
+    });
+
+    const user = userEvent.setup();
+
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: /validate openai/i }));
+
+    await waitFor(() => {
+      expect(mockedRunOpenAiDiagnostics).toHaveBeenCalledWith('gpt-5-nano');
+    });
+
+    expect(
+      screen.getByText(/Conexão com OpenAI OK .*latência: 45 ms/i),
+    ).toBeInTheDocument();
+  });
+
+  it('shows error feedback when the OpenAI validation fails', async () => {
+    mockedRunOpenAiDiagnostics.mockResolvedValueOnce({
+      ok: false,
+      model: 'gpt-5-nano',
+      baseURL: 'https://api.openai.com/v1',
+      timeoutMs: 30000,
+      latencyMs: 60,
+      error: {
+        status: 401,
+        type: 'invalid_request_error',
+        code: 'invalid_api_key',
+        message: 'Invalid API key',
+        request_id: 'req_123',
+      },
+    });
+
+    const user = userEvent.setup();
+
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: /validate openai/i }));
+
+    await waitFor(() => {
+      expect(mockedRunOpenAiDiagnostics).toHaveBeenCalled();
+    });
+
+    expect(
+      screen.getByText(/Erro OpenAI: status 401 \/ code invalid_api_key \/ msg Invalid API key/i),
+    ).toBeInTheDocument();
+  });
+
+  it('handles unexpected errors during OpenAI validation', async () => {
+    mockedRunOpenAiDiagnostics.mockRejectedValueOnce(new HttpError('Falhou', 500));
+
+    const user = userEvent.setup();
+
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: /validate openai/i }));
+
+    await waitFor(() => {
+      expect(mockedRunOpenAiDiagnostics).toHaveBeenCalled();
+    });
+
+    expect(
+      screen.getByText(/Não foi possível validar a conexão com a OpenAI/i),
+    ).toBeInTheDocument();
   });
 
   it('surfaces background refresh errors while keeping the form available', () => {

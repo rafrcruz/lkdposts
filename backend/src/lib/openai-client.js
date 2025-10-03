@@ -1,8 +1,30 @@
 const config = require('../config');
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+const DEFAULT_TIMEOUT_MS = 30000;
 
 let cachedClient = null;
+
+const normalizeTimeout = (value) => {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric;
+  }
+
+  return DEFAULT_TIMEOUT_MS;
+};
+
+const getOpenAIEnvironment = ({ timeoutMs } = {}) => {
+  const baseUrlRaw = config.openai?.baseUrl ?? process.env.OPENAI_BASE_URL ?? '';
+  const baseUrl = baseUrlRaw.trim().replace(/\/?$/, '') || DEFAULT_BASE_URL;
+  const configuredTimeout = timeoutMs ?? config.openai?.timeoutMs;
+  const effectiveTimeout = normalizeTimeout(configuredTimeout);
+
+  return {
+    baseUrl,
+    timeoutMs: effectiveTimeout,
+  };
+};
 
 const createClient = ({ timeoutMs }) => {
   const apiKey = config.openai?.apiKey ?? process.env.OPENAI_API_KEY;
@@ -10,9 +32,7 @@ const createClient = ({ timeoutMs }) => {
     throw new Error('OPENAI_API_KEY is not configured');
   }
 
-  const baseUrlRaw = config.openai?.baseUrl ?? process.env.OPENAI_BASE_URL ?? '';
-  const baseUrl = baseUrlRaw.trim().replace(/\/?$/, '') || DEFAULT_BASE_URL;
-  const effectiveTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : config.openai?.timeoutMs ?? 30000;
+  const { baseUrl, timeoutMs: effectiveTimeout } = getOpenAIEnvironment({ timeoutMs });
 
   const responses = {
     create: async (payload) => {
@@ -110,5 +130,6 @@ const resetOpenAIClient = () => {
 module.exports = {
   getOpenAIClient,
   resetOpenAIClient,
+  getOpenAIEnvironment,
 };
 

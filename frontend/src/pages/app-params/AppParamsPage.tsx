@@ -8,6 +8,7 @@ import {
   type AppParams,
   type AppParamsUpdateInput,
 } from '@/features/app-params/types/appParams';
+import { runOpenAiDiagnostics } from '@/features/app-params/api/openAiDiagnostics';
 import { useResetFeeds } from '@/features/feeds/hooks/useFeeds';
 import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -87,6 +88,7 @@ const AppParamsPage = () => {
   const [openAiModelInput, setOpenAiModelInput] = useState<OpenAiModel>(DEFAULT_OPENAI_MODEL);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isValidatingOpenAi, setIsValidatingOpenAi] = useState(false);
 
   const params = appParams.params;
   const isLoading = appParams.status === 'loading' || (appParams.status === 'idle' && appParams.isFetching);
@@ -205,6 +207,73 @@ const AppParamsPage = () => {
 
   const canSave =
     hasData && !cooldownError && !timeWindowError && !openAiModelError && isDirty && !isSaving;
+
+  const handleValidateOpenAi = async () => {
+    const modelToValidate = isOpenAiModel(openAiModelInput) ? openAiModelInput : null;
+
+    setFeedback(null);
+    setIsValidatingOpenAi(true);
+
+    Sentry.addBreadcrumb({
+      category: 'app-params',
+      message: 'app-params:openai_validate_clicked',
+      level: 'info',
+    });
+
+    const startedAt = performance.now();
+
+    try {
+      const result = await runOpenAiDiagnostics(modelToValidate ?? undefined);
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[app-params] openai.diag.result', result);
+      }
+
+      const latency = Number.isFinite(result.latencyMs)
+        ? result.latencyMs
+        : Math.round(performance.now() - startedAt);
+
+      if (result.ok) {
+        setFeedback({
+          type: 'success',
+          message: t(
+            'appParams.feedback.openAiValidateSuccess',
+            'Conexão com OpenAI OK (modelo: {{model}}, latência: {{latency}} ms).',
+            { model: result.model, latency },
+          ),
+        });
+        return;
+      }
+
+      const errorDetails = result.error ?? { status: null, code: null, message: null };
+      setFeedback({
+        type: 'error',
+        message: t(
+          'appParams.feedback.openAiValidateError',
+          'Erro OpenAI: status {{status}} / code {{code}} / msg {{message}} (latência: {{latency}} ms).',
+          {
+            status: errorDetails.status ?? 'n/a',
+            code: errorDetails.code ?? 'n/a',
+            message: errorDetails.message ?? 'n/a',
+            latency,
+          },
+        ),
+      });
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[app-params] openai.diag.error', error);
+      }
+
+      const fallback = t(
+        'appParams.feedback.openAiValidateUnknown',
+        'Não foi possível validar a conexão com a OpenAI. Tente novamente.',
+      );
+      const message = error instanceof HttpError ? fallback : resolveErrorMessage(error, fallback);
+      setFeedback({ type: 'error', message });
+    } finally {
+      setIsValidatingOpenAi(false);
+    }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -399,11 +468,24 @@ const AppParamsPage = () => {
             ) : null}
           </label>
 
-          <label className="text-sm sm:col-span-2">
-            <span className="mb-1 block font-medium">
-              {t('appParams.fields.openAiModel', 'Modelo da OpenAI')}
-            </span>
+          <div className="text-sm sm:col-span-2">
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+              <label className="font-medium" htmlFor="app-params-openai-model">
+                {t('appParams.fields.openAiModel', 'Modelo da OpenAI')}
+              </label>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium uppercase tracking-wide text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleValidateOpenAi}
+                disabled={isValidatingOpenAi}
+              >
+                {isValidatingOpenAi
+                  ? t('appParams.actions.validatingOpenAi', 'Validando...')
+                  : t('appParams.actions.validateOpenAi', 'VALIDATE OPENAI')}
+              </button>
+            </div>
             <select
+              id="app-params-openai-model"
               value={openAiModelInput}
               onChange={(event) => {
                 setOpenAiModelInput(event.target.value as OpenAiModel);
@@ -428,7 +510,7 @@ const AppParamsPage = () => {
                 {openAiModelError}
               </span>
             ) : null}
-          </label>
+          </div>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
