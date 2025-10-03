@@ -18,7 +18,7 @@ describe('App parameters service', () => {
     expect(model).toBe('gpt-5-nano');
   });
 
-  it('falls back to the default model and normalizes stored values when unsupported values are persisted', async () => {
+  it('returns sanitized params even when an unsupported model is persisted', async () => {
     await appParamsService.ensureDefaultAppParams();
 
     await prisma.appParams.update({
@@ -28,6 +28,31 @@ describe('App parameters service', () => {
     const params = await appParamsService.getAppParams();
 
     expect(params.openAiModel).toBe(appParamsService.DEFAULT_OPENAI_MODEL);
+
+    const record = await prisma.appParams.findFirst();
+    expect(record.openAiModel).toBe('gpt-5-ultra');
+  });
+
+  it('exposes the configured model verbatim so runtime fallback can handle invalid values', async () => {
+    await appParamsService.ensureDefaultAppParams();
+
+    await prisma.appParams.update({
+      data: { openAiModel: 'gpt-5-ultra' },
+    });
+
+    const model = await appParamsService.getOpenAIModel();
+    expect(model).toBe('gpt-5-ultra');
+  });
+
+  it('normalizes persisted invalid models to the default option when requested', async () => {
+    await appParamsService.ensureDefaultAppParams();
+
+    await prisma.appParams.update({
+      data: { openAiModel: 'gpt-5-ultra' },
+    });
+
+    const normalized = await appParamsService.normalizePersistedOpenAiModel();
+    expect(normalized).toBe(appParamsService.DEFAULT_OPENAI_MODEL);
 
     const record = await prisma.appParams.findFirst();
     expect(record.openAiModel).toBe(appParamsService.DEFAULT_OPENAI_MODEL);

@@ -2,11 +2,12 @@ const { createHash } = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
 const Sentry = require('@sentry/node');
 
+const ApiError = require('../utils/api-error');
 const promptRepository = require('../repositories/prompt.repository');
 const articleRepository = require('../repositories/article.repository');
 const postRepository = require('../repositories/post.repository');
 const config = require('../config');
-const { getOpenAIModel } = require('./app-params.service');
+const { getOpenAIModel, OPENAI_MODEL_OPTIONS } = require('./app-params.service');
 const { resolveOperationalParams } = require('./posts-operational-params');
 const { getOpenAIClient } = require('../lib/openai-client');
 
@@ -15,7 +16,18 @@ const MAX_ERROR_REASON_LENGTH = 240;
 const PROMPT_SEPARATOR = '\n---\n';
 const FINAL_INSTRUCTION = 'Instrução final: gerar um post para LinkedIn com base na notícia e no contexto acima.';
 
-const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const SUPPORTED_OPENAI_MODELS = new Set(OPENAI_MODEL_OPTIONS);
+const FALLBACK_MODEL_SEQUENCE = Object.freeze([
+  'gpt-5-nano',
+  'gpt-5-nano-2025-08-07',
+  'gpt-5-mini',
+  'gpt-5-mini-2025-08-07',
+  'gpt-5',
+  'gpt-5-2025-08-07',
+]);
+
+const MAX_NEWS_CONTENT_CHARS = 8000;
+const TRUNCATION_NOTICE = '\n\n[Conteúdo truncado para atender limites]';
 
 const generationLocks = new Map();
 const latestGenerationStatus = new Map();
@@ -33,6 +45,49 @@ const ensureDate = (value) => {
   }
 
   return new Date();
+};
+
+const isSupportedModel = (value) => typeof value === 'string' && SUPPORTED_OPENAI_MODELS.has(value);
+
+const resolveModelForRequest = (configuredModel) => {
+  if (isSupportedModel(configuredModel)) {
+    return configuredModel;
+  }
+
+  for (const candidate of FALLBACK_MODEL_SEQUENCE) {
+    if (isSupportedModel(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new ApiError({
+    statusCode: 500,
+    code: 'NO_SUPPORTED_OPENAI_MODEL',
+    message: 'Nenhum modelo OpenAI suportado está disponível no momento.',
+  });
+};
+
+const sanitizeNewsContent = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.replaceAll('\0', '').trim();
+};
+
+const truncateNewsContent = (value) => {
+  const sanitized = sanitizeNewsContent(value);
+
+  if (!sanitized) {
+    return { text: '', truncated: false };
+  }
+
+  if (sanitized.length <= MAX_NEWS_CONTENT_CHARS) {
+    return { text: sanitized, truncated: false };
+  }
+
+  const clipped = sanitized.slice(0, MAX_NEWS_CONTENT_CHARS);
+  return { text: `${clipped}${TRUNCATION_NOTICE}`, truncated: true };
 };
 
 const toUserId = (ownerKey) => {
@@ -198,8 +253,10 @@ const buildArticleContext = (article) => {
   }
 
   if (article.articleHtml) {
-    parts.push(`Conteúdo HTML:
-${article.articleHtml}`);
+    const { text: newsContent } = truncateNewsContent(article.articleHtml);
+    if (newsContent) {
+      parts.push(`Conteúdo HTML:\n${newsContent}`);
+    }
   }
 
   if (article.link) {
@@ -271,6 +328,150 @@ class ArticleNotFoundError extends Error {
   }
 }
 
+
+const getErrorStatus = (error) => error?.status ?? error?.response?.status ?? error?.cause?.status ?? null;
+
+const extractOpenAIErrorDetails = (error) => {
+  const status = getErrorStatus(error);
+  const candidate = error && typeof error === 'object' ? (error.openai ?? error.payload?.error ?? error.payload) : null;
+
+  const details = {
+    status,
+    type: null,
+    code: null,
+    message: null,
+  };
+
+  if (candidate && typeof candidate === 'object') {
+    if (typeof candidate.type === 'string') {
+      details.type = candidate.type;
+    }
+    if (typeof candidate.code === 'string') {
+      details.code = candidate.code;
+    }
+    if (typeof candidate.message === 'string') {
+      details.message = candidate.message;
+    }
+  }
+
+  if (!details.message && error instanceof Error && typeof error.message === 'string') {
+    details.message = error.message;
+  }
+
+  return details;
+};
+
+const logOpenAIErrorDetails = (details) => {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+
+  const { status, type, code, message } = details;
+  const truncated =
+    typeof message === 'string' && message.length > 120 ? `${message.slice(0, 119)}…` : message ?? null;
+
+  console.debug('openai.responses.error', {
+    status: status ?? null,
+    type: type ?? null,
+    code: code ?? null,
+    message: truncated,
+  });
+};
+
+const shouldRetryOpenAIError = (status) => {
+  if (status === 429) {
+    return true;
+  }
+
+  if (typeof status === 'number' && status >= 500 && status !== 501 && status !== 505) {
+    return true;
+  }
+
+  return false;
+};
+
+const computeRetryDelayMs = (attempt, randomFn = Math.random) => {
+  const randomValue = typeof randomFn === 'function' ? randomFn() : Math.random();
+  const jitter = Number.isFinite(randomValue) && randomValue >= 0 ? Math.min(250, Math.floor(randomValue * 251)) : 0;
+  const baseDelay = 500 * 2 ** attempt;
+  return baseDelay + jitter;
+};
+
+const isInvalidModelError = (details) => {
+  if (!details) {
+    return false;
+  }
+
+  const code = typeof details.code === 'string' ? details.code.toLowerCase() : '';
+  if (code.includes('model')) {
+    return true;
+  }
+
+  const message = typeof details.message === 'string' ? details.message.toLowerCase() : '';
+  if (!message.includes('model')) {
+    return false;
+  }
+
+  return message.includes('invalid') || message.includes('not found') || message.includes('does not exist');
+};
+
+const mapOpenAIErrorToApiError = (details, cause) => {
+  const status = details.status ?? null;
+  const message = typeof details.message === 'string' ? details.message.toLowerCase() : '';
+
+  if (status === 429) {
+    return new ApiError({
+      statusCode: 429,
+      code: 'OPENAI_RATE_LIMIT',
+      message: 'A OpenAI está recebendo muitas requisições. Tente novamente em instantes.',
+      cause,
+    });
+  }
+
+  if (status === 408 || message.includes('timed out') || message.includes('timeout')) {
+    return new ApiError({
+      statusCode: 504,
+      code: 'OPENAI_TIMEOUT',
+      message: 'A solicitação à OpenAI excedeu o tempo limite. Tente novamente em instantes.',
+      cause,
+    });
+  }
+
+  if (status === 401 || status === 403) {
+    return new ApiError({
+      statusCode: 500,
+      code: 'OPENAI_AUTH_ERROR',
+      message: 'Falha ao autenticar na OpenAI. Verifique a chave configurada.',
+      cause,
+    });
+  }
+
+  if (isInvalidModelError(details)) {
+    return new ApiError({
+      statusCode: 422,
+      code: 'OPENAI_INVALID_MODEL',
+      message: 'O modelo configurado não é suportado. Atualize as configurações do aplicativo para escolher um modelo válido.',
+      cause,
+    });
+  }
+
+  if (typeof status === 'number' && status >= 500) {
+    return new ApiError({
+      statusCode: 503,
+      code: 'OPENAI_SERVICE_UNAVAILABLE',
+      message: 'A OpenAI está indisponível no momento. Tente novamente em instantes.',
+      cause,
+    });
+  }
+
+  return new ApiError({
+    statusCode: 500,
+    code: 'OPENAI_UNEXPECTED_ERROR',
+    message: 'Não foi possível concluir a solicitação para a OpenAI. Tente novamente em instantes.',
+    cause,
+  });
+};
+
 const buildNewsPayload = (article) => {
   const context = buildArticleContext(article);
 
@@ -303,7 +504,8 @@ const buildPostRequestPreview = async ({
   const startedAt = ensureDate(now);
   const operationalParams = await resolveOperationalParams(overrides);
   const promptBase = await buildPromptBase({ ownerKey });
-  const model = await getOpenAIModel();
+  const configuredModel = await getOpenAIModel();
+  const model = resolveModelForRequest(configuredModel);
   const systemPrompt = buildSystemPromptText(promptBase.basePrompt);
 
   let article = null;
@@ -353,35 +555,33 @@ const buildPostRequestPreview = async ({
   };
 };
 
-const callOpenAIWithRetry = async ({ client, payload, maxRetries, timeoutMs }) => {
+const callOpenAIWithRetry = async ({ client, payload, maxRetries, timeoutMs, delayFn = delay, randomFn = Math.random }) => {
   let attempt = 0;
-  let lastError;
+  let lastError = null;
 
   while (attempt <= maxRetries) {
     try {
       if (client && typeof client.withOptions === 'function') {
-        const response = await client.withOptions({ timeout: timeoutMs }).responses.create(payload);
-        return response;
+        return await client.withOptions({ timeout: timeoutMs }).responses.create(payload);
       }
 
-      const response = await client.responses.create(payload);
-      return response;
+      return await client.responses.create(payload);
     } catch (error) {
-      lastError = error;
-      const status = error?.status ?? error?.response?.status ?? error?.cause?.status ?? null;
-      const isRetryable = status != null && RETRYABLE_HTTP_STATUSES.has(status);
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const details = extractOpenAIErrorDetails(lastError);
+      logOpenAIErrorDetails(details);
 
-      if (!isRetryable || attempt === maxRetries) {
-        throw error;
+      if (!shouldRetryOpenAIError(details.status) || attempt === maxRetries) {
+        throw mapOpenAIErrorToApiError(details, lastError);
       }
 
-      const delayMs = 500 * Math.max(1, attempt + 1);
-      await delay(delayMs);
+      const waitTime = computeRetryDelayMs(attempt, randomFn);
+      await delayFn(waitTime);
       attempt += 1;
     }
   }
 
-  throw lastError ?? new Error('OpenAI call failed');
+  throw mapOpenAIErrorToApiError(extractOpenAIErrorDetails(lastError ?? new Error('OpenAI call failed')), lastError ?? undefined);
 };
 
 const truncateError = (value) => {
@@ -632,9 +832,10 @@ const generatePostsForOwner = async ({
       });
     }
 
-    const model = await getOpenAIModel();
+    const configuredModel = await getOpenAIModel();
+    const model = resolveModelForRequest(configuredModel);
     const openAiClient = ensureOpenAIClient(client);
-    const timeoutMs = config.openai?.timeoutMs ?? 60000;
+    const timeoutMs = config.openai?.timeoutMs ?? 30000;
 
     let generatedCount = 0;
     let failedCount = 0;

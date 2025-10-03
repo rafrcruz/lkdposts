@@ -277,6 +277,10 @@ const resources = {
           cleanup: 'Could not clean old articles.',
           list: 'Could not load posts. Try again later.',
           partial: 'Some operations finished with errors.',
+          modelInvalid: 'Select a supported model in Settings before trying again.',
+          rateLimited: 'OpenAI is receiving too many requests. Try again in a moment.',
+          timeout: 'The AI request timed out. Try again shortly.',
+          serviceUnavailable: 'Our AI service is temporarily unavailable. Try again in a moment.',
         },
         messages: {
           syncing: 'Syncing...',
@@ -764,6 +768,10 @@ const resources = {
           cleanup: 'Nao foi possivel limpar artigos antigos.',
           list: 'Nao foi possivel carregar os posts. Tente novamente mais tarde.',
           partial: 'Algumas operacoes terminaram com erros.',
+          modelInvalid: 'Selecione um modelo suportado nas Configuracoes antes de tentar novamente.',
+          rateLimited: 'A OpenAI esta recebendo muitas requisicoes. Tente novamente em instantes.',
+          timeout: 'A solicitacao para a IA excedeu o tempo limite. Tente novamente em instantes.',
+          serviceUnavailable: 'O servico de IA esta indisponivel no momento. Tente novamente em instantes.',
         },
         messages: {
           syncing: 'Sincronizando...',

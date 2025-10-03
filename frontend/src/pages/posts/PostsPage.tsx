@@ -505,6 +505,35 @@ const aggregateRefreshSummary = (summary: RefreshSummary | null): RefreshAggrega
 
 const resolveOperationErrorMessage = (error: unknown, t: ReturnType<typeof useTranslation>['t']) => {
   if (error instanceof HttpError) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('posts.refresh.error', {
+        status: error.status,
+        message: error.message,
+      });
+    }
+
+    if (error.status === 422) {
+      return t(
+        'posts.errors.modelInvalid',
+        'Select a supported model in Settings before trying again.',
+      );
+    }
+
+    if (error.status === 429) {
+      return t('posts.errors.rateLimited', 'OpenAI is receiving too many requests. Try again in a moment.');
+    }
+
+    if (error.status === 504) {
+      return t('posts.errors.timeout', 'The AI request timed out. Try again shortly.');
+    }
+
+    if ([500, 502, 503].includes(error.status)) {
+      return t(
+        'posts.errors.serviceUnavailable',
+        'Our AI service is temporarily unavailable. Try again in a moment.',
+      );
+    }
+
     return error.message;
   }
 
