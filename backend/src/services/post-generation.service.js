@@ -51,6 +51,19 @@ const normalizeMultiline = (value) => {
   return value.replaceAll(/\r\n?/g, '\n').trim();
 };
 
+const buildSystemPromptText = (basePrompt) => {
+  const parts = [];
+
+  const trimmedBase = typeof basePrompt === 'string' ? basePrompt.trim() : '';
+  if (trimmedBase) {
+    parts.push(trimmedBase);
+  }
+
+  parts.push(FINAL_INSTRUCTION);
+
+  return parts.join('\n\n').trim();
+};
+
 const buildPromptBase = async ({ ownerKey }) => {
   const userId = toUserId(ownerKey);
   const prompts = await promptRepository.findManyByUser({
@@ -80,7 +93,8 @@ const buildPromptBase = async ({ ownerKey }) => {
   }
 
   const basePrompt = sections.join(PROMPT_SEPARATOR);
-  const promptBaseHash = createHash('sha256').update(basePrompt).digest('hex');
+  const systemPrompt = buildSystemPromptText(basePrompt);
+  const promptBaseHash = createHash('sha256').update(systemPrompt).digest('hex');
 
   return { basePrompt, promptBaseHash };
 };
@@ -196,8 +210,6 @@ ${article.articleHtml}`);
     parts.push(`GUID: ${article.guid}`);
   }
 
-  parts.push(FINAL_INSTRUCTION);
-
   return parts.join('\n\n');
 };
 
@@ -292,6 +304,7 @@ const buildPostRequestPreview = async ({
   const operationalParams = await resolveOperationalParams(overrides);
   const promptBase = await buildPromptBase({ ownerKey });
   const model = await getOpenAIModel();
+  const systemPrompt = buildSystemPromptText(promptBase.basePrompt);
 
   let article = null;
 
@@ -333,7 +346,7 @@ const buildPostRequestPreview = async ({
   }
 
   return {
-    promptBase: promptBase.basePrompt,
+    promptBase: systemPrompt,
     promptBaseHash: promptBase.promptBaseHash,
     newsPayload,
     model,
@@ -395,18 +408,18 @@ const ensureOpenAIClient = (client) => {
 
 const buildGenerationPayload = ({ article, basePrompt, model }) => {
   const context = buildArticleContext(article);
+  const systemText = buildSystemPromptText(basePrompt);
 
   return {
     model,
     input: [
       {
         role: 'system',
-        content: basePrompt
+        content: systemText
           ? [
               {
                 type: 'text',
-                text: basePrompt,
-                cache_control: 'cache',
+                text: systemText,
               },
             ]
           : [],
@@ -488,6 +501,22 @@ const generatePostForArticle = async ({
     }
 
     const usage = response?.usage ?? {};
+    const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
+
+    if (process.env.NODE_ENV !== 'production' && response?.usage) {
+      const usageLog = {
+        model: response?.model ?? model,
+        input_tokens: usage.input_tokens ?? usage.prompt_tokens ?? null,
+        output_tokens: usage.output_tokens ?? usage.completion_tokens ?? null,
+      };
+
+      if (cachedTokens !== undefined) {
+        usageLog.cached_tokens = cachedTokens;
+      }
+
+      console.info('openai.responses.usage', usageLog);
+    }
+
     await postRepository.upsertForArticle({
       articleId: article.id,
       data: {
@@ -503,7 +532,10 @@ const generatePostForArticle = async ({
       },
     });
 
-    return { success: true };
+    return {
+      success: true,
+      cacheInfo: cachedTokens === undefined ? undefined : { cachedTokens },
+    };
   } catch (error) {
     const reason = truncateError(error instanceof Error ? error.message : String(error));
     await postRepository.upsertForArticle({
@@ -530,18 +562,27 @@ const computeSummary = ({
   promptBaseHash,
   model,
   errors = [],
-}) => ({
-  ownerKey,
-  startedAt: startedAt.toISOString(),
-  finishedAt: finishedAt ? finishedAt.toISOString() : null,
-  eligibleCount,
-  generatedCount,
-  failedCount,
-  skippedCount,
-  promptBaseHash,
-  modelUsed: model,
-  errors: Array.isArray(errors) && errors.length > 0 ? errors : null,
-});
+  cacheInfo,
+}) => {
+  const summary = {
+    ownerKey,
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt ? finishedAt.toISOString() : null,
+    eligibleCount,
+    generatedCount,
+    failedCount,
+    skippedCount,
+    promptBaseHash,
+    modelUsed: model,
+    errors: Array.isArray(errors) && errors.length > 0 ? errors : null,
+  };
+
+  if (cacheInfo && Object.hasOwn(cacheInfo, 'cachedTokens')) {
+    summary.cacheInfo = cacheInfo;
+  }
+
+  return summary;
+};
 
 const recordStatus = (ownerKey, status) => {
   latestGenerationStatus.set(ownerKey, status);
@@ -597,6 +638,7 @@ const generatePostsForOwner = async ({
 
     let generatedCount = 0;
     let failedCount = 0;
+    let cacheInfo;
 
     for (const article of eligible) {
       const result = await generatePostForArticle({
@@ -607,6 +649,10 @@ const generatePostsForOwner = async ({
         timeoutMs,
         promptBaseHash,
       });
+
+      if (result.cacheInfo) {
+        cacheInfo = result.cacheInfo;
+      }
 
       if (result.success) {
         generatedCount += 1;
@@ -628,6 +674,7 @@ const generatePostsForOwner = async ({
       promptBaseHash,
       model,
       errors,
+      cacheInfo,
     });
 
     recordStatus(ownerKey, summary);

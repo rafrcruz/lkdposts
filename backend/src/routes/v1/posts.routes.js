@@ -151,7 +151,12 @@ router.post('/posts/cleanup', postsController.cleanup);
  *                 value:
  *                   success: true
  *                   data:
- *                     prompt_base: "Titulo A\n\nConteudo A"
+ *                     prompt_base: |-
+ *                       Titulo A
+ *
+ *                       Conteudo A
+ *
+ *                       Instrução final: gerar um post para LinkedIn com base na notícia e no contexto acima.
  *                     prompt_base_hash: e3b0c44298fc1b...
  *                     model: gpt-5-nano
  *                     news_payload:
@@ -177,7 +182,6 @@ router.post('/posts/cleanup', postsController.cleanup);
  *                               Título: Notícia exemplo
  *                               Publicado em: 2025-01-20T12:00:00.000Z
  *                               Resumo: Resumo da notícia
- *                               Instrução final: gerar um post para LinkedIn com base na notícia e no contexto acima.
  *                   meta:
  *                     requestId: 00000000-0000-4000-8000-000000000000
  *       '400':
