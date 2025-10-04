@@ -44,16 +44,16 @@ const findByIdForUser = async ({ id, userId }, client) => {
 const findManyByIdsForUser = async ({ userId, ids }, client) => {
   const prismaClient = getClient(client);
 
-  if (!Array.isArray(ids) || ids.length === 0) {
-    return [];
+  if (Array.isArray(ids) && ids.length > 0) {
+    return prismaClient.prompt.findMany({
+      where: {
+        userId,
+        id: { in: ids },
+      },
+    });
   }
 
-  return prismaClient.prompt.findMany({
-    where: {
-      userId,
-      id: { in: ids },
-    },
-  });
+  return [];
 };
 
 const findMaxPositionForUser = async ({ userId }, client) => {

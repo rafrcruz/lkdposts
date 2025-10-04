@@ -1199,12 +1199,12 @@ const PostsPage = () => {
           message: 'Preview request error',
           data: { status: error.status ?? null, durationMs },
         });
-        const payload =
-          typeof error.payload === 'string'
-            ? error.payload
-            : error.payload !== undefined
-              ? JSON.stringify(error.payload)
-              : '';
+        let payload = '';
+        if (typeof error.payload === 'string') {
+          payload = error.payload;
+        } else if (error.payload !== undefined) {
+          payload = JSON.stringify(error.payload);
+        }
         setOpenAiPreviewRaw(payload);
       } else {
         const durationMs = resolveDuration();
@@ -1745,6 +1745,193 @@ const PostsPage = () => {
     });
   }, [cooldownRemainingSeconds, isCooldownActive, locale, t]);
 
+  const cooldownIndicator = useMemo<JSX.Element | null>(() => {
+    if (cooldownNotice) {
+      return (
+        <output className="text-xs text-warning" aria-live="polite" aria-atomic="true">
+          {cooldownNotice}
+        </output>
+      );
+    }
+
+    if (cooldownMessage) {
+      return <span className="text-xs text-muted-foreground">{cooldownMessage}</span>;
+    }
+
+    return null;
+  }, [cooldownMessage, cooldownNotice]);
+
+  let previewContent: JSX.Element;
+  if (previewIsLoading) {
+    previewContent = (
+      <div className="flex h-48 items-center justify-center rounded-md border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+        {t('posts.preview.loading', 'Loading preview...')}
+      </div>
+    );
+  } else if (previewErrorMessage) {
+    previewContent = (
+      <div className="space-y-3 rounded-md border border-danger/40 bg-danger/5 px-4 py-4 text-sm text-danger">
+        <p>{previewErrorMessage}</p>
+        <div>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
+            onClick={() => handleOpenPreview(lastPreviewRequest ?? undefined)}
+          >
+            {t('posts.preview.retry', 'Try again')}
+          </button>
+        </div>
+      </div>
+    );
+  } else {
+    previewContent = (
+      <>
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-foreground">
+            {t('posts.preview.prefixTitle', 'Prompts concatenated (prefix)')}
+          </h3>
+          <div className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted/20 p-3">
+            {previewPrefix ? (
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">{previewPrefix}</pre>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {t('posts.preview.prefixEmpty', 'No prompts enabled for this preview.')}
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-foreground">
+            {t('posts.preview.newsTitle', 'News payload')}
+          </h3>
+          {previewNewsPayload ? (
+            <div className="space-y-3">
+              <dl className="grid gap-2 text-xs sm:grid-cols-2">
+                <div>
+                  <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t('posts.preview.article.titleLabel', 'Title')}
+                  </dt>
+                  <dd className="mt-1 text-foreground">{previewArticle?.title ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t('posts.preview.article.feedLabel', 'Feed')}
+                  </dt>
+                  <dd className="mt-1 text-foreground">{previewFeedLabel ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t('posts.preview.article.publishedAt', 'Published at')}
+                  </dt>
+                  <dd className="mt-1 text-foreground">{previewPublishedAt ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t('posts.preview.article.linkLabel', 'Link')}
+                  </dt>
+                  <dd className="mt-1 break-all text-foreground">
+                    {previewArticle?.link ? (
+                      <a
+                        href={previewArticle.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary underline underline-offset-2"
+                      >
+                        {previewArticle.link}
+                      </a>
+                    ) : (
+                      '—'
+                    )}
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t('posts.preview.article.snippetLabel', 'Summary')}
+                  </dt>
+                  <dd className="mt-1 text-foreground">{previewArticle?.contentSnippet ?? '—'}</dd>
+                </div>
+              </dl>
+              <div className="max-h-72 overflow-y-auto rounded-md border border-border bg-muted/20 p-3">
+                {previewContext ? (
+                  <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">{previewContext}</pre>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {t('posts.preview.newsEmpty', 'News content is not available for this preview.')}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+              {t('posts.preview.empty', 'No eligible news item is available for preview.')}
+            </p>
+          )}
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-foreground">
+              {t('posts.preview.request.title', 'OpenAI request payload')}
+            </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-2 text-xs text-foreground">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border border-border text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  checked={isOpenAiPrettyPrintEnabled && canPrettyPrintOpenAiPreview}
+                  onChange={(event) => {
+                    if (!canPrettyPrintOpenAiPreview) {
+                      return;
+                    }
+
+                    setIsOpenAiPrettyPrintEnabled(event.target.checked);
+                  }}
+                  disabled={!canPrettyPrintOpenAiPreview || !openAiPreviewRaw}
+                />
+                <span
+                  className={
+                    !canPrettyPrintOpenAiPreview || !openAiPreviewRaw ? 'text-muted-foreground' : undefined
+                  }
+                >
+                  {t('posts.preview.request.prettyToggle', 'Pretty print (visual)')}
+                </span>
+              </label>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() =>
+                  handleCopyPreviewContent(
+                    openAiPreviewRaw ?? '',
+                    t('posts.preview.request.copySuccess', 'Copied raw JSON to clipboard.'),
+                  )
+                }
+                disabled={!openAiPreviewRaw || isOpenAiPreviewLoading}
+              >
+                {t('posts.preview.request.copyButton', 'Copy raw JSON')}
+              </button>
+            </div>
+          </div>
+          {openAiPreviewError ? (
+            <p className="text-xs text-danger">{openAiPreviewError}</p>
+          ) : null}
+          {previewRequestSummary ? (
+            <p className="text-xs text-gray-500">
+              Status: {previewRequestStatusLabel} • Tempo: {previewRequestSummary.durationMs} ms
+            </p>
+          ) : null}
+          <textarea
+            value={openAiPreviewDisplay}
+            readOnly
+            aria-label={t('posts.preview.request.textareaLabel', 'OpenAI raw response')}
+            placeholder={openAiPreviewPlaceholder}
+            className="min-h-[15rem] w-full resize-none rounded-md border border-border bg-muted/20 p-3 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+          />
+        </section>
+      </>
+    );
+  }
+
   const summaryFeeds = refreshSummary?.feeds ?? [];
   const summaryHasPartialErrors = (summaryAggregates?.errorFeeds ?? 0) > 0;
   const summaryMetricCards = [
@@ -1860,13 +2047,7 @@ const PostsPage = () => {
                 : t('posts.preview.openButton', 'Post Request Preview')}
             </button>
           ) : null}
-          {cooldownNotice ? (
-            <output className="text-xs text-warning" aria-live="polite" aria-atomic="true">
-              {cooldownNotice}
-            </output>
-          ) : cooldownMessage ? (
-            <span className="text-xs text-muted-foreground">{cooldownMessage}</span>
-          ) : null}
+          {cooldownIndicator}
         </div>
       </div>
 
@@ -2298,173 +2479,7 @@ const PostsPage = () => {
                   </div>
                 </div>
 
-                <div className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
-                  {previewIsLoading ? (
-                    <div className="flex h-48 items-center justify-center rounded-md border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
-                      {t('posts.preview.loading', 'Loading preview...')}
-                    </div>
-                  ) : previewErrorMessage ? (
-                    <div className="space-y-3 rounded-md border border-danger/40 bg-danger/5 px-4 py-4 text-sm text-danger">
-                      <p>{previewErrorMessage}</p>
-                      <div>
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
-                          onClick={() => handleOpenPreview(lastPreviewRequest ?? undefined)}
-                        >
-                          {t('posts.preview.retry', 'Try again')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <section className="space-y-2">
-                        <h3 className="text-sm font-semibold text-foreground">
-                          {t('posts.preview.prefixTitle', 'Prompts concatenated (prefix)')}
-                        </h3>
-                        <div className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted/20 p-3">
-                          {previewPrefix ? (
-                            <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">{previewPrefix}</pre>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              {t('posts.preview.prefixEmpty', 'No prompts enabled for this preview.')}
-                            </p>
-                          )}
-                        </div>
-                      </section>
-
-                      <section className="space-y-2">
-                        <h3 className="text-sm font-semibold text-foreground">
-                          {t('posts.preview.newsTitle', 'News payload')}
-                        </h3>
-                        {previewNewsPayload ? (
-                          <div className="space-y-3">
-                            <dl className="grid gap-2 text-xs sm:grid-cols-2">
-                              <div>
-                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
-                                  {t('posts.preview.article.titleLabel', 'Title')}
-                                </dt>
-                                <dd className="mt-1 text-foreground">{previewArticle?.title ?? '—'}</dd>
-                              </div>
-                              <div>
-                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
-                                  {t('posts.preview.article.feedLabel', 'Feed')}
-                                </dt>
-                                <dd className="mt-1 text-foreground">{previewFeedLabel ?? '—'}</dd>
-                              </div>
-                              <div>
-                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
-                                  {t('posts.preview.article.publishedAt', 'Published at')}
-                                </dt>
-                                <dd className="mt-1 text-foreground">{previewPublishedAt ?? '—'}</dd>
-                              </div>
-                              <div>
-                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
-                                  {t('posts.preview.article.linkLabel', 'Link')}
-                                </dt>
-                                <dd className="mt-1 break-all text-foreground">
-                                  {previewArticle?.link ? (
-                                    <a
-                                      href={previewArticle.link}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-primary underline underline-offset-2"
-                                    >
-                                      {previewArticle.link}
-                                    </a>
-                                  ) : (
-                                    '—'
-                                  )}
-                                </dd>
-                              </div>
-                              <div className="sm:col-span-2">
-                                <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
-                                  {t('posts.preview.article.snippetLabel', 'Summary')}
-                                </dt>
-                                <dd className="mt-1 text-foreground">{previewArticle?.contentSnippet ?? '—'}</dd>
-                              </div>
-                            </dl>
-                            <div className="max-h-72 overflow-y-auto rounded-md border border-border bg-muted/20 p-3">
-                              {previewContext ? (
-                                <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">{previewContext}</pre>
-                              ) : (
-                                <p className="text-xs text-muted-foreground">
-                                  {t('posts.preview.newsEmpty', 'News content is not available for this preview.')}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
-                            {t('posts.preview.empty', 'No eligible news item is available for preview.')}
-                          </p>
-                        )}
-                      </section>
-
-                      <section className="space-y-2">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <h3 className="text-sm font-semibold text-foreground">
-                            {t('posts.preview.request.title', 'OpenAI request payload')}
-                          </h3>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <label className="inline-flex items-center gap-2 text-xs text-foreground">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 rounded border border-border text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                                checked={isOpenAiPrettyPrintEnabled && canPrettyPrintOpenAiPreview}
-                                onChange={(event) => {
-                                  if (!canPrettyPrintOpenAiPreview) {
-                                    return;
-                                  }
-
-                                  setIsOpenAiPrettyPrintEnabled(event.target.checked);
-                                }}
-                                disabled={!canPrettyPrintOpenAiPreview || !openAiPreviewRaw}
-                              />
-                              <span
-                                className={
-                                  !canPrettyPrintOpenAiPreview || !openAiPreviewRaw
-                                    ? 'text-muted-foreground'
-                                    : undefined
-                                }
-                              >
-                                {t('posts.preview.request.prettyToggle', 'Pretty print (visual)')}
-                              </span>
-                            </label>
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={() =>
-                                handleCopyPreviewContent(
-                                  openAiPreviewRaw ?? '',
-                                  t('posts.preview.request.copySuccess', 'Copied raw JSON to clipboard.'),
-                                )
-                              }
-                              disabled={!openAiPreviewRaw || isOpenAiPreviewLoading}
-                            >
-                              {t('posts.preview.request.copyButton', 'Copy raw JSON')}
-                            </button>
-                          </div>
-                        </div>
-                        {openAiPreviewError ? (
-                          <p className="text-xs text-danger">{openAiPreviewError}</p>
-                        ) : null}
-                        {previewRequestSummary ? (
-                          <p className="text-xs text-gray-500">
-                            Status: {previewRequestStatusLabel} • Tempo: {previewRequestSummary.durationMs} ms
-                          </p>
-                        ) : null}
-                        <textarea
-                          value={openAiPreviewDisplay}
-                          readOnly
-                          aria-label={t('posts.preview.request.textareaLabel', 'OpenAI raw response')}
-                          placeholder={openAiPreviewPlaceholder}
-                          className="min-h-[15rem] w-full resize-none rounded-md border border-border bg-muted/20 p-3 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                        />
-                      </section>
-                    </>
-                  )}
-                </div>
+                <div className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1">{previewContent}</div>
               </dialog>
             </div>,
             document.body,

@@ -90,17 +90,19 @@ export const PromptCard = ({
   const isGrabbed = Boolean(isDragging || isKeyboardActive || options?.isActive);
   const reorderHandleLabel = t('prompts.list.dragHandleLabel', 'Drag handle: hold and move to reorder.');
   const dropPlaceholderLabel = t('prompts.list.dropPlaceholder', 'Release to place the prompt here.');
-  const containerAttributes = options?.containerAttributes ?? {};
+  type PromptContainerAttributes = DraggableAttributes & {
+    role?: string;
+    tabIndex?: number;
+    onKeyDown?: PromptCardRenderOptions['onKeyDown'];
+  };
+  const containerAttributes: Partial<PromptContainerAttributes> =
+    options?.containerAttributes ?? {};
   const {
     role: providedRole,
     tabIndex: providedTabIndex,
     onKeyDown: providedOnKeyDown,
     ...restContainerAttributes
-  } = containerAttributes as DraggableAttributes & {
-    role?: string;
-    tabIndex?: number;
-    onKeyDown?: PromptCardRenderOptions['onKeyDown'];
-  };
+  } = containerAttributes;
   const interactiveRole = providedRole ?? (canReorder ? 'button' : 'group');
   const interactiveTabIndex = providedTabIndex ?? (canReorder ? 0 : undefined);
   const interactiveKeyDown = canReorder
@@ -136,7 +138,7 @@ export const PromptCard = ({
         isDragging || isOverlay ? 'scale-[1.01] shadow-xl ring-2 ring-primary/40' : '',
         isKeyboardActive ? 'ring-2 ring-primary/70 ring-offset-2 ring-offset-background shadow-lg border-primary/70' : '',
         isSorting ? 'transition-transform duration-200 ease-out' : '',
-        !isEnabled ? 'border-dashed border-border/70 bg-muted/30' : '',
+        isEnabled ? '' : 'border-dashed border-border/70 bg-muted/30',
       )}
       style={options?.style}
       data-dragging={isDragging}

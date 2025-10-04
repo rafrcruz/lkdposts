@@ -557,7 +557,7 @@ const buildPostRequestPreview = async ({
   operationalParams: overrides,
   maxAttempts = MAX_GENERATION_ATTEMPTS,
 } = {}) => {
-  if (!ownerKey) {
+  if (ownerKey == null || ownerKey === '') {
     throw new TypeError('ownerKey is required');
   }
 

@@ -45,14 +45,13 @@ export const ConfirmDialog = ({
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
       <div className="fixed inset-0 bg-background/80 backdrop-blur" aria-hidden="true" />
-      <dialog
-        aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
-        aria-modal="true"
-        className="relative z-10 w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg"
-        open
-        role="dialog"
-      >
+        <dialog
+          aria-labelledby={titleId}
+          aria-describedby={description ? descriptionId : undefined}
+          aria-modal="true"
+          className="relative z-10 w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg"
+          open
+        >
         <div className="space-y-6">
           <div className="space-y-2">
             <h2 id={titleId} className="text-lg font-semibold text-foreground">
