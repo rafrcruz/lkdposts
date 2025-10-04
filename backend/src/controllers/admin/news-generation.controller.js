@@ -55,9 +55,35 @@ const previewPayload = asyncHandler(async (req, res) => {
   }
 });
 
+const previewOpenAI = asyncHandler(async (req, res, next) => {
+  const ownerKey = getOwnerKey(req);
+  const { newsId } = req.validated?.query ?? {};
+
+  try {
+    const rawResponse = await postGenerationService.probeOpenAIResponse({
+      ownerKey,
+      newsId,
+    });
+
+    return res.status(200).json(rawResponse);
+  } catch (error) {
+    if (error && typeof error === 'object' && 'status' in error && 'payloadBruto' in error) {
+      const status = typeof error.status === 'number' ? error.status : 500;
+      return res.status(status).json(error.payloadBruto ?? {});
+    }
+
+    if (error instanceof postGenerationService.ArticleNotFoundError) {
+      return next(new ApiError({ statusCode: 404, code: 'NEWS_NOT_FOUND', message: 'News item not found' }));
+    }
+
+    return next(error);
+  }
+});
+
 module.exports = {
   triggerGeneration,
   getStatus,
   previewPayload,
+  previewOpenAI,
 };
 

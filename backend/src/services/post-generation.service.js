@@ -485,7 +485,96 @@ const buildPostRequestPreview = async ({
     promptBaseHash: promptBase.promptBaseHash,
     newsPayload,
     model,
+    basePromptRaw: promptBase.basePrompt,
+    selectedArticle: article,
   };
+};
+
+const buildRawOpenAIErrorPayload = (error) => {
+  if (error && typeof error.payload === 'object' && error.payload !== null) {
+    return error.payload;
+  }
+
+  const details = typeof error === 'object' && error !== null ? error.openai ?? null : null;
+  const type = details && typeof details.type === 'string' ? details.type : null;
+  const code = details && typeof details.code === 'string' ? details.code : null;
+  const messageFromDetails = details && typeof details.message === 'string' ? details.message : null;
+  const message = messageFromDetails ?? (error instanceof Error && typeof error.message === 'string' ? error.message : null);
+
+  return {
+    error: {
+      type,
+      code,
+      message,
+    },
+  };
+};
+
+const normalizeTimeout = (value) => {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric;
+  }
+
+  return config.openai?.timeoutMs ?? 30000;
+};
+
+const probeOpenAIResponse = async ({ ownerKey, newsId, timeoutMs } = {}) => {
+  if (!ownerKey) {
+    throw new TypeError('ownerKey is required');
+  }
+
+  const preview = await buildPostRequestPreview({ ownerKey, newsId });
+  const article = preview.selectedArticle;
+
+  if (!article) {
+    throw new ApiError({
+      statusCode: 404,
+      code: 'NO_ELIGIBLE_NEWS',
+      message: 'No eligible news available for OpenAI probe.',
+    });
+  }
+
+  const payload = buildGenerationPayload({
+    article,
+    basePrompt: preview.basePromptRaw ?? '',
+    model: preview.model,
+  });
+
+  try {
+    Sentry.addBreadcrumb({
+      category: 'openai.probe',
+      level: 'info',
+      data: {
+        ownerKey,
+        newsId: article?.id ?? null,
+        promptBaseHash: preview.promptBaseHash,
+        model: preview.model,
+      },
+    });
+  } catch (error) {
+    console.warn('Failed to record OpenAI probe breadcrumb', error);
+  }
+
+  const client = ensureOpenAIClient(getOpenAIClient());
+  const effectiveTimeout = normalizeTimeout(timeoutMs);
+
+  try {
+    if (client && typeof client.withOptions === 'function') {
+      return await client.withOptions({ timeout: effectiveTimeout }).responses.create(payload);
+    }
+
+    return await client.responses.create(payload);
+  } catch (error) {
+    const status = getErrorStatus(error);
+
+    if (typeof status === 'number') {
+      const payloadBruto = buildRawOpenAIErrorPayload(error);
+      throw { status, payloadBruto };
+    }
+
+    throw error;
+  }
 };
 
 const callOpenAIWithRetry = async ({ client, payload, maxRetries, timeoutMs, delayFn = delay, randomFn = Math.random }) => {
@@ -836,5 +925,6 @@ module.exports = {
   buildPostRequestPreview,
   ArticleNotFoundError,
   MAX_GENERATION_ATTEMPTS,
+  probeOpenAIResponse,
 };
 
