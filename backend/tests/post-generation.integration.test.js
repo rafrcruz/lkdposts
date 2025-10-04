@@ -93,7 +93,7 @@ describe('post-generation.service integration', () => {
               role: 'system',
               content: [
                 expect.objectContaining({
-                  type: 'text',
+                  type: 'input_text',
                   text: expect.stringContaining('Instrução final'),
                 }),
               ],
@@ -102,7 +102,7 @@ describe('post-generation.service integration', () => {
               role: 'user',
               content: [
                 expect.objectContaining({
-                  type: 'text',
+                  type: 'input_text',
                   text: expect.stringContaining('Notícia ID interno'),
                 }),
               ],

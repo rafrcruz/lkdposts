@@ -414,7 +414,7 @@ const buildNewsPayload = (article) => {
       role: 'user',
       content: [
         {
-          type: 'text',
+          type: 'input_text',
           text: context,
         },
       ],
@@ -640,7 +640,7 @@ const buildGenerationPayload = ({ article, basePrompt, model }) => {
         content: systemText
           ? [
               {
-                type: 'text',
+                type: 'input_text',
                 text: systemText,
               },
             ]
@@ -650,7 +650,7 @@ const buildGenerationPayload = ({ article, basePrompt, model }) => {
         role: 'user',
         content: [
           {
-            type: 'text',
+            type: 'input_text',
             text: context,
           },
         ],
