@@ -10,6 +10,7 @@ const config = require('../config');
 const { getOpenAIModel, OPENAI_MODEL_OPTIONS } = require('./app-params.service');
 const { resolveOperationalParams } = require('./posts-operational-params');
 const { getOpenAIClient } = require('../lib/openai-client');
+const { extractTextFromResponses } = require('../utils/openai-responses');
 
 const MAX_GENERATION_ATTEMPTS = 3;
 const MAX_ERROR_REASON_LENGTH = 240;
@@ -152,74 +153,6 @@ const buildPromptBase = async ({ ownerKey }) => {
   const promptBaseHash = createHash('sha256').update(systemPrompt).digest('hex');
 
   return { basePrompt, promptBaseHash };
-};
-
-const extractGeneratedText = (response) => {
-  if (!response) {
-    return '';
-  }
-
-  if (typeof response.output_text === 'string' && response.output_text.trim().length > 0) {
-    return response.output_text.trim();
-  }
-
-  if (Array.isArray(response.output)) {
-    const collected = [];
-    for (const chunk of response.output) {
-      if (!chunk || !Array.isArray(chunk.content)) {
-        continue;
-      }
-      for (const entry of chunk.content) {
-        if (!entry) {
-          continue;
-        }
-        if (typeof entry.text === 'string' && entry.text.trim().length > 0) {
-          collected.push(entry.text.trim());
-        }
-        if (typeof entry.type === 'string' && entry.type === 'output_text' && typeof entry.data === 'string') {
-          const trimmed = entry.data.trim();
-          if (trimmed) {
-            collected.push(trimmed);
-          }
-        }
-      }
-    }
-
-    if (collected.length > 0) {
-      return collected.join('\n').trim();
-    }
-  }
-
-  if (Array.isArray(response.choices) && response.choices.length > 0) {
-    const first = response.choices[0];
-    if (first && first.message) {
-      if (typeof first.message.content === 'string' && first.message.content.trim().length > 0) {
-        return first.message.content.trim();
-      }
-
-      if (Array.isArray(first.message.content)) {
-        const collected = [];
-        for (const entry of first.message.content) {
-          if (!entry) {
-            continue;
-          }
-
-          if (typeof entry.text === 'string' && entry.text.trim().length > 0) {
-            collected.push(entry.text.trim());
-          }
-          if (typeof entry === 'string' && entry.trim().length > 0) {
-            collected.push(entry.trim());
-          }
-        }
-
-        if (collected.length > 0) {
-          return collected.join('\n').trim();
-        }
-      }
-    }
-  }
-
-  return '';
 };
 
 const buildArticleContext = (article) => {
@@ -695,26 +628,32 @@ const generatePostForArticle = async ({
       timeoutMs,
     });
 
-    const generatedText = extractGeneratedText(response);
+    const generatedText = extractTextFromResponses(response);
     if (!generatedText) {
-      throw new Error('OpenAI response did not contain text output');
+      throw new ApiError({
+        statusCode: 502,
+        code: 'OPENAI_NO_TEXT',
+        message: 'Falha ao extrair texto do Responses API',
+      });
     }
 
     const usage = response?.usage ?? {};
     const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
 
-    if (process.env.NODE_ENV !== 'production' && response?.usage) {
+    if (process.env.NODE_ENV === 'development' && response?.usage) {
       const usageLog = {
+        where: 'post.gen',
         model: response?.model ?? model,
-        input_tokens: usage.input_tokens ?? usage.prompt_tokens ?? null,
-        output_tokens: usage.output_tokens ?? usage.completion_tokens ?? null,
+        inputTokens: usage.input_tokens ?? usage.prompt_tokens ?? null,
+        outputTokens: usage.output_tokens ?? usage.completion_tokens ?? null,
+        textLen: generatedText.length,
       };
 
       if (cachedTokens !== undefined) {
-        usageLog.cached_tokens = cachedTokens;
+        usageLog.cachedTokens = cachedTokens;
       }
 
-      console.info('openai.responses.usage', usageLog);
+      console.info(usageLog);
     }
 
     await postRepository.upsertForArticle({
@@ -735,6 +674,7 @@ const generatePostForArticle = async ({
     return {
       success: true,
       cacheInfo: cachedTokens === undefined ? undefined : { cachedTokens },
+      postText: generatedText,
     };
   } catch (error) {
     const reason = truncateError(error instanceof Error ? error.message : String(error));
