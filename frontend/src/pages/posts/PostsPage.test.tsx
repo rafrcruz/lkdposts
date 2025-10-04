@@ -253,6 +253,19 @@ const buildRefreshSummary = (override: Partial<RefreshSummary> = {}): RefreshSum
   ...override,
 });
 
+const resolveRequestDetails = (input: RequestInfo | URL, init?: RequestInit) => {
+  const target =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+  const url = new URL(target, 'http://localhost');
+  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+
+  return { url, method };
+};
+
 const readMetricValue = (label: string) => {
   const labelElement = screen.getByText(label);
   const container = labelElement.closest('div');
@@ -287,6 +300,21 @@ describe('PostsPage', () => {
     }
     mockedUseAuth.mockReturnValue(buildAuthContext());
     mockedUseAppParams.mockReturnValue(buildAppParamsHook());
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const { url, method } = resolveRequestDetails(input, init);
+
+      if (method === 'GET' && url.pathname === '/api/v1/posts/refresh-status') {
+        return new Response(JSON.stringify({ success: true, data: { status: null } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      throw new Error(`Unhandled request in PostsPage test fetch mock: ${method} ${url.pathname}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof global.fetch;
 
     const feeds: Feed[] = [buildFeed({ id: 1, title: 'Feed 1' }), buildFeed({ id: 2, title: 'Feed 2' })];
     const defaultPosts: PostListItem[] = [
@@ -782,14 +810,25 @@ describe('PostsPage', () => {
     await user.click(requestButton);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const hasPreviewCall = fetchMock.mock.calls.some(([request, init]) => {
+        const { url } = resolveRequestDetails(request as RequestInfo | URL, init as RequestInit | undefined);
+        return url.pathname === '/api/v1/admin/news/preview-openai';
+      });
+      expect(hasPreviewCall).toBe(true);
     });
 
-    const [requestUrl, requestInit] = fetchMock.mock.calls[0];
-    expect(requestUrl).toBeInstanceOf(URL);
-    expect((requestUrl as URL).href).toBe(
-      'http://localhost:3001/api/v1/admin/news/preview-openai?news_id=42',
-    );
+    const previewCall = fetchMock.mock.calls.find(([request, init]) => {
+      const { url } = resolveRequestDetails(request as RequestInfo | URL, init as RequestInit | undefined);
+      return url.pathname === '/api/v1/admin/news/preview-openai';
+    });
+
+    if (!previewCall) {
+      throw new Error('Preview request was not captured');
+    }
+
+    const [requestInfo, requestInit] = previewCall;
+    const { url } = resolveRequestDetails(requestInfo as RequestInfo | URL, requestInit as RequestInit | undefined);
+    expect(url.href).toBe('http://localhost:3001/api/v1/admin/news/preview-openai?news_id=42');
     expect(requestInit).toMatchObject({
       method: 'GET',
       credentials: 'include',
@@ -1037,7 +1076,11 @@ describe('PostsPage', () => {
     await user.click(requestButton);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const hasPreviewCall = fetchMock.mock.calls.some(([request, init]) => {
+        const { url } = resolveRequestDetails(request as RequestInfo | URL, init as RequestInit | undefined);
+        return url.pathname === '/api/v1/admin/news/preview-openai';
+      });
+      expect(hasPreviewCall).toBe(true);
       expect(fetchSignal).not.toBeNull();
     });
 

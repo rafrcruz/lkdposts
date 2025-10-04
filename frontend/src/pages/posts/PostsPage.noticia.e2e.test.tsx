@@ -8,7 +8,12 @@ import type { SpyInstance } from 'vitest';
 
 import PostsPage from './PostsPage';
 import i18n from '@/config/i18n';
-import type { PostListItem, RefreshSummary, CleanupResult } from '@/features/posts/types/post';
+import type {
+  PostListItem,
+  RefreshSummary,
+  CleanupResult,
+  PostGenerationProgress,
+} from '@/features/posts/types/post';
 import type { Feed } from '@/features/feeds/types/feed';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { AuthContextValue } from '@/features/auth/context/AuthContext';
@@ -32,6 +37,7 @@ type PostsApiMockConfig = {
     meta?: { nextCursor: string | null; total: number; limit: number };
   };
   refresh?: RefreshSummary;
+  refreshProgress?: PostGenerationProgress | null;
   cleanup?: CleanupResult;
   postsDelayMs?: number;
   postsError?: { status: number; message: string };
@@ -337,6 +343,8 @@ const mockApi = (config: PostsApiMockConfig): MockApiRestore => {
 
   const refreshPayload: RefreshSummary =
     config.refresh ?? ({ now: '2025-01-10T08:05:00.000Z', feeds: [] } as RefreshSummary);
+  const refreshProgressPayload: PostGenerationProgress | null =
+    'refreshProgress' in config ? config.refreshProgress ?? null : null;
   const cleanupPayload: CleanupResult =
     config.cleanup ?? ({ removedArticles: 0, removedPosts: 0 } as CleanupResult);
 
@@ -365,6 +373,10 @@ const mockApi = (config: PostsApiMockConfig): MockApiRestore => {
 
     if (method === 'POST' && path === '/api/v1/posts/cleanup') {
       return buildJsonResponse({ success: true, data: cleanupPayload });
+    }
+
+    if (method === 'GET' && path === '/api/v1/posts/refresh-status') {
+      return buildJsonResponse({ success: true, data: { status: refreshProgressPayload } });
     }
 
     if (method === 'GET' && path === '/api/v1/posts') {
