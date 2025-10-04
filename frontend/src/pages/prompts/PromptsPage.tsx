@@ -31,6 +31,7 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { LoadingSkeleton } from '@/components/feedback/LoadingSkeleton';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 import { PROMPTS_QUERY_KEY } from '@/features/prompts/api/prompts';
 import {
   useCreatePrompt,
@@ -193,6 +194,7 @@ const PromptsPage = () => {
   const [expandedPromptIds, setExpandedPromptIds] = useState<Set<string>>(new Set());
   const [isContentExpanded, setIsContentExpanded] = useState(false);
   const [selectedPromptIds, setSelectedPromptIds] = useState<Set<string>>(new Set());
+  const [promptPendingDeletion, setPromptPendingDeletion] = useState<Prompt | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [searchTerm, setSearchTerm] = useState('');
@@ -937,34 +939,45 @@ const PromptsPage = () => {
   };
 
   const handleDeletePrompt = (prompt: Prompt) => {
-    const confirmed = window.confirm(
-      t('prompts.delete.confirm', 'Are you sure you want to delete this prompt?'),
-    );
+    setPromptPendingDeletion(prompt);
+  };
 
-    if (!confirmed) {
+  const handleCancelDeletePrompt = () => {
+    if (deletePrompt.isPending) {
       return;
     }
 
+    setPromptPendingDeletion(null);
+  };
+
+  const handleConfirmDeletePrompt = () => {
+    if (!promptPendingDeletion) {
+      return;
+    }
+
+    const promptToDelete = promptPendingDeletion;
+
     setFeedback(null);
 
-    deletePrompt.mutate(prompt.id, {
+    deletePrompt.mutate(promptToDelete.id, {
       onSuccess: () => {
         setFeedback({
           type: 'success',
           message: t('prompts.feedback.deleted', 'Prompt deleted successfully.'),
         });
         setExpandedPromptIds((current) => {
-          if (!current.has(prompt.id)) {
+          if (!current.has(promptToDelete.id)) {
             return current;
           }
 
           const next = new Set(current);
-          next.delete(prompt.id);
+          next.delete(promptToDelete.id);
           return next;
         });
-        if (editingPrompt?.id === prompt.id) {
+        if (editingPrompt?.id === promptToDelete.id) {
           resetForm();
         }
+        setPromptPendingDeletion(null);
       },
       onError: (error) => {
         setFeedback({
@@ -974,7 +987,7 @@ const PromptsPage = () => {
             t('prompts.feedback.error', 'The operation failed. Try again.'),
           ),
         });
-        reportError('delete', error, { promptId: prompt.id });
+        reportError('delete', error, { promptId: promptToDelete.id });
       },
     });
   };
@@ -2284,6 +2297,29 @@ const PromptsPage = () => {
             document.body,
           )
         : null}
+      <ConfirmDialog
+        open={promptPendingDeletion !== null}
+        title={t('prompts.delete.title', 'Delete prompt')}
+        description={t('prompts.delete.confirm', 'Are you sure you want to delete this prompt?')}
+        cancelLabel={t('prompts.actions.cancel', 'Cancel')}
+        confirmLabel={t('prompts.actions.delete', 'Delete')}
+        confirmLoadingLabel={t('prompts.actions.deleting', 'Deleting...')}
+        confirmDisabled={deletePrompt.isPending}
+        cancelDisabled={deletePrompt.isPending}
+        onCancel={handleCancelDeletePrompt}
+        onConfirm={handleConfirmDeletePrompt}
+      >
+        {promptPendingDeletion ? (
+          <div className="space-y-2 rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-sm">
+            <p className="font-medium text-foreground">
+              {promptPendingDeletion.title || t('prompts.delete.untitled', 'Untitled prompt')}
+            </p>
+            <p className="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">
+              {promptPendingDeletion.content}
+            </p>
+          </div>
+        ) : null}
+      </ConfirmDialog>
     </section>
   );
 };

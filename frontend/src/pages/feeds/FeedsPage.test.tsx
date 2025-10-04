@@ -518,6 +518,9 @@ describe('FeedsPage', () => {
     const button = screen.getByRole('button', { name: /Resetar feeds \(admin\)/i });
     await user.click(button);
 
+    const dialog = await screen.findByRole('dialog', { name: /Resetar feeds/i });
+    await user.click(within(dialog).getByRole('button', { name: /Resetar feeds \(admin\)/i }));
+
     expect(resetMutateAsync).toHaveBeenCalled();
 
     const successMessage = i18n.t(
@@ -546,6 +549,9 @@ describe('FeedsPage', () => {
     const button = screen.getByRole('button', { name: /Resetar feeds \(admin\)/i });
     await user.click(button);
 
+    const dialog = await screen.findByRole('dialog', { name: /Resetar feeds/i });
+    await user.click(within(dialog).getByRole('button', { name: /Resetar feeds \(admin\)/i }));
+
     expect(resetMutateAsync).toHaveBeenCalled();
 
     const errorMessage = i18n.t(
@@ -553,7 +559,8 @@ describe('FeedsPage', () => {
       'Não foi possível concluir o reset. Tente novamente ou contate o administrador.',
     );
 
-    expect(await screen.findByText(errorMessage)).toBeInTheDocument();
+    const errorMessages = await screen.findAllByText(errorMessage);
+    expect(errorMessages.length).toBeGreaterThan(0);
   });
 });
 
