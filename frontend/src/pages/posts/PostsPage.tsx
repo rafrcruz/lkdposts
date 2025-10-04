@@ -617,6 +617,7 @@ const PostsPage = () => {
   const previewMutation = usePostRequestPreview();
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewCopyFeedback, setPreviewCopyFeedback] = useState<CopyFeedback>(null);
+  const [postCopyFeedbacks, setPostCopyFeedbacks] = useState<Record<number, CopyFeedback>>({});
   const [lastPreviewRequest, setLastPreviewRequest] = useState<number | null>(null);
   const [openAiPreviewRaw, setOpenAiPreviewRaw] = useState<string | null>(null);
   const [openAiPreviewError, setOpenAiPreviewError] = useState<string | null>(null);
@@ -815,6 +816,77 @@ const PostsPage = () => {
     resetOpenAiPreviewState();
     previewMutation.reset();
   }, [previewMutation, resetOpenAiPreviewState]);
+
+  const schedulePostCopyFeedbackClear = useCallback((postId: number, feedback: CopyFeedback) => {
+    if (feedback === null) {
+      setPostCopyFeedbacks((previous) => {
+        if (!(postId in previous)) {
+          return previous;
+        }
+
+        const { [postId]: _removed, ...rest } = previous;
+        return rest;
+      });
+      return;
+    }
+
+    const feedbackReference = feedback;
+    setTimeout(() => {
+      setPostCopyFeedbacks((previous) => {
+        if (previous[postId] !== feedbackReference) {
+          return previous;
+        }
+
+        const { [postId]: _ignored, ...rest } = previous;
+        return rest;
+      });
+    }, 3000);
+  }, []);
+
+  const handleCopyPostContent = useCallback(
+    async (postId: number, value: string | null | undefined) => {
+      if (!value || value.trim().length === 0) {
+        const feedback: CopyFeedback = {
+          type: 'error',
+          message: t('posts.preview.copyEmpty', 'Nothing to copy.'),
+        };
+        setPostCopyFeedbacks((previous) => ({ ...previous, [postId]: feedback }));
+        schedulePostCopyFeedbackClear(postId, feedback);
+        return;
+      }
+
+      if (typeof navigator === 'undefined' || !navigator.clipboard) {
+        const feedback: CopyFeedback = {
+          type: 'error',
+          message: t('posts.preview.copyUnsupported', 'Copy is not available in this browser.'),
+        };
+        setPostCopyFeedbacks((previous) => ({ ...previous, [postId]: feedback }));
+        schedulePostCopyFeedbackClear(postId, feedback);
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(value);
+        const feedback: CopyFeedback = {
+          type: 'success',
+          message: t('posts.preview.copySuccess', 'Copied to clipboard.'),
+        };
+        setPostCopyFeedbacks((previous) => ({ ...previous, [postId]: feedback }));
+        schedulePostCopyFeedbackClear(postId, feedback);
+      } catch (error) {
+        if (process.env.NODE_ENV !== 'test') {
+          console.error('Failed to copy post content', error);
+        }
+        const feedback: CopyFeedback = {
+          type: 'error',
+          message: t('posts.preview.copyError', 'Copy failed. Copy manually.'),
+        };
+        setPostCopyFeedbacks((previous) => ({ ...previous, [postId]: feedback }));
+        schedulePostCopyFeedbackClear(postId, feedback);
+      }
+    },
+    [schedulePostCopyFeedbackClear, t],
+  );
 
   const handleCopyPreviewContent = useCallback(
     async (value: string, successMessage: string) => {
@@ -1706,6 +1778,8 @@ const PostsPage = () => {
         onTryAgain={() => runSequence()}
         onPreviewRequest={handleOpenPreview}
         isPreviewLoading={previewIsLoading}
+        onCopyPostContent={handleCopyPostContent}
+        copyFeedbacks={postCopyFeedbacks}
         posts={posts}
         selectedFeedId={selectedFeedId}
         t={t}
@@ -2018,6 +2092,8 @@ type PostListContentProps = {
   onTryAgain: () => void;
   onPreviewRequest?: (newsId?: number) => void;
   isPreviewLoading: boolean;
+  onCopyPostContent: (postId: number, value: string | null | undefined) => void;
+  copyFeedbacks: Record<number, CopyFeedback>;
   posts: PostListItem[];
   selectedFeedId: number | null;
   t: TranslateFunction;
@@ -2045,6 +2121,8 @@ const PostListContent = ({
   onTryAgain,
   onPreviewRequest,
   isPreviewLoading,
+  onCopyPostContent,
+  copyFeedbacks,
   posts,
   selectedFeedId,
   t,
@@ -2179,16 +2257,50 @@ const PostListContent = ({
               ) : null}
             </header>
             <section className="space-y-2">
-              <button
-                type="button"
-                aria-expanded={sectionState.post}
-                aria-controls={postContentId}
-                className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
-                onClick={() => onToggleSection(item.id, 'post')}
-              >
-                {t('posts.list.sections.post', 'Post')}
-                <span aria-hidden="true">{sectionState.post ? '−' : '+'}</span>
-              </button>
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  aria-expanded={sectionState.post}
+                  aria-controls={postContentId}
+                  className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
+                  onClick={() => onToggleSection(item.id, 'post')}
+                >
+                  {t('posts.list.sections.post', 'Post')}
+                  <span aria-hidden="true">{sectionState.post ? '−' : '+'}</span>
+                </button>
+                {item.post?.content ? (
+                  <button
+                    type="button"
+                    onClick={() => onCopyPostContent(item.id, item.post?.content)}
+                    className="inline-flex items-center justify-center rounded-md border border-border bg-background p-2 text-muted-foreground transition hover:border-primary hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    aria-label={t('posts.list.copyPost', 'Copy post')}
+                    title={t('posts.list.copyPost', 'Copy post')}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M9 9.75V6.75C9 5.64543 9.89543 4.75 11 4.75H17C18.1046 4.75 19 5.64543 19 6.75V16C19 17.1046 18.1046 18 17 18H14.25"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M7 8.25H13C14.1046 8.25 15 9.14543 15 10.25V18.25C15 19.3546 14.1046 20.25 13 20.25H7C5.89543 20.25 5 19.3546 5 18.25V10.25C5 9.14543 5.89543 8.25 7 8.25Z"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                ) : null}
+              </div>
               {sectionState.post ? (
                 <div id={postContentId} className="rounded-md border border-border bg-background px-4 py-4 text-sm text-foreground">
                   {item.post?.content ? (
@@ -2197,6 +2309,18 @@ const PostListContent = ({
                     <p className="text-muted-foreground">{t('posts.list.postUnavailable', 'Post not available yet.')}</p>
                   )}
                 </div>
+              ) : null}
+              {copyFeedbacks[item.id] ? (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={clsx(
+                    'text-xs',
+                    copyFeedbacks[item.id]?.type === 'success' ? 'text-primary' : 'text-danger',
+                  )}
+                >
+                  {copyFeedbacks[item.id]?.message}
+                </p>
               ) : null}
             </section>
             <section className="space-y-2">

@@ -410,6 +410,32 @@ describe('PostsPage', () => {
     expect(screen.queryByText('Conteudo gerado 1')).toBeNull();
   });
 
+  it('copies the generated post content to the clipboard', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderPage();
+
+    const copyButtonLabel = i18n.t('posts.list.copyPost');
+    const [copyButton] = await screen.findAllByRole('button', {
+      name: new RegExp(copyButtonLabel, 'i'),
+    });
+
+    await user.click(copyButton);
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('Conteudo gerado 1');
+    });
+
+    const successMessage = i18n.t('posts.preview.copySuccess');
+    expect(await screen.findByText(new RegExp(successMessage, 'i'))).toBeInTheDocument();
+  });
+
   it('renders the refresh summary and allows dismissing it', async () => {
     const user = userEvent.setup();
 
