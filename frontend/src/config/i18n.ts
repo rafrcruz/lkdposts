@@ -333,6 +333,7 @@ const resources = {
             post: 'POST',
             article: 'NEWS',
           },
+          copyPost: 'Copy post',
           postUnavailable: 'Post not available yet.',
           article: {
             readMore: 'See more',
@@ -837,6 +838,7 @@ const resources = {
             post: 'POST',
             article: 'NOTICIA',
           },
+          copyPost: 'Copiar post',
           postUnavailable: 'Post ainda nao disponivel.',
           article: {
             readMore: 'Ver mais',
