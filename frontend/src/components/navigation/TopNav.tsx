@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -15,13 +15,23 @@ export const TopNav = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const toggleButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
+  const settingsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const location = useLocation();
 
-  const links: Array<{ to: string; label: string }> =
+  const mainLinks: Array<{ to: string; label: string }> =
     status === 'authenticated'
       ? [
           { to: '/posts', label: t('navigation.posts', 'Posts') },
-          { to: '/prompts', label: t('navigation.prompts', 'Prompts') },
           { to: '/feeds', label: t('navigation.feeds', 'Feeds') },
+        ]
+      : [{ to: '/', label: t('navigation.home') }];
+
+  const settingsLinks: Array<{ to: string; label: string }> =
+    status === 'authenticated'
+      ? [
+          { to: '/prompts', label: t('navigation.prompts', 'Prompts') },
           ...(user?.role === 'admin'
             ? [
                 { to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') },
@@ -29,7 +39,9 @@ export const TopNav = () => {
               ]
             : []),
         ]
-      : [{ to: '/', label: t('navigation.home') }];
+      : [];
+
+  const isSettingsActive = settingsLinks.some((link) => location.pathname.startsWith(link.to));
 
   const handleLogout = () => {
     logout().catch((error) => {
@@ -89,6 +101,52 @@ export const TopNav = () => {
       rootDocument.removeEventListener('mousedown', handleClickOutside);
     };
   }, [closeMenu, isMenuOpen]);
+
+  useEffect(() => {
+    if (!isSettingsOpen) {
+      return;
+    }
+
+    const rootDocument = 'document' in globalThis ? globalThis.document : undefined;
+
+    if (!rootDocument) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsSettingsOpen(false);
+        setTimeout(() => {
+          settingsToggleRef.current?.focus();
+        }, 0);
+      }
+    };
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (settingsMenuRef.current?.contains(target)) {
+        return;
+      }
+
+      if (settingsToggleRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsSettingsOpen(false);
+    };
+
+    rootDocument.addEventListener('keydown', handleKeyDown);
+    rootDocument.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      rootDocument.removeEventListener('keydown', handleKeyDown);
+      rootDocument.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isSettingsOpen]);
+
+  useEffect(() => {
+    setIsSettingsOpen(false);
+  }, [location.pathname]);
 
   const desktopLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) =>
@@ -171,13 +229,71 @@ export const TopNav = () => {
           </Link>
           <nav aria-label={t('navigation.primary')} className="hidden sm:block">
             <ul className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
-              {links.map((link) => (
+              {mainLinks.map((link) => (
                 <li key={link.to}>
                   <NavLink to={link.to} end={link.to === '/'} className={desktopLinkClassName}>
                     {link.label}
                   </NavLink>
                 </li>
               ))}
+              {settingsLinks.length > 0 ? (
+                <li className="relative">
+                  <button
+                    type="button"
+                    ref={settingsToggleRef}
+                    className={clsx(
+                      'flex items-center gap-1 rounded-md px-3 py-2 text-sm transition-colors duration-200',
+                      isSettingsOpen || isSettingsActive
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                    onClick={() => setIsSettingsOpen((prev) => !prev)}
+                    aria-haspopup="menu"
+                    aria-expanded={isSettingsOpen}
+                  >
+                    <span>{t('navigation.settings', 'Configurações')}</span>
+                    <svg
+                      aria-hidden
+                      className={clsx('h-4 w-4 transition-transform', isSettingsOpen ? 'rotate-180' : 'rotate-0')}
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.086l3.71-3.855a.75.75 0 1 1 1.08 1.04l-4.25 4.417a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  {isSettingsOpen ? (
+                    <div
+                      ref={settingsMenuRef}
+                      className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-md border border-border bg-background py-1 shadow-lg"
+                      role="menu"
+                      aria-label={t('navigation.settings', 'Configurações')}
+                    >
+                      {settingsLinks.map((link) => (
+                        <NavLink
+                          key={link.to}
+                          to={link.to}
+                          className={({ isActive }) =>
+                            clsx(
+                              'block px-4 py-2 text-sm transition-colors',
+                              isActive
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-foreground hover:bg-muted hover:text-foreground',
+                            )
+                          }
+                          onClick={() => setIsSettingsOpen(false)}
+                          role="menuitem"
+                        >
+                          {link.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  ) : null}
+                </li>
+              ) : null}
             </ul>
           </nav>
         </div>
@@ -224,25 +340,51 @@ export const TopNav = () => {
             className="fixed inset-x-4 top-20 z-50 overflow-hidden rounded-lg border border-border bg-background shadow-xl"
           >
             <div className="space-y-6 p-6">
-              <nav aria-label={t('navigation.primary')} className="space-y-2">
-                {links.map((link) => (
-                  <NavLink
-                    key={link.to}
-                    to={link.to}
-                    end={link.to === '/'}
-                    className={({ isActive }) =>
-                      clsx(
-                        'block rounded-md px-4 py-2 text-base font-medium transition-colors',
-                        isActive
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-foreground hover:bg-muted hover:text-foreground',
-                      )
-                    }
-                    onClick={closeMenu}
-                  >
-                    {link.label}
-                  </NavLink>
-                ))}
+              <nav aria-label={t('navigation.primary')} className="space-y-4">
+                <div className="space-y-2">
+                  {mainLinks.map((link) => (
+                    <NavLink
+                      key={link.to}
+                      to={link.to}
+                      end={link.to === '/'}
+                      className={({ isActive }) =>
+                        clsx(
+                          'block rounded-md px-4 py-2 text-base font-medium transition-colors',
+                          isActive
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-foreground hover:bg-muted hover:text-foreground',
+                        )
+                      }
+                      onClick={closeMenu}
+                    >
+                      {link.label}
+                    </NavLink>
+                  ))}
+                </div>
+                {settingsLinks.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t('navigation.settings', 'Configurações')}
+                    </p>
+                    {settingsLinks.map((link) => (
+                      <NavLink
+                        key={link.to}
+                        to={link.to}
+                        className={({ isActive }) =>
+                          clsx(
+                            'block rounded-md px-4 py-2 text-base font-medium transition-colors',
+                            isActive
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-foreground hover:bg-muted hover:text-foreground',
+                          )
+                        }
+                        onClick={closeMenu}
+                      >
+                        {link.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                ) : null}
               </nav>
               <div className="space-y-4">
                 <LanguageSwitcher className="flex-col items-start gap-3" selectClassName="sm:min-w-0" />
