@@ -8,55 +8,34 @@ import { ThemeToggle } from './ThemeToggle';
 import { clsx } from 'clsx';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { HttpError } from '@/lib/api/http';
+import type { AuthStatus } from '@/features/auth/context/AuthContext';
+import type { AuthenticatedUser } from '@/features/auth/api/auth';
 
-export const TopNav = () => {
-  const { t } = useTranslation();
-  const { status, user, logout, isAuthenticating } = useAuth();
+type MainLink = { to: string; label: string };
+
+type AuthSections = {
+  desktop: ReactNode;
+  mobile: ReactNode;
+};
+
+const useMobileMenu = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDialogElement | null>(null);
   const toggleButtonRef = useRef<HTMLButtonElement | null>(null);
-  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
-  const settingsToggleRef = useRef<HTMLButtonElement | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const location = useLocation();
 
-  const mainLinks: Array<{ to: string; label: string }> =
-    status === 'authenticated'
-      ? [
-          { to: '/posts', label: t('navigation.posts', 'Posts') },
-          { to: '/feeds', label: t('navigation.feeds', 'Feeds') },
-        ]
-      : [{ to: '/', label: t('navigation.home') }];
-
-  const settingsLinks: Array<{ to: string; label: string }> =
-    status === 'authenticated'
-      ? [
-          { to: '/prompts', label: t('navigation.prompts', 'Prompts') },
-          ...(user?.role === 'admin'
-            ? [
-                { to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') },
-                { to: '/app-params', label: t('navigation.appParams', 'Parâmetros') },
-              ]
-            : []),
-        ]
-      : [];
-
-  const isSettingsActive = settingsLinks.some((link) => location.pathname.startsWith(link.to));
-
-  const handleLogout = () => {
-    logout().catch((error) => {
-      if (error instanceof HttpError && error.status === 401) {
-        return;
-      }
-      console.error('Failed to logout', error);
-    });
-  };
-
-  const closeMenu = useCallback(() => {
-    setIsMenuOpen(false);
+  const focusToggle = useCallback(() => {
     setTimeout(() => {
       toggleButtonRef.current?.focus();
     }, 0);
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    setIsMenuOpen(false);
+    focusToggle();
+  }, [focusToggle]);
+
+  const toggleMenu = useCallback(() => {
+    setIsMenuOpen((prev) => !prev);
   }, []);
 
   useEffect(() => {
@@ -102,6 +81,33 @@ export const TopNav = () => {
     };
   }, [closeMenu, isMenuOpen]);
 
+  return { isMenuOpen, toggleMenu, closeMenu, menuRef, toggleButtonRef };
+};
+
+const useSettingsMenu = () => {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
+  const settingsToggleRef = useRef<HTMLButtonElement | null>(null);
+
+  const focusToggle = useCallback(() => {
+    setTimeout(() => {
+      settingsToggleRef.current?.focus();
+    }, 0);
+  }, []);
+
+  const closeSettings = useCallback(() => {
+    setIsSettingsOpen(false);
+  }, []);
+
+  const closeSettingsAndFocus = useCallback(() => {
+    setIsSettingsOpen(false);
+    focusToggle();
+  }, [focusToggle]);
+
+  const toggleSettings = useCallback(() => {
+    setIsSettingsOpen((prev) => !prev);
+  }, []);
+
   useEffect(() => {
     if (!isSettingsOpen) {
       return;
@@ -115,10 +121,7 @@ export const TopNav = () => {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setIsSettingsOpen(false);
-        setTimeout(() => {
-          settingsToggleRef.current?.focus();
-        }, 0);
+        closeSettingsAndFocus();
       }
     };
 
@@ -132,7 +135,7 @@ export const TopNav = () => {
         return;
       }
 
-      setIsSettingsOpen(false);
+      closeSettings();
     };
 
     rootDocument.addEventListener('keydown', handleKeyDown);
@@ -142,11 +145,127 @@ export const TopNav = () => {
       rootDocument.removeEventListener('keydown', handleKeyDown);
       rootDocument.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isSettingsOpen]);
+  }, [closeSettings, closeSettingsAndFocus, isSettingsOpen]);
+
+  return { isSettingsOpen, toggleSettings, closeSettings, settingsMenuRef, settingsToggleRef };
+};
+
+type TranslateFunction = ReturnType<typeof useTranslation>['t'];
+
+const createAuthSections = ({
+  status,
+  user,
+  t,
+  handleLogout,
+  isAuthenticating,
+}: {
+  status: AuthStatus;
+  user: AuthenticatedUser | null;
+  t: TranslateFunction;
+  handleLogout: () => void;
+  isAuthenticating: boolean;
+}): AuthSections => {
+  if (status === 'unknown') {
+    const checkingLabel = t('navigation.checking', 'Verificando...');
+    return {
+      desktop: <span className="text-xs text-muted-foreground">{checkingLabel}</span>,
+      mobile: <span className="block text-sm text-muted-foreground">{checkingLabel}</span>,
+    };
+  }
+
+  if (status === 'authenticated') {
+    const signingOutLabel = t('navigation.signingOut', 'Saindo...');
+    const logoutLabel = t('navigation.logout', 'Sair');
+    return {
+      desktop: (
+        <div className="flex items-center gap-2">
+          <span className="hidden text-xs text-muted-foreground sm:inline-flex">{user?.email}</span>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={handleLogout}
+            disabled={isAuthenticating}
+          >
+            {isAuthenticating ? signingOutLabel : logoutLabel}
+          </button>
+        </div>
+      ),
+      mobile: (
+        <div className="space-y-2 rounded-md border border-border bg-muted/30 p-4">
+          <span className="block text-sm font-medium text-foreground">{user?.email}</span>
+          <button
+            type="button"
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={handleLogout}
+            disabled={isAuthenticating}
+          >
+            {isAuthenticating ? signingOutLabel : logoutLabel}
+          </button>
+        </div>
+      ),
+    };
+  }
+
+  const signInLabel = t('navigation.signIn', 'Entrar');
+  return {
+    desktop: (
+      <a href="/" className="text-sm font-medium text-primary hover:underline">
+        {signInLabel}
+      </a>
+    ),
+    mobile: (
+      <a
+        href="/"
+        className="block w-full rounded-md bg-primary px-4 py-2 text-center text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+      >
+        {signInLabel}
+      </a>
+    ),
+  };
+};
+
+export const TopNav = () => {
+  const { t } = useTranslation();
+  const { status, user, logout, isAuthenticating } = useAuth();
+  const { isMenuOpen, toggleMenu, closeMenu, menuRef, toggleButtonRef } = useMobileMenu();
+  const { isSettingsOpen, toggleSettings, closeSettings, settingsMenuRef, settingsToggleRef } = useSettingsMenu();
+  const location = useLocation();
+
+  const mainLinks: MainLink[] =
+    status === 'authenticated'
+      ? [
+          { to: '/posts', label: t('navigation.posts', 'Posts') },
+          { to: '/feeds', label: t('navigation.feeds', 'Feeds') },
+        ]
+      : [{ to: '/', label: t('navigation.home') }];
+
+  const settingsLinks: MainLink[] =
+    status === 'authenticated'
+      ? [
+          { to: '/prompts', label: t('navigation.prompts', 'Prompts') },
+          ...(user?.role === 'admin'
+            ? [
+                { to: '/allowlist', label: t('navigation.allowlist', 'Allowlist') },
+                { to: '/app-params', label: t('navigation.appParams', 'Parâmetros') },
+              ]
+            : []),
+        ]
+      : [];
+
+  const isSettingsActive = settingsLinks.some((link) => location.pathname.startsWith(link.to));
+
+  const handleLogout = () => {
+    logout().catch((error) => {
+      if (error instanceof HttpError && error.status === 401) {
+        return;
+      }
+      console.error('Failed to logout', error);
+    });
+  };
 
   useEffect(() => {
-    setIsSettingsOpen(false);
-  }, [location.pathname]);
+    closeSettings();
+  }, [closeSettings, location.pathname]);
 
   const desktopLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) =>
@@ -157,62 +276,13 @@ export const TopNav = () => {
     [],
   );
 
-  let authSection: ReactNode;
-  let authSectionMobile: ReactNode;
-
-  if (status === 'unknown') {
-    authSection = (
-      <span className="text-xs text-muted-foreground">{t('navigation.checking', 'Verificando...')}</span>
-    );
-    authSectionMobile = (
-      <span className="block text-sm text-muted-foreground">
-        {t('navigation.checking', 'Verificando...')}
-      </span>
-    );
-  } else if (status === 'authenticated') {
-    authSection = (
-      <div className="flex items-center gap-2">
-        <span className="hidden text-xs text-muted-foreground sm:inline-flex">
-          {user?.email}
-        </span>
-        <button
-          type="button"
-          className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={handleLogout}
-          disabled={isAuthenticating}
-        >
-          {isAuthenticating ? t('navigation.signingOut', 'Saindo...') : t('navigation.logout', 'Sair')}
-        </button>
-      </div>
-    );
-    authSectionMobile = (
-      <div className="space-y-2 rounded-md border border-border bg-muted/30 p-4">
-        <span className="block text-sm font-medium text-foreground">{user?.email}</span>
-        <button
-          type="button"
-          className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={handleLogout}
-          disabled={isAuthenticating}
-        >
-          {isAuthenticating ? t('navigation.signingOut', 'Saindo...') : t('navigation.logout', 'Sair')}
-        </button>
-      </div>
-    );
-  } else {
-    authSection = (
-      <a href="/" className="text-sm font-medium text-primary hover:underline">
-        {t('navigation.signIn', 'Entrar')}
-      </a>
-    );
-    authSectionMobile = (
-      <a
-        href="/"
-        className="block w-full rounded-md bg-primary px-4 py-2 text-center text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-      >
-        {t('navigation.signIn', 'Entrar')}
-      </a>
-    );
-  }
+  const { desktop: authSection, mobile: authSectionMobile } = createAuthSections({
+    status,
+    user,
+    t,
+    handleLogout,
+    isAuthenticating,
+  });
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur">
@@ -247,7 +317,7 @@ export const TopNav = () => {
                         ? 'bg-primary/10 text-primary'
                         : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                     )}
-                    onClick={() => setIsSettingsOpen((prev) => !prev)}
+                    onClick={toggleSettings}
                     aria-haspopup="menu"
                     aria-expanded={isSettingsOpen}
                   >
@@ -284,7 +354,7 @@ export const TopNav = () => {
                                 : 'text-foreground hover:bg-muted hover:text-foreground',
                             )
                           }
-                          onClick={() => setIsSettingsOpen(false)}
+                          onClick={closeSettings}
                           role="menuitem"
                         >
                           {link.label}
@@ -308,7 +378,7 @@ export const TopNav = () => {
             type="button"
             ref={toggleButtonRef}
             className="inline-flex items-center justify-center rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted"
-            onClick={() => setIsMenuOpen((prev) => !prev)}
+            onClick={toggleMenu}
             aria-expanded={isMenuOpen}
             aria-controls="mobile-menu"
           >
@@ -400,9 +470,4 @@ export const TopNav = () => {
     </header>
   );
 };
-
-
-
-
-
 
