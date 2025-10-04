@@ -111,6 +111,7 @@ export const PromptCard = ({
     <div
       ref={assignRef}
       {...containerAttributes}
+      role="group"
       className={clsx(
         'relative card flex flex-col gap-4 p-4 outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary',
         'hover:shadow-sm',

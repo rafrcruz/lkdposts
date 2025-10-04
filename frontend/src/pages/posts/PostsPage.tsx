@@ -69,6 +69,68 @@ const PROGRESS_PHASE_FALLBACKS: Record<PostGenerationProgress['phase'], string> 
   failed: 'Generation failed.',
 };
 
+const RATE_LIMIT_ERROR_CODES = new Set(['rate_limit', 'rate_limit_exceeded']);
+const RATE_LIMIT_BASE_DELAY_MS = 1500;
+const RATE_LIMIT_MAX_DELAY_MS = 12000;
+const RATE_LIMIT_MAX_ATTEMPTS = 5;
+
+const parseRateLimitPayload = (payload: unknown): boolean => {
+  if (!payload) {
+    return false;
+  }
+
+  if (typeof payload === 'string') {
+    try {
+      const parsed = JSON.parse(payload);
+      return parseRateLimitPayload(parsed);
+    } catch {
+      return false;
+    }
+  }
+
+  if (typeof payload !== 'object') {
+    return false;
+  }
+
+  const record = payload as Record<string, unknown>;
+  if (typeof record.error === 'string') {
+    return RATE_LIMIT_ERROR_CODES.has(record.error);
+  }
+
+  if (record.error && typeof record.error === 'object') {
+    const errorDetails = record.error as Record<string, unknown>;
+    const code = errorDetails.code;
+    if (typeof code === 'string' && RATE_LIMIT_ERROR_CODES.has(code)) {
+      return true;
+    }
+
+    const type = errorDetails.type;
+    if (typeof type === 'string' && RATE_LIMIT_ERROR_CODES.has(type)) {
+      return true;
+    }
+  }
+
+  const code = record.code;
+  if (typeof code === 'string' && RATE_LIMIT_ERROR_CODES.has(code)) {
+    return true;
+  }
+
+  const type = record.type;
+  if (typeof type === 'string' && RATE_LIMIT_ERROR_CODES.has(type)) {
+    return true;
+  }
+
+  return false;
+};
+
+const isRateLimitHttpError = (error: HttpError) => {
+  if (error.status === 429) {
+    return true;
+  }
+
+  return parseRateLimitPayload(error.payload);
+};
+
 const getTimestamp = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 const isAbortError = (error: unknown): boolean => {
@@ -570,7 +632,12 @@ const resolveOperationErrorMessage = (error: unknown, t: ReturnType<typeof useTr
       console.debug('posts.refresh.error', {
         status: error.status,
         message: error.message,
+        payload: error.payload,
       });
+    }
+
+    if (isRateLimitHttpError(error)) {
+      return t('posts.errors.rateLimited', 'OpenAI is receiving too many requests. Try again in a moment.');
     }
 
     if (error.status === 422) {
@@ -578,10 +645,6 @@ const resolveOperationErrorMessage = (error: unknown, t: ReturnType<typeof useTr
         'posts.errors.modelInvalid',
         'Select a supported model in Settings before trying again.',
       );
-    }
-
-    if (error.status === 429) {
-      return t('posts.errors.rateLimited', 'OpenAI is receiving too many requests. Try again in a moment.');
     }
 
     if (error.status === 504) {
@@ -675,6 +738,11 @@ const PostsPage = () => {
   const openAiPreviewControllerRef = useRef<AbortController | null>(null);
   const refreshProgressIntervalRef = useRef<number | null>(null);
   const isProgressRequestInFlightRef = useRef(false);
+  const rateLimitBackoffRef = useRef<{ attempts: number; timeoutId: number | null; active: boolean }>({
+    attempts: 0,
+    timeoutId: null,
+    active: false,
+  });
 
   const { metrics: diagnosticsMetrics, recordRefresh, recordCooldownBlock, recordFetchSuccess } = usePostsDiagnostics();
   const diagnosticsPanelId = 'posts-diagnostics-panel';
@@ -685,6 +753,15 @@ const PostsPage = () => {
       level: 'info',
       message: 'posts:view_opened',
     });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (rateLimitBackoffRef.current.timeoutId !== null && typeof window !== 'undefined') {
+        window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
+        rateLimitBackoffRef.current.timeoutId = null;
+      }
+    };
   }, []);
 
   const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT });
@@ -1164,12 +1241,76 @@ const PostsPage = () => {
     try {
       const status = await fetchRefreshProgress();
       setRefreshProgress(status);
+
+      if (rateLimitBackoffRef.current.timeoutId !== null && typeof window !== 'undefined') {
+        window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
+        rateLimitBackoffRef.current.timeoutId = null;
+      }
+
+      if (rateLimitBackoffRef.current.active) {
+        rateLimitBackoffRef.current.active = false;
+        rateLimitBackoffRef.current.attempts = 0;
+        setRefreshError(null);
+      } else {
+        rateLimitBackoffRef.current.attempts = 0;
+      }
     } catch (error) {
       console.error('posts.refresh.progress.error', error);
+
+      if (error instanceof HttpError && isRateLimitHttpError(error)) {
+        const nextAttempts = rateLimitBackoffRef.current.attempts + 1;
+        rateLimitBackoffRef.current.attempts = nextAttempts;
+
+        if (nextAttempts > RATE_LIMIT_MAX_ATTEMPTS) {
+          rateLimitBackoffRef.current.active = false;
+          if (rateLimitBackoffRef.current.timeoutId !== null && typeof window !== 'undefined') {
+            window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
+            rateLimitBackoffRef.current.timeoutId = null;
+          }
+          setRefreshError(
+            t('posts.errors.rateLimited', 'OpenAI is receiving too many requests. Try again in a moment.'),
+          );
+          return;
+        }
+
+        const delay = Math.min(
+          RATE_LIMIT_BASE_DELAY_MS * 2 ** (nextAttempts - 1),
+          RATE_LIMIT_MAX_DELAY_MS,
+        );
+        rateLimitBackoffRef.current.active = true;
+
+        setRefreshError(
+          t(
+            'posts.errors.rateLimitedRetry',
+            'OpenAI is receiving too many requests. Trying again in {{seconds}}s.',
+            { seconds: Math.max(1, Math.round(delay / 1000)) },
+          ),
+        );
+
+        if (typeof window !== 'undefined') {
+          if (rateLimitBackoffRef.current.timeoutId !== null) {
+            window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
+          }
+
+          rateLimitBackoffRef.current.timeoutId = window.setTimeout(() => {
+            rateLimitBackoffRef.current.timeoutId = null;
+            requestProgressUpdate();
+          }, delay);
+        }
+
+        return;
+      }
+
+      rateLimitBackoffRef.current.active = false;
+      rateLimitBackoffRef.current.attempts = 0;
+      if (rateLimitBackoffRef.current.timeoutId !== null && typeof window !== 'undefined') {
+        window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
+        rateLimitBackoffRef.current.timeoutId = null;
+      }
     } finally {
       isProgressRequestInFlightRef.current = false;
     }
-  }, []);
+  }, [t]);
 
   const syncPosts = useCallback(
     async ({ resetPagination = false }: RefreshOptions = {}) => {

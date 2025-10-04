@@ -19,76 +19,84 @@ const ForbiddenPage = lazy(() => import('@/pages/forbidden/ForbiddenPage'));
 
 const withSuspense = (node: ReactNode) => <Suspense fallback={<LoadingSplash />}>{node}</Suspense>;
 
-export const router = createBrowserRouter([
+export const router = createBrowserRouter(
+  [
+    {
+      path: '/',
+      element: <MainLayout />,
+      children: [
+        {
+          index: true,
+          element: withSuspense(<HomePage />),
+        },
+        {
+          path: 'feeds',
+          element: withSuspense(
+            <RequireAuth>
+              <FeedsPage />
+            </RequireAuth>
+          ),
+        },
+        {
+          path: 'posts',
+          element: withSuspense(
+            <RequireAuth>
+              <PostsPage />
+            </RequireAuth>
+          ),
+        },
+        {
+          path: 'prompts',
+          element: withSuspense(
+            <RequireAuth>
+              <PromptsPage />
+            </RequireAuth>
+          ),
+        },
+        {
+          path: 'news',
+          element: withSuspense(
+            <RequireAuth>
+              <NewsListPage />
+            </RequireAuth>
+          ),
+        },
+        {
+          path: 'news/:postId',
+          element: withSuspense(
+            <RequireAuth>
+              <NewsDetailPage />
+            </RequireAuth>
+          ),
+        },
+        {
+          path: 'allowlist',
+          element: withSuspense(
+            <RequireAdmin>
+              <AllowlistPage />
+            </RequireAdmin>
+          ),
+        },
+        {
+          path: 'app-params',
+          element: withSuspense(
+            <RequireAdmin forbiddenElement={withSuspense(<ForbiddenPage />)}>
+              <AppParamsPage />
+            </RequireAdmin>
+          ),
+        },
+      ],
+    },
+    {
+      path: '*',
+      element: withSuspense(<NotFoundPage />),
+    },
+  ],
   {
-    path: '/',
-    element: <MainLayout />,
-    children: [
-      {
-        index: true,
-        element: withSuspense(<HomePage />),
-      },
-      {
-        path: 'feeds',
-        element: withSuspense(
-          <RequireAuth>
-            <FeedsPage />
-          </RequireAuth>
-        ),
-      },
-      {
-        path: 'posts',
-        element: withSuspense(
-          <RequireAuth>
-            <PostsPage />
-          </RequireAuth>
-        ),
-      },
-      {
-        path: 'prompts',
-        element: withSuspense(
-          <RequireAuth>
-            <PromptsPage />
-          </RequireAuth>
-        ),
-      },
-      {
-        path: 'news',
-        element: withSuspense(
-          <RequireAuth>
-            <NewsListPage />
-          </RequireAuth>
-        ),
-      },
-      {
-        path: 'news/:postId',
-        element: withSuspense(
-          <RequireAuth>
-            <NewsDetailPage />
-          </RequireAuth>
-        ),
-      },
-      {
-        path: 'allowlist',
-        element: withSuspense(
-          <RequireAdmin>
-            <AllowlistPage />
-          </RequireAdmin>
-        ),
-      },
-      {
-        path: 'app-params',
-        element: withSuspense(
-          <RequireAdmin forbiddenElement={withSuspense(<ForbiddenPage />)}>
-            <AppParamsPage />
-          </RequireAdmin>
-        ),
-      },
-    ],
+    future: {
+      v7_startTransition: true,
+      v7_relativeSplatPath: true,
+    },
   },
-  {
-    path: '*',
-    element: withSuspense(<NotFoundPage />),
-  },
-]);
+);
 
