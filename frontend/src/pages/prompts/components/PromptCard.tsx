@@ -105,8 +105,8 @@ const resolveReorderConfig = (
 
   return {
     containerAttributes: restContainerAttributes,
-    role: role ?? (canReorder ? 'button' : 'group'),
-    tabIndex: tabIndex ?? (canReorder ? 0 : undefined),
+    role: role ?? 'group',
+    tabIndex: tabIndex ?? undefined,
     onKeyDown: canReorder ? options?.onKeyDown ?? onKeyDown : undefined,
     handleListeners: (canReorder ? options?.handleListeners ?? {} : {}) as SyntheticListenerMap,
     showPlaceholder: Boolean(options?.showPlaceholder && !isOverlay),

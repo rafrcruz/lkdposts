@@ -53,21 +53,19 @@ const extractErrorDetails = (error) => {
 };
 
 const extractRequestId = (error) => {
-  if (!error || typeof error !== 'object') {
-    return null;
-  }
+  if (error && typeof error === 'object') {
+    const response = error.response ?? null;
+    if (response) {
+      if (typeof response.headers?.get === 'function') {
+        return response.headers.get('x-request-id');
+      }
 
-  const response = error.response ?? null;
-  if (response) {
-    if (typeof response.headers?.get === 'function') {
-      return response.headers.get('x-request-id');
-    }
-
-    const headers = response.headers;
-    if (headers && typeof headers === 'object') {
-      const candidate = headers['x-request-id'] ?? headers['X-Request-Id'] ?? null;
-      if (typeof candidate === 'string') {
-        return candidate;
+      const headers = response.headers;
+      if (headers && typeof headers === 'object') {
+        const candidate = headers['x-request-id'] ?? headers['X-Request-Id'] ?? null;
+        if (typeof candidate === 'string') {
+          return candidate;
+        }
       }
     }
   }

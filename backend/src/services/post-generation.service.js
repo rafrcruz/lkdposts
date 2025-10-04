@@ -578,9 +578,18 @@ const buildPostRequestPreview = async ({
   const systemPrompt = buildSystemPromptText(promptBase.basePrompt);
 
   let article = null;
+  const normalizedNewsIdParam = newsId ?? null;
 
-  if (newsId != null) {
-    const normalizedId = Number.parseInt(newsId, 10);
+  if (normalizedNewsIdParam === null) {
+    const { eligible } = await collectEligibleArticles({
+      ownerKey,
+      startedAt,
+      operationalParams,
+      maxAttempts,
+    });
+    article = eligible.at(0) ?? null;
+  } else {
+    const normalizedId = Number.parseInt(normalizedNewsIdParam, 10);
     if (Number.isInteger(normalizedId) && normalizedId > 0) {
       article = await articleRepository.findByIdForOwner({ id: normalizedId, ownerKey });
       if (article == null) {
@@ -589,14 +598,6 @@ const buildPostRequestPreview = async ({
     } else {
       throw new TypeError('newsId must be a positive integer');
     }
-  } else {
-    const { eligible } = await collectEligibleArticles({
-      ownerKey,
-      startedAt,
-      operationalParams,
-      maxAttempts,
-    });
-    article = eligible.at(0) ?? null;
   }
 
   const newsPayload = article ? buildNewsPayload(article) : null;
@@ -656,14 +657,14 @@ const normalizeTimeout = (value) => {
 };
 
 const probeOpenAIResponse = async ({ ownerKey, newsId, timeoutMs } = {}) => {
-  if (!ownerKey) {
+  if (typeof ownerKey !== 'string' || ownerKey.trim() === '') {
     throw new TypeError('ownerKey is required');
   }
 
   const preview = await buildPostRequestPreview({ ownerKey, newsId });
   const article = preview.selectedArticle;
 
-  if (!article) {
+  if (article === null) {
     throw new ApiError({
       statusCode: 404,
       code: 'NO_ELIGIBLE_NEWS',
