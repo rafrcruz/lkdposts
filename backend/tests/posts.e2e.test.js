@@ -13,6 +13,7 @@ const authService = require('../src/services/auth.service');
 const { prisma } = require('../src/lib/prisma');
 const postsService = require('../src/services/posts.service');
 const ingestionDiagnostics = require('../src/services/ingestion-diagnostics');
+const { __mockClient } = require('../src/lib/openai-client');
 
 const ORIGIN = 'http://localhost:5173';
 const TOKENS = {
@@ -160,6 +161,50 @@ describe('Posts API', () => {
 
       const updatedFeed = await prisma.feed.findUnique({ where: { id: feed.id } });
       expect(updatedFeed.lastFetchedAt).not.toBeNull();
+    });
+
+    it('stores generated text from structured responses and exposes it in the list endpoint', async () => {
+      const feed = await prisma.feed.create({
+        data: {
+          ownerKey: '1',
+          url: 'https://example.com/structured.xml',
+          lastFetchedAt: null,
+        },
+      });
+
+      const publishedAt = new Date(Date.now() - 5 * 60 * 1000);
+      const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Feed</title><item><title>Structured Story</title><description>Snippet</description><pubDate>${publishedAt.toUTCString()}</pubDate><guid>structured-guid</guid></item></channel></rss>`;
+
+      globalThis.fetch = createFetchMock(rss);
+
+      __mockClient.responses.create.mockImplementationOnce(async () => ({
+        id: 'resp-structured-e2e',
+        model: 'gpt-5-nano',
+        output: [
+          {
+            content: [
+              { type: 'text', text: 'Parágrafo um.' },
+              { type: 'output_text', text: 'Parágrafo dois.' },
+            ],
+          },
+        ],
+        usage: { input_tokens: 160, output_tokens: 120 },
+      }));
+
+      await withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh'))
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      const listResponse = await withAuth(TOKENS.user1, request(app).get('/api/v1/posts'))
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      const [item] = listResponse.body.data.items;
+      expect(item.post).toEqual(
+        expect.objectContaining({
+          content: 'Parágrafo um.\n\nParágrafo dois.',
+        }),
+      );
     });
 
     it('reuses a single refresh when the same user triggers concurrent requests', async () => {

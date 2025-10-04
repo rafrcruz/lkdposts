@@ -148,6 +148,89 @@ describe('post-generation.service integration', () => {
     );
   });
 
+  it('extracts generated text from structured output blocks when output_text is missing', async () => {
+    const now = new Date('2025-01-01T13:00:00Z');
+    const feed = await createFeed();
+    const article = await createArticle({
+      feedId: feed.id,
+      title: 'Structured output',
+      contentSnippet: 'Resumo estruturado',
+      publishedAt: new Date('2025-01-01T12:45:00Z').toISOString(),
+      guid: 'structured-1',
+      link: 'https://example.com/structured-1',
+      dedupeKey: 'structured-1',
+    });
+
+    __mockClient.responses.create.mockImplementationOnce(async () => ({
+      id: 'resp-structured',
+      model: 'gpt-5-nano',
+      output: [
+        {
+          content: [
+            { type: 'text', text: 'Primeiro bloco gerado.' },
+            { type: 'output_text', text: 'Segundo bloco gerado.' },
+          ],
+        },
+      ],
+      usage: { input_tokens: 142, output_tokens: 88 },
+    }));
+
+    const summary = await postGenerationService.generatePostsForOwner({ ownerKey: OWNER_KEY, now });
+
+    expect(summary.generatedCount).toBe(1);
+    const storedPosts = await prisma.post.findMany({ where: { articleId: article.id } });
+    expect(storedPosts).toHaveLength(1);
+    expect(storedPosts[0].content).toBe('Primeiro bloco gerado.\n\nSegundo bloco gerado.');
+  });
+
+  it('marks a failure with a 502 message when the response has no textual content', async () => {
+    const now = new Date('2025-01-01T14:00:00Z');
+    const feed = await createFeed();
+    const article = await createArticle({
+      feedId: feed.id,
+      title: 'Sem texto',
+      contentSnippet: 'Resposta vazia',
+      publishedAt: new Date('2025-01-01T13:45:00Z').toISOString(),
+      guid: 'empty-1',
+      link: 'https://example.com/empty-1',
+      dedupeKey: 'empty-1',
+    });
+
+    __mockClient.responses.create.mockResolvedValueOnce({
+      id: 'resp-empty',
+      model: 'gpt-5-nano',
+      output: [
+        {
+          content: [
+            { type: 'json', data: '{"foo":"bar"}' },
+          ],
+        },
+      ],
+      usage: { input_tokens: 100, output_tokens: 0 },
+    });
+
+    const summary = await postGenerationService.generatePostsForOwner({ ownerKey: OWNER_KEY, now });
+
+    expect(summary.generatedCount).toBe(0);
+    expect(summary.failedCount).toBe(1);
+    expect(summary.errors).toEqual([
+      {
+        articleId: article.id,
+        reason: 'Falha ao extrair texto do Responses API',
+      },
+    ]);
+
+    const storedPosts = await prisma.post.findMany({ where: { articleId: article.id } });
+    expect(storedPosts).toHaveLength(1);
+    expect(storedPosts[0]).toEqual(
+      expect.objectContaining({
+        status: 'FAILED',
+        content: null,
+        errorReason: 'Falha ao extrair texto do Responses API',
+      }),
+    );
+  });
+
   it('keeps the prefix stable across requests and exposes cached token metrics when available', async () => {
     const baseNow = new Date('2025-01-01T12:00:00Z');
     const feed = await createFeed();
