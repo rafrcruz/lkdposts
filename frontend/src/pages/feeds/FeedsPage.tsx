@@ -1,5 +1,6 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { createPortal } from 'react-dom';
 
 import {
   useBulkCreateFeeds,
@@ -113,7 +114,9 @@ const FeedsPage = () => {
   const [editFeedback, setEditFeedback] = useState<FeedbackMessage | null>(null);
 
   const [listFeedback, setListFeedback] = useState<FeedbackMessage | null>(null);
+  const [deleteFeedback, setDeleteFeedback] = useState<FeedbackMessage | null>(null);
   const [shouldRefreshFeeds, setShouldRefreshFeeds] = useState(false);
+  const [feedPendingDeletion, setFeedPendingDeletion] = useState<Feed | null>(null);
 
   const feedList = useFeedList({ cursor, limit: PAGE_SIZE });
   const { refetch: refetchFeedList } = feedList;
@@ -390,32 +393,53 @@ const FeedsPage = () => {
     });
   };
 
-  const handleDelete = (feed: Feed) => {
+  const handleRequestDelete = (feed: Feed) => {
     setListFeedback(null);
     setEditFeedback(null);
+    setDeleteFeedback(null);
+    setFeedPendingDeletion(feed);
+  };
 
-    const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
-    const confirmed = browserWindow?.confirm(t('feeds.list.deleteConfirm', 'Remover este feed?')) ?? false;
-    if (!confirmed) {
+  const handleCloseDeleteDialog = () => {
+    if (isDeleting) {
       return;
     }
 
-    deleteFeedMutation.mutate(feed.id, {
+    setFeedPendingDeletion(null);
+    setDeleteFeedback(null);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!feedPendingDeletion) {
+      return;
+    }
+
+    const targetFeed = feedPendingDeletion;
+
+    setDeleteFeedback(null);
+    deleteFeedMutation.mutate(targetFeed.id, {
       onSuccess: () => {
         setListFeedback({
           type: 'success',
           message: t('feeds.list.feedback.removed', 'Feed removido com sucesso.'),
         });
-        if (editingFeed?.id === feed.id) {
+        setFeedPendingDeletion(null);
+        setDeleteFeedback(null);
+        if (editingFeed?.id === targetFeed.id) {
           handleCancelEdit();
         }
         resetPagination();
       },
       onError: (error) => {
-        setListFeedback({ type: 'error', message: resolveErrorMessage(error) });
+        const message = resolveErrorMessage(error);
+        setDeleteFeedback({ type: 'error', message });
+        setListFeedback({ type: 'error', message });
       },
     });
   };
+
+  const deleteDialogTitleId = useId();
+  const deleteDialogDescriptionId = useId();
 
   const handleResetFeeds = async () => {
     if (!isAdmin) {
@@ -674,7 +698,7 @@ const FeedsPage = () => {
                       <button
                         type="button"
                         className="inline-flex w-full items-center justify-center rounded-md border border-destructive px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                        onClick={() => handleDelete(feed)}
+                        onClick={() => handleRequestDelete(feed)}
                         disabled={isDeleting || isUpdating}
                       >
                         {isDeleting ? t('feeds.list.deleting', 'Removendo...') : t('feeds.list.delete', 'Excluir')}
@@ -712,6 +736,60 @@ const FeedsPage = () => {
     setPreviousCursors((prev) => [...prev, cursor]);
     setCursor(nextCursor);
   };
+
+  const deleteDialog =
+    feedPendingDeletion && typeof document !== 'undefined'
+      ? createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={deleteDialogTitleId}
+              aria-describedby={deleteDialogDescriptionId}
+              className="w-full max-w-md space-y-6 rounded-lg border border-border bg-background p-6 shadow-lg"
+            >
+              <div className="space-y-2">
+                <h2 id={deleteDialogTitleId} className="text-lg font-semibold text-foreground">
+                  {t('feeds.list.deleteConfirmTitle', 'Remover feed')}
+                </h2>
+                <p id={deleteDialogDescriptionId} className="text-sm text-muted-foreground">
+                  {t('feeds.list.deleteConfirm', 'Remover este feed?')}
+                </p>
+              </div>
+              <div className="space-y-1 rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-sm">
+                <span className="font-medium text-foreground">
+                  {feedPendingDeletion.title ?? t('feeds.list.untitled', 'Sem titulo')}
+                </span>
+                <span className="break-all text-xs text-muted-foreground">{feedPendingDeletion.url}</span>
+              </div>
+              {deleteFeedback ? (
+                <p className={buildFeedbackClassName(deleteFeedback)} role={buildFeedbackRole(deleteFeedback)}>
+                  {deleteFeedback.message}
+                </p>
+              ) : null}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                <button
+                  type="button"
+                  className="inline-flex w-full items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  onClick={handleCloseDeleteDialog}
+                  disabled={isDeleting}
+                >
+                  {t('feeds.list.edit.cancel', 'Cancelar')}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex w-full items-center justify-center rounded-md border border-destructive px-4 py-2 text-sm font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? t('feeds.list.deleting', 'Removendo...') : t('feeds.list.delete', 'Excluir')}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <div className="space-y-8">
@@ -859,6 +937,7 @@ const FeedsPage = () => {
           </div>
         </div>
       </section>
+      {deleteDialog}
     </div>
   );
 };

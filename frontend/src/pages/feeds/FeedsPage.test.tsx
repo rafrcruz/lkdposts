@@ -191,8 +191,8 @@ let resetMutate: Mock<(variables: void, options?: ResetOptions) => void>;
 let resetMutateAsync: MockedFunction<
   UseMutateAsyncFunction<FeedResetSummary, HttpError, void, unknown>
 >;
-let confirmSpy: ReturnType<typeof vi.spyOn>;
 let feedListQueryResult: UseQueryResult<FeedListResponse, HttpError>;
+let originalConfirm: typeof window.confirm | undefined;
 
 beforeEach(() => {
   const feeds = [
@@ -241,16 +241,20 @@ beforeEach(() => {
 
   mockedUseAuth.mockReturnValue(buildAuthContext());
 
-  const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
-  if (!browserWindow) {
-    throw new Error('window is not available for confirm spy');
+  if ('window' in globalThis) {
+    const browserWindow = globalThis.window;
+    originalConfirm = browserWindow.confirm;
+    browserWindow.confirm = vi.fn().mockReturnValue(true);
   }
-  confirmSpy = vi.spyOn(browserWindow, 'confirm').mockReturnValue(true);
 });
 
 afterEach(() => {
   vi.clearAllMocks();
-  confirmSpy.mockRestore();
+
+  if ('window' in globalThis && originalConfirm) {
+    globalThis.window.confirm = originalConfirm;
+    originalConfirm = undefined;
+  }
 });
 
 describe('FeedsPage', () => {
@@ -471,6 +475,13 @@ describe('FeedsPage', () => {
     renderPage();
 
     await user.click(screen.getAllByRole('button', { name: /Excluir/i })[0]);
+
+    expect(deleteMutate).not.toHaveBeenCalled();
+
+    const dialogTitle = i18n.t('feeds.list.deleteConfirmTitle', 'Remover feed');
+    const dialog = await screen.findByRole('dialog', { name: new RegExp(dialogTitle, 'i') });
+
+    await user.click(within(dialog).getByRole('button', { name: /Excluir/i }));
 
     expect(deleteMutate).toHaveBeenCalledWith(1, expect.any(Object));
     expect(screen.getByText('Feed removido com sucesso.')).toBeInTheDocument();
