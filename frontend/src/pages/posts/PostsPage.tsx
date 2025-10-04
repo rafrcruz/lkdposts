@@ -731,14 +731,18 @@ const PostsPage = () => {
   const [isOpenAiPrettyPrintEnabled, setIsOpenAiPrettyPrintEnabled] = useState(false);
   const [previewRequestSummary, setPreviewRequestSummary] = useState<PreviewRequestSummary | null>(null);
 
-  const cooldownNoticeTimeoutRef = useRef<number | null>(null);
-  const cooldownIntervalRef = useRef<number | null>(null);
+  const cooldownNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fetchStartTimeRef = useRef<number | null>(null);
   const previewRequestStartTimeRef = useRef<number | null>(null);
   const openAiPreviewControllerRef = useRef<AbortController | null>(null);
-  const refreshProgressIntervalRef = useRef<number | null>(null);
+  const refreshProgressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isProgressRequestInFlightRef = useRef(false);
-  const rateLimitBackoffRef = useRef<{ attempts: number; timeoutId: number | null; active: boolean }>({
+  const rateLimitBackoffRef = useRef<{
+    attempts: number;
+    timeoutId: ReturnType<typeof setTimeout> | null;
+    active: boolean;
+  }>({
     attempts: 0,
     timeoutId: null,
     active: false,
