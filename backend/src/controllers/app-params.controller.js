@@ -24,7 +24,9 @@ const get = asyncHandler(async (req, res) => {
 
 const update = asyncHandler(async (req, res) => {
   const updates = req.validated?.body ?? {};
-  const updatedBy = req.user?.email ?? (req.user?.id != null ? String(req.user.id) : null);
+  const user = req.user ?? null;
+  const userId = user?.id ?? null;
+  const updatedBy = user?.email ?? (userId === null ? null : String(userId));
   const params = await appParamsService.updateAppParams({ updates, updatedBy });
   return res.success(mapToResponse(params));
 });

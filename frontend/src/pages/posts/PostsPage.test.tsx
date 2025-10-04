@@ -254,12 +254,16 @@ const buildRefreshSummary = (override: Partial<RefreshSummary> = {}): RefreshSum
 });
 
 const resolveRequestDetails = (input: RequestInfo | URL, init?: RequestInit) => {
-  const target =
-    typeof input === 'string'
-      ? input
-      : input instanceof URL
-        ? input.toString()
-        : input.url;
+  let target: string;
+
+  if (typeof input === 'string') {
+    target = input;
+  } else if (input instanceof URL) {
+    target = input.toString();
+  } else {
+    target = input.url;
+  }
+
   const url = new URL(target, 'http://localhost');
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
 
@@ -348,19 +352,19 @@ describe('PostsPage', () => {
     mockedUsePostRequestPreview.mockReturnValue(previewMutationResult);
 
     mockedUsePostList.mockImplementation((params: PostListParams) => {
-      if (!params.enabled) {
-        return createPostQueryResult();
+      if (params.enabled) {
+        return createPostQueryResult({
+          data: {
+            items: defaultPosts,
+            meta: { nextCursor: null, limit: 10 },
+          },
+          isSuccess: true,
+          isFetched: true,
+          status: 'success',
+        });
       }
 
-      return createPostQueryResult({
-        data: {
-          items: defaultPosts,
-          meta: { nextCursor: null, limit: 10 },
-        },
-        isSuccess: true,
-        isFetched: true,
-        status: 'success',
-      });
+      return createPostQueryResult();
     });
   });
 
@@ -408,19 +412,19 @@ describe('PostsPage', () => {
     });
 
     mockedUsePostList.mockImplementation((params: PostListParams) => {
-      if (!params.enabled) {
-        return createPostQueryResult();
+      if (params.enabled) {
+        return createPostQueryResult({
+          data: {
+            items: [olderPost, newerPost],
+            meta: { nextCursor: null, limit: 10 },
+          },
+          isSuccess: true,
+          isFetched: true,
+          status: 'success',
+        });
       }
 
-      return createPostQueryResult({
-        data: {
-          items: [olderPost, newerPost],
-          meta: { nextCursor: null, limit: 10 },
-        },
-        isSuccess: true,
-        isFetched: true,
-        status: 'success',
-      });
+      return createPostQueryResult();
     });
 
     renderPage();

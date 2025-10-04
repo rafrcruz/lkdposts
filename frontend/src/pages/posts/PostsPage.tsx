@@ -168,7 +168,7 @@ const useRefreshSummaryReset = (
   setIsSummaryDismissed: Dispatch<SetStateAction<boolean>>,
 ) => {
   useEffect(() => {
-    if (!refreshSummary) {
+    if (refreshSummary === null) {
       return;
     }
 
@@ -938,6 +938,17 @@ const PostsPage = () => {
 
     return null;
   }, [lastPreviewRequest, previewArticleId]);
+  const previewNewsIdLabel = useMemo(() => {
+    if (typeof previewRequestNewsId === 'number') {
+      return String(previewRequestNewsId);
+    }
+
+    if (lastPreviewRequest === null) {
+      return t('posts.preview.newsIdAutomatic', 'Automatic selection');
+    }
+
+    return String(lastPreviewRequest);
+  }, [lastPreviewRequest, previewRequestNewsId, t]);
   const openAiPreviewParsed = useMemo(() => {
     if (typeof openAiPreviewRaw !== 'string' || openAiPreviewRaw.length === 0) {
       return null;
@@ -970,9 +981,11 @@ const PostsPage = () => {
       );
 
   useEffect(() => {
-    if (!canPrettyPrintOpenAiPreview && isOpenAiPrettyPrintEnabled) {
-      setIsOpenAiPrettyPrintEnabled(false);
+    if (canPrettyPrintOpenAiPreview || !isOpenAiPrettyPrintEnabled) {
+      return;
     }
+
+    setIsOpenAiPrettyPrintEnabled(false);
   }, [canPrettyPrintOpenAiPreview, isOpenAiPrettyPrintEnabled]);
 
   const handleRefreshSettled = useCallback(
@@ -1396,9 +1409,11 @@ const PostsPage = () => {
   useRefreshSummaryReset(refreshSummary, setIsSummaryDismissed);
 
   useEffect(() => {
-    if (!hasExecutedSequence) {
-      setListWindowDays(postsTimeWindowDays);
+    if (hasExecutedSequence) {
+      return;
     }
+
+    setListWindowDays(postsTimeWindowDays);
   }, [hasExecutedSequence, postsTimeWindowDays]);
 
   useEffect(() => {
@@ -1462,13 +1477,13 @@ const PostsPage = () => {
       return;
     }
 
-    const computeRemaining = () => {
-      const elapsedSeconds = (Date.now() - lastRefreshAt) / 1000;
-      const remaining = Math.ceil(refreshCooldownSeconds - elapsedSeconds);
-      const next = remaining > 0 ? remaining : 0;
-      setCooldownRemainingSeconds(next);
-      return next;
-    };
+      const computeRemaining = () => {
+        const elapsedSeconds = (Date.now() - lastRefreshAt) / 1000;
+        const remaining = Math.ceil(refreshCooldownSeconds - elapsedSeconds);
+        const next = Math.max(remaining, 0);
+        setCooldownRemainingSeconds(next);
+        return next;
+      };
 
     const initialRemaining = computeRemaining();
 
@@ -1507,7 +1522,7 @@ const PostsPage = () => {
   }, []);
 
   useEffect(() => {
-    if (!cooldownNotice) {
+    if (cooldownNotice === null) {
       if (cooldownNoticeTimeoutRef.current !== null) {
         globalThis.clearTimeout(cooldownNoticeTimeoutRef.current);
         cooldownNoticeTimeoutRef.current = null;
@@ -1535,9 +1550,11 @@ const PostsPage = () => {
   const isCooldownActive = cooldownRemainingSeconds > 0;
 
   useEffect(() => {
-    if (!isCooldownActive) {
-      setCooldownNotice(null);
+    if (isCooldownActive) {
+      return;
     }
+
+    setCooldownNotice(null);
   }, [isCooldownActive]);
 
   const runSequence = ({ resetPagination = false }: RefreshOptions = {}) => {
@@ -1546,7 +1563,7 @@ const PostsPage = () => {
     }
 
     const shouldForceReset = resetPagination || isWindowPending;
-    const canBypassCooldown = !hasExecutedSequence;
+    const canBypassCooldown = hasExecutedSequence === false;
 
     if (isCooldownActive && !canBypassCooldown) {
       recordCooldownBlock();
@@ -1592,35 +1609,39 @@ const PostsPage = () => {
           return;
         }
 
-        if (!shouldRefetchList) {
-          return;
+        if (shouldRefetchList) {
+          postListQuery
+            .refetch()
+            .catch(() => {
+              // error handled by query state
+            });
         }
-
-        postListQuery
-          .refetch()
-          .catch(() => {
-            // error handled by query state
-          });
       })
       .catch(() => {
         // state updates inside syncPosts handle errors
       });
   };
 
-  useEffect(() => {
-    if (postListQuery.isFetching) {
-      if (fetchStartTimeRef.current === null) {
-        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        fetchStartTimeRef.current = now;
+    useEffect(() => {
+      if (postListQuery.isFetching) {
+        if (fetchStartTimeRef.current === null) {
+          const now =
+            typeof globalThis.performance?.now === 'function'
+              ? globalThis.performance.now()
+              : Date.now();
+          fetchStartTimeRef.current = now;
+        }
+        return;
       }
-      return;
-    }
 
-    if (fetchStartTimeRef.current === null) {
-      return;
-    }
+      if (fetchStartTimeRef.current === null) {
+        return;
+      }
 
-    const endTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const endTime =
+        typeof globalThis.performance?.now === 'function'
+          ? globalThis.performance.now()
+          : Date.now();
     const duration = Math.max(0, Math.round(endTime - fetchStartTimeRef.current));
     fetchStartTimeRef.current = null;
 
@@ -1690,7 +1711,7 @@ const PostsPage = () => {
   };
 
   const handleNextPage = () => {
-    if (!nextCursor) {
+    if (nextCursor === null) {
       return;
     }
 
@@ -1734,7 +1755,7 @@ const PostsPage = () => {
   );
 
   const cooldownMessage = useMemo(() => {
-    if (!isCooldownActive) {
+    if (isCooldownActive === false) {
       return null;
     }
 
@@ -1885,7 +1906,7 @@ const PostsPage = () => {
                   className="h-4 w-4 rounded border border-border text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                   checked={isOpenAiPrettyPrintEnabled && canPrettyPrintOpenAiPreview}
                   onChange={(event) => {
-                    if (!canPrettyPrintOpenAiPreview) {
+                    if (canPrettyPrintOpenAiPreview === false) {
                       return;
                     }
 
@@ -2419,11 +2440,7 @@ const PostsPage = () => {
                     <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
                       {t('posts.preview.newsIdLabel', 'News ID')}
                     </dt>
-                    <dd className="mt-1 font-mono text-foreground">
-                      {previewArticle?.id ?? (lastPreviewRequest !== null
-                        ? lastPreviewRequest
-                        : t('posts.preview.newsIdAutomatic', 'Automatic selection'))}
-                    </dd>
+                    <dd className="mt-1 font-mono text-foreground">{previewNewsIdLabel}</dd>
                   </div>
                 </dl>
 
@@ -2550,7 +2567,7 @@ const PostListContent = ({
   feedListIsSuccess,
   formattedTimeWindowDays,
 }: PostListContentProps): JSX.Element => {
-  if (!hasExecutedSequence) {
+  if (hasExecutedSequence === false) {
     return (
       <div className="card space-y-3 px-6 py-6">
         <LoadingSkeleton className="h-5" />
@@ -2560,7 +2577,7 @@ const PostListContent = ({
     );
   }
 
-  if (!hasFeeds && feedListIsSuccess) {
+  if (feedListIsSuccess && hasFeeds === false) {
     return (
       <EmptyState
         title={t('posts.filters.empty.title', 'No feed available yet.')}

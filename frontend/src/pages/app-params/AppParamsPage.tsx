@@ -321,7 +321,10 @@ const AppParamsPage = () => {
         await resetFeedsMutation.mutateAsync();
         setFeedback({
           type: 'success',
-          message: t('appParams.feedback.successWithReset', 'Parâmetros atualizados com sucesso. Feeds resetados com base nos novos parâmetros.'),
+          message: t(
+            'appParams.feedback.successWithReset',
+            'Parâmetros atualizados com sucesso. Feeds resetados com base nos novos parâmetros.',
+          ),
         });
       } catch (resetError) {
         Sentry.addBreadcrumb({
@@ -329,6 +332,7 @@ const AppParamsPage = () => {
           message: 'app-params:reset_error',
           level: 'error',
         });
+        Sentry.captureException(resetError);
         setFeedback({
           type: 'warning',
           message: t(
@@ -554,6 +558,24 @@ const AppParamsPage = () => {
       )
     : null;
 
+  const feedbackClassName = (() => {
+    if (!feedback) {
+      return null;
+    }
+
+    const baseClasses = {
+      success: 'rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700',
+      warning: 'rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800',
+      error: 'rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive',
+    } as const;
+
+    if (feedback.type === 'success' || feedback.type === 'warning') {
+      return baseClasses[feedback.type];
+    }
+
+    return baseClasses.error;
+  })();
+
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -565,20 +587,14 @@ const AppParamsPage = () => {
         </p>
       </header>
 
-      {feedback ? (
-        <div
-          role="alert"
-          className={
-            feedback.type === 'success'
-              ? 'rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700'
-              : feedback.type === 'warning'
-                ? 'rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800'
-                : 'rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive'
-          }
-        >
-          {feedback.message}
-        </div>
-      ) : null}
+        {feedback ? (
+          <div
+            role="alert"
+            className={feedbackClassName ?? ''}
+          >
+            {feedback.message}
+          </div>
+        ) : null}
 
       {inlineErrorMessage ? (
         <div

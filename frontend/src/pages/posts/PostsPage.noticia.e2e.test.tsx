@@ -512,32 +512,44 @@ const normalizePostMetadata = (
   return buildPostMetadata(value);
 };
 
-const buildPostItem = (override: PostItemOverride = {}): PostListItem => ({
-  id: override.id ?? 40401,
-  title: override.title ?? '404 Media unveils investigative report',
-  contentSnippet:
-    override.contentSnippet ??
-    'Resumo investigativo destacando pontos principais para validar o fallback.',
-  noticia: Object.hasOwn(override, 'noticia') ? (override.noticia ?? null) : '<p>Resumo default</p>',
-  publishedAt: override.publishedAt ?? '2025-01-08T12:30:00.000Z',
-  feed:
-    Object.hasOwn(override, 'feed') && override.feed === undefined
-      ? null
-      : override.feed ?? {
-          id: 404,
-          title: '404 Media',
-          url: 'https://404media.co/rss',
-        },
-  post:
-    Object.hasOwn(override, 'post')
-      ? override.post === undefined
-        ? null
-        : normalizePostMetadata(override.post)
-      : buildPostMetadata(),
-  link: override.link ?? 'https://404media.co/articles/investigative-report',
-  articleHtml: override.articleHtml ?? null,
-  author: override.author ?? 'Equipe 404 Media',
-});
+const buildPostItem = (override: PostItemOverride = {}): PostListItem => {
+  let feedValue: PostListItem['feed'];
+  if (Object.hasOwn(override, 'feed')) {
+    feedValue = override.feed === undefined ? null : override.feed ?? null;
+  } else {
+    feedValue = {
+      id: 404,
+      title: '404 Media',
+      url: 'https://404media.co/rss',
+    };
+  }
+
+  let postValue: PostListItem['post'];
+  if (Object.hasOwn(override, 'post')) {
+    if (override.post === undefined) {
+      postValue = null;
+    } else {
+      postValue = normalizePostMetadata(override.post);
+    }
+  } else {
+    postValue = buildPostMetadata();
+  }
+
+  return {
+    id: override.id ?? 40401,
+    title: override.title ?? '404 Media unveils investigative report',
+    contentSnippet:
+      override.contentSnippet ??
+      'Resumo investigativo destacando pontos principais para validar o fallback.',
+    noticia: Object.hasOwn(override, 'noticia') ? (override.noticia ?? null) : '<p>Resumo default</p>',
+    publishedAt: override.publishedAt ?? '2025-01-08T12:30:00.000Z',
+    feed: feedValue,
+    post: postValue,
+    link: override.link ?? 'https://404media.co/articles/investigative-report',
+    articleHtml: override.articleHtml ?? null,
+    author: override.author ?? 'Equipe 404 Media',
+  };
+};
 
 const scenario404MediaHtml = `
   <div>
