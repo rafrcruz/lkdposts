@@ -39,6 +39,8 @@ const mockedUseFeedList = vi.mocked(useFeedList);
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedUseAppParams = vi.mocked(useAppParams);
 const mockedUsePostRequestPreview = vi.mocked(usePostRequestPreview);
+const originalFetch = global.fetch;
+const originalClipboard = navigator.clipboard;
 
 type PostOverride = Partial<Omit<PostListItem, 'post'>> & {
   post?: Partial<NonNullable<PostListItem['post']>> | null;
@@ -337,6 +339,21 @@ describe('PostsPage', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+
+    if (originalFetch) {
+      global.fetch = originalFetch;
+    } else {
+      delete (globalThis as { fetch?: typeof global.fetch }).fetch;
+    }
+
+    if (originalClipboard !== undefined) {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: originalClipboard,
+      });
+    } else {
+      delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+    }
   });
 
   it('calls refresh and cleanup on mount and renders posts afterwards', async () => {
@@ -621,6 +638,367 @@ describe('PostsPage', () => {
     expect(within(dialog).getByText('Context example')).toBeInTheDocument();
     expect(within(dialog).getByText('Summary example')).toBeInTheDocument();
     expect(within(dialog).getByText('https://example.com/article')).toBeInTheDocument();
+  });
+
+  it('loads OpenAI preview request payload and supports pretty print and copy', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({
+        user: { email: 'admin@example.com', role: 'admin', expiresAt: '2024-01-01T00:00:00.000Z' },
+      }),
+    );
+
+    const previewResponse: PostRequestPreview = {
+      prompt_base: 'Prompt base example',
+      prompt_base_hash: 'hash-preview',
+      news_payload: {
+        article: {
+          id: 42,
+          title: 'News title',
+          contentSnippet: 'Summary example',
+          articleHtml: null,
+          link: 'https://example.com/article',
+          guid: 'guid-1',
+          publishedAt: '2024-01-01T00:00:00.000Z',
+          feed: { id: 10, title: 'Feed Admin', url: 'https://example.com/feed' },
+        },
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Context example' }],
+        },
+        context: 'Context example',
+      },
+      model: 'gpt-4o-mini',
+    };
+
+    previewMutateAsync.mockImplementation(async () => {
+      previewMutationResult.data = previewResponse;
+      previewMutationResult.isSuccess = true;
+      previewMutationResult.status = 'success';
+      return previewResponse;
+    });
+
+    const rawResponse = '{"id":42,"object":"test"}';
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: () => Promise.resolve(rawResponse),
+      headers: new Headers(),
+    } as Response);
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
+    });
+
+    const previewButtonLabel = i18n.t('posts.preview.openButton');
+    const previewButton = await screen.findByRole('button', {
+      name: new RegExp(previewButtonLabel, 'i'),
+    });
+    await user.click(previewButton);
+
+    await waitFor(() => {
+      expect(previewMutateAsync).toHaveBeenCalledWith({ newsId: undefined });
+    });
+
+    const dialogTitle = i18n.t('posts.preview.modalTitle');
+    const dialog = await screen.findByRole('dialog', {
+      name: new RegExp(dialogTitle, 'i'),
+    });
+
+    const requestButton = within(dialog).getByRole('button', { name: /Preview Request/i });
+    await user.click(requestButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0];
+    expect(requestUrl).toBeInstanceOf(URL);
+    expect((requestUrl as URL).href).toBe(
+      'http://localhost:3001/api/v1/admin/news/preview-openai?news_id=42',
+    );
+    expect(requestInit).toMatchObject({
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    const rawResponseLabel = i18n.t('posts.preview.request.textareaLabel');
+    const textArea = await within(dialog).findByRole('textbox', {
+      name: rawResponseLabel,
+    });
+    expect(textArea).toHaveValue(rawResponse);
+
+    const prettyToggle = within(dialog).getByLabelText(/Pretty print/i);
+    await user.click(prettyToggle);
+    expect(textArea).toHaveValue(`{
+  "id": 42,
+  "object": "test"
+}`);
+
+    const copyButtonLabel = i18n.t('posts.preview.request.copyButton');
+    const copyButton = within(dialog).getByRole('button', { name: new RegExp(copyButtonLabel, 'i') });
+    await user.click(copyButton);
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(rawResponse);
+    });
+  });
+
+  it('renders raw OpenAI error payload when the request fails', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({
+        user: { email: 'admin@example.com', role: 'admin', expiresAt: '2024-01-01T00:00:00.000Z' },
+      }),
+    );
+
+    const previewResponse: PostRequestPreview = {
+      prompt_base: 'Prompt base example',
+      prompt_base_hash: 'hash-preview',
+      news_payload: {
+        article: {
+          id: 42,
+          title: 'News title',
+          contentSnippet: 'Summary example',
+          articleHtml: null,
+          link: 'https://example.com/article',
+          guid: 'guid-1',
+          publishedAt: '2024-01-01T00:00:00.000Z',
+          feed: { id: 10, title: 'Feed Admin', url: 'https://example.com/feed' },
+        },
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Context example' }],
+        },
+        context: 'Context example',
+      },
+      model: 'gpt-4o-mini',
+    };
+
+    previewMutateAsync.mockImplementation(async () => {
+      previewMutationResult.data = previewResponse;
+      previewMutationResult.isSuccess = true;
+      previewMutationResult.status = 'success';
+      return previewResponse;
+    });
+
+    const rawError = '{"error":"rate_limit"}';
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      text: () => Promise.resolve(rawError),
+      headers: new Headers(),
+    } as Response);
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    renderPage();
+
+    const previewButtonLabel = i18n.t('posts.preview.openButton');
+    const previewButton = await screen.findByRole('button', {
+      name: new RegExp(previewButtonLabel, 'i'),
+    });
+    await user.click(previewButton);
+
+    const dialogTitle = i18n.t('posts.preview.modalTitle');
+    const dialog = await screen.findByRole('dialog', {
+      name: new RegExp(dialogTitle, 'i'),
+    });
+
+    const requestButton = within(dialog).getByRole('button', { name: /Preview Request/i });
+    await user.click(requestButton);
+
+    const rawResponseLabel = i18n.t('posts.preview.request.textareaLabel');
+    const textArea = await within(dialog).findByRole('textbox', {
+      name: rawResponseLabel,
+    });
+
+    await waitFor(() => {
+      expect(textArea).toHaveValue(rawError);
+    });
+
+    const networkMessage = i18n.t('posts.preview.request.errors.network');
+    expect(within(dialog).queryByText(networkMessage)).not.toBeInTheDocument();
+  });
+
+  it('shows network error message when OpenAI preview request fails', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({
+        user: { email: 'admin@example.com', role: 'admin', expiresAt: '2024-01-01T00:00:00.000Z' },
+      }),
+    );
+
+    const previewResponse: PostRequestPreview = {
+      prompt_base: 'Prompt base example',
+      prompt_base_hash: 'hash-preview',
+      news_payload: {
+        article: {
+          id: 42,
+          title: 'News title',
+          contentSnippet: 'Summary example',
+          articleHtml: null,
+          link: 'https://example.com/article',
+          guid: 'guid-1',
+          publishedAt: '2024-01-01T00:00:00.000Z',
+          feed: { id: 10, title: 'Feed Admin', url: 'https://example.com/feed' },
+        },
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Context example' }],
+        },
+        context: 'Context example',
+      },
+      model: 'gpt-4o-mini',
+    };
+
+    previewMutateAsync.mockImplementation(async () => {
+      previewMutationResult.data = previewResponse;
+      previewMutationResult.isSuccess = true;
+      previewMutationResult.status = 'success';
+      return previewResponse;
+    });
+
+    const fetchError = new TypeError('Network failure');
+    const fetchMock = vi.fn().mockRejectedValue(fetchError);
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      renderPage();
+
+      const previewButtonLabel = i18n.t('posts.preview.openButton');
+      const previewButton = await screen.findByRole('button', {
+        name: new RegExp(previewButtonLabel, 'i'),
+      });
+      await user.click(previewButton);
+
+      const dialogTitle = i18n.t('posts.preview.modalTitle');
+      const dialog = await screen.findByRole('dialog', {
+        name: new RegExp(dialogTitle, 'i'),
+      });
+
+      const requestButton = within(dialog).getByRole('button', { name: /Preview Request/i });
+      await user.click(requestButton);
+
+      const networkMessage = i18n.t('posts.preview.request.errors.network');
+      const errorMessage = await within(dialog).findByText(networkMessage);
+      expect(errorMessage).toBeInTheDocument();
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to load OpenAI preview request', fetchError);
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('aborts the OpenAI preview request when the modal is closed', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue(
+      buildAuthContext({
+        user: { email: 'admin@example.com', role: 'admin', expiresAt: '2024-01-01T00:00:00.000Z' },
+      }),
+    );
+
+    const previewResponse: PostRequestPreview = {
+      prompt_base: 'Prompt base example',
+      prompt_base_hash: 'hash-preview',
+      news_payload: {
+        article: {
+          id: 42,
+          title: 'News title',
+          contentSnippet: 'Summary example',
+          articleHtml: null,
+          link: 'https://example.com/article',
+          guid: 'guid-1',
+          publishedAt: '2024-01-01T00:00:00.000Z',
+          feed: { id: 10, title: 'Feed Admin', url: 'https://example.com/feed' },
+        },
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Context example' }],
+        },
+        context: 'Context example',
+      },
+      model: 'gpt-4o-mini',
+    };
+
+    previewMutateAsync.mockImplementation(async () => {
+      previewMutationResult.data = previewResponse;
+      previewMutationResult.isSuccess = true;
+      previewMutationResult.status = 'success';
+      return previewResponse;
+    });
+
+    let fetchSignal: AbortSignal | null = null;
+    const fetchMock = vi.fn().mockImplementation((_, init?: RequestInit) => {
+      fetchSignal = init?.signal ?? null;
+      return new Promise<Response>((_, reject) => {
+        const signal = init?.signal;
+        if (signal) {
+          const abortHandler = () => {
+            const abortError = new Error('Aborted');
+            abortError.name = 'AbortError';
+            reject(abortError);
+          };
+          signal.addEventListener('abort', abortHandler, { once: true });
+        }
+      });
+    });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    renderPage();
+
+    const previewButtonLabel = i18n.t('posts.preview.openButton');
+    const previewButton = await screen.findByRole('button', {
+      name: new RegExp(previewButtonLabel, 'i'),
+    });
+    await user.click(previewButton);
+
+    const dialogTitle = i18n.t('posts.preview.modalTitle');
+    const dialog = await screen.findByRole('dialog', {
+      name: new RegExp(dialogTitle, 'i'),
+    });
+
+    const requestButton = within(dialog).getByRole('button', { name: /Preview Request/i });
+    await user.click(requestButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchSignal).not.toBeNull();
+    });
+
+    const closeLabel = i18n.t('posts.preview.close');
+    const closeButton = within(dialog).getByRole('button', { name: new RegExp(closeLabel, 'i') });
+    await user.click(closeButton);
+
+    await waitFor(() => {
+      expect(fetchSignal?.aborted).toBe(true);
+    });
+
+    const previewButtonAgain = await screen.findByRole('button', {
+      name: new RegExp(previewButtonLabel, 'i'),
+    });
+    await user.click(previewButtonAgain);
+
+    const dialogAgain = await screen.findByRole('dialog', {
+      name: new RegExp(dialogTitle, 'i'),
+    });
+    const rawResponseLabel = i18n.t('posts.preview.request.textareaLabel');
+    const textArea = within(dialogAgain).getByRole('textbox', {
+      name: rawResponseLabel,
+    });
+    expect(textArea).toHaveValue('');
   });
 
   it('records cooldown blocks in diagnostics when refresh is attempted too early', async () => {

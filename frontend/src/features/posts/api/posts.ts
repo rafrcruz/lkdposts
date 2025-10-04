@@ -10,6 +10,7 @@ import {
 } from '../types/post';
 
 import { getJson, getJsonWithMeta, postJson, HttpError } from '@/lib/api/http';
+import { ENV } from '@/config/env';
 import { postRequestPreviewSchema, type PostRequestPreview } from '../types/post-preview';
 
 export const POSTS_QUERY_KEY = ['posts'] as const;
@@ -89,4 +90,36 @@ export const fetchPostRequestPreview = async (
 
     throw error;
   }
+};
+
+type FetchOpenAiPreviewRawParams = {
+  newsId: number;
+  signal?: AbortSignal;
+};
+
+export const fetchAdminOpenAiPreviewRaw = async ({
+  newsId,
+  signal,
+}: FetchOpenAiPreviewRawParams): Promise<string> => {
+  const searchParams = new URLSearchParams();
+  searchParams.set('news_id', String(newsId));
+
+  const url = new URL(`/api/v1/admin/news/preview-openai?${searchParams.toString()}`, ENV.API_URL);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+    signal,
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  const rawBody = await response.text();
+
+  if (!response.ok) {
+    throw new HttpError(response.statusText || 'Request failed', response.status, rawBody);
+  }
+
+  return rawBody;
 };
