@@ -67,7 +67,7 @@ const previewOpenAI = asyncHandler(async (req, res, next) => {
 
     return res.status(200).json(rawResponse);
   } catch (error) {
-    if (error && typeof error === 'object' && 'status' in error && 'payloadBruto' in error) {
+    if (error instanceof postGenerationService.OpenAIResponseError) {
       const status = typeof error.status === 'number' ? error.status : 500;
       return res.status(status).json(error.payloadBruto ?? {});
     }

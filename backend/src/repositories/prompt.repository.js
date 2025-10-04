@@ -6,11 +6,12 @@ const defaultOrder = [{ position: 'asc' }, { createdAt: 'asc' }];
 
 const findManyByUser = async ({ userId, skip = 0, take, orderBy = defaultOrder, enabled }, client) => {
   const prismaClient = getClient(client);
+  const enabledFilter = enabled === undefined ? {} : { enabled };
 
   return prismaClient.prompt.findMany({
     where: {
       userId,
-      ...(enabled !== undefined ? { enabled } : {}),
+      ...enabledFilter,
     },
     orderBy,
     skip,
@@ -20,11 +21,12 @@ const findManyByUser = async ({ userId, skip = 0, take, orderBy = defaultOrder, 
 
 const countByUser = async ({ userId, enabled }, client) => {
   const prismaClient = getClient(client);
+  const enabledFilter = enabled === undefined ? {} : { enabled };
 
   return prismaClient.prompt.count({
     where: {
       userId,
-      ...(enabled !== undefined ? { enabled } : {}),
+      ...enabledFilter,
     },
   });
 };
