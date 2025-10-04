@@ -1,9 +1,11 @@
 import {
   cleanupResultSchema,
+  postGenerationProgressSchema,
   postListMetaSchema,
   postListSchema,
   refreshSummarySchema,
   type CleanupResult,
+  type PostGenerationProgress,
   type PostList,
   type PostListMeta,
   type RefreshSummary,
@@ -12,6 +14,7 @@ import {
 import { getJson, getJsonWithMeta, postJson, HttpError } from '@/lib/api/http';
 import { ENV } from '@/config/env';
 import { postRequestPreviewSchema, type PostRequestPreview } from '../types/post-preview';
+import { z } from 'zod';
 
 export const POSTS_QUERY_KEY = ['posts'] as const;
 
@@ -61,6 +64,15 @@ export const refreshPosts = () => {
 
 export const cleanupPosts = () => {
   return postJson<CleanupResult, Record<string, never>>('/api/v1/posts/cleanup', {}, cleanupResultSchema);
+};
+
+const refreshProgressResponseSchema = z.object({
+  status: postGenerationProgressSchema.nullable(),
+});
+
+export const fetchRefreshProgress = async (): Promise<PostGenerationProgress | null> => {
+  const response = await getJson('/api/v1/posts/refresh-status', refreshProgressResponseSchema);
+  return response.status ?? null;
 };
 
 type FetchPostRequestPreviewParams = {

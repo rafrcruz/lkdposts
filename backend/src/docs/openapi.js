@@ -436,6 +436,66 @@ const definition = {
           },
         },
       },
+      PostGenerationProgress: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          ownerKey: { type: 'string', example: '1' },
+          startedAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:34:56.000Z' },
+          updatedAt: { type: 'string', format: 'date-time', example: '2025-01-20T12:35:10.000Z' },
+          finishedAt: { type: ['string', 'null'], format: 'date-time', example: null },
+          status: {
+            type: 'string',
+            enum: ['idle', 'in_progress', 'completed', 'failed'],
+            example: 'in_progress',
+          },
+          phase: {
+            type: 'string',
+            enum: [
+              'initializing',
+              'resolving_params',
+              'loading_prompts',
+              'collecting_articles',
+              'generating_posts',
+              'finalizing',
+              'completed',
+              'failed',
+            ],
+            example: 'generating_posts',
+          },
+          message: {
+            type: ['string', 'null'],
+            example: 'Gerando post 2 de 5...'
+          },
+          eligibleCount: { type: ['integer', 'null'], example: 5 },
+          processedCount: { type: 'integer', example: 2 },
+          generatedCount: { type: 'integer', example: 2 },
+          failedCount: { type: 'integer', example: 0 },
+          skippedCount: { type: 'integer', example: 1 },
+          currentArticleId: { type: ['integer', 'null'], example: 42 },
+          currentArticleTitle: { type: ['string', 'null'], example: 'Exemplo de notícia' },
+          promptBaseHash: { type: ['string', 'null'], example: 'e3b0c44298fc1c149afbf4c8996fb924' },
+          modelUsed: { type: ['string', 'null'], example: 'gpt-5-nano' },
+          errors: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/PostGenerationErrorEntry' },
+          },
+          cacheInfo: {
+            type: ['object', 'null'],
+            properties: {
+              cachedTokens: { type: 'integer', example: 1200 },
+            },
+            example: { cachedTokens: 1200 },
+          },
+          summary: {
+            oneOf: [
+              { $ref: '#/components/schemas/PostGenerationSummary' },
+              { type: 'null' },
+            ],
+            description: 'Resumo final da última execução, quando disponível.',
+          },
+        },
+      },
       PostsCleanupResult: {
         type: 'object',
         properties: {
