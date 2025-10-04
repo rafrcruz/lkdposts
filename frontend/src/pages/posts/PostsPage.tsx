@@ -52,6 +52,25 @@ type TranslateFunction = ReturnType<typeof useTranslation>['t'];
 
 type CopyFeedback = { type: 'success' | 'error'; message: string } | null;
 
+type PreviewRequestSummary = {
+  status: number | 'network_error' | null;
+  durationMs: number;
+};
+
+const getTimestamp = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+const isAbortError = (error: unknown): boolean => {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return true;
+  }
+
+  if (error instanceof Error && error.name === 'AbortError') {
+    return true;
+  }
+
+  return false;
+};
+
 const useDocumentTitle = (title: string) => {
   useEffect(() => {
     document.title = title;
@@ -603,10 +622,12 @@ const PostsPage = () => {
   const [openAiPreviewError, setOpenAiPreviewError] = useState<string | null>(null);
   const [isOpenAiPreviewLoading, setIsOpenAiPreviewLoading] = useState(false);
   const [isOpenAiPrettyPrintEnabled, setIsOpenAiPrettyPrintEnabled] = useState(false);
+  const [previewRequestSummary, setPreviewRequestSummary] = useState<PreviewRequestSummary | null>(null);
 
   const cooldownNoticeTimeoutRef = useRef<number | null>(null);
   const cooldownIntervalRef = useRef<number | null>(null);
   const fetchStartTimeRef = useRef<number | null>(null);
+  const previewRequestStartTimeRef = useRef<number | null>(null);
   const openAiPreviewControllerRef = useRef<AbortController | null>(null);
 
   const { metrics: diagnosticsMetrics, recordRefresh, recordCooldownBlock, recordFetchSuccess } = usePostsDiagnostics();
@@ -660,11 +681,27 @@ const PostsPage = () => {
     ? resolvePreviewErrorMessage(previewMutation.error, t)
     : null;
   const previewIsLoading = previewMutation.isPending;
+  const previewRequestStatusLabel = useMemo(() => {
+    if (!previewRequestSummary) {
+      return null;
+    }
+
+    if (previewRequestSummary.status === 'network_error') {
+      return 'Network error';
+    }
+
+    if (typeof previewRequestSummary.status === 'number') {
+      return String(previewRequestSummary.status);
+    }
+
+    return '—';
+  }, [previewRequestSummary]);
   const resetOpenAiPreviewState = useCallback(() => {
     setOpenAiPreviewRaw(null);
     setOpenAiPreviewError(null);
     setIsOpenAiPreviewLoading(false);
     setIsOpenAiPrettyPrintEnabled(false);
+    setPreviewRequestSummary(null);
   }, []);
   const previewArticleId = previewArticle?.id;
   const previewRequestNewsId = useMemo(() => {
@@ -811,10 +848,11 @@ const PostsPage = () => {
   );
 
   const handleLoadOpenAiPreview = useCallback(async () => {
-    if (!canRequestOpenAiPreview) {
+    if (!canRequestOpenAiPreview || typeof previewRequestNewsId !== 'number') {
       return;
     }
 
+    const requestNewsId = previewRequestNewsId;
     const controller = new AbortController();
     if (openAiPreviewControllerRef.current) {
       openAiPreviewControllerRef.current.abort();
@@ -825,23 +863,52 @@ const PostsPage = () => {
     setOpenAiPreviewError(null);
     setOpenAiPreviewRaw(null);
     setIsOpenAiPrettyPrintEnabled(false);
+    setPreviewRequestSummary(null);
+
+    previewRequestStartTimeRef.current = getTimestamp();
+    Sentry.addBreadcrumb({
+      category: 'preview-request',
+      level: 'info',
+      message: 'Preview request started',
+      data: { newsId: requestNewsId },
+    });
+
+    const resolveDuration = () => {
+      const endTime = getTimestamp();
+      const startTime = previewRequestStartTimeRef.current ?? endTime;
+      previewRequestStartTimeRef.current = null;
+      return Math.max(0, Math.round(endTime - startTime));
+    };
 
     try {
       const raw = await fetchAdminOpenAiPreviewRaw({
-        newsId: previewRequestNewsId as number,
+        newsId: requestNewsId,
         signal: controller.signal,
+      });
+      const durationMs = resolveDuration();
+      setPreviewRequestSummary({ status: 200, durationMs });
+      Sentry.addBreadcrumb({
+        category: 'preview-request',
+        level: 'info',
+        message: 'Preview request success',
+        data: { status: 200, durationMs },
       });
       setOpenAiPreviewRaw(raw);
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return;
-      }
-
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (isAbortError(error)) {
+        previewRequestStartTimeRef.current = null;
         return;
       }
 
       if (error instanceof HttpError) {
+        const durationMs = resolveDuration();
+        setPreviewRequestSummary({ status: error.status ?? null, durationMs });
+        Sentry.addBreadcrumb({
+          category: 'preview-request',
+          level: 'error',
+          message: 'Preview request error',
+          data: { status: error.status ?? null, durationMs },
+        });
         const payload =
           typeof error.payload === 'string'
             ? error.payload
@@ -850,6 +917,14 @@ const PostsPage = () => {
               : '';
         setOpenAiPreviewRaw(payload);
       } else {
+        const durationMs = resolveDuration();
+        setPreviewRequestSummary({ status: 'network_error', durationMs });
+        Sentry.addBreadcrumb({
+          category: 'preview-request',
+          level: 'error',
+          message: 'Preview request network error',
+          data: { durationMs },
+        });
         const message = t(
           'posts.preview.request.errors.network',
           'Failed to call the API. Check the console for details.',
@@ -1898,6 +1973,11 @@ const PostsPage = () => {
                         </div>
                         {openAiPreviewError ? (
                           <p className="text-xs text-danger">{openAiPreviewError}</p>
+                        ) : null}
+                        {previewRequestSummary ? (
+                          <p className="text-xs text-gray-500">
+                            Status: {previewRequestStatusLabel} • Tempo: {previewRequestSummary.durationMs} ms
+                          </p>
                         ) : null}
                         <textarea
                           value={openAiPreviewDisplay}
