@@ -1828,18 +1828,21 @@ const PostsPage = () => {
             ) : null}
             <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
               <span>
-                {t('posts.progress.generatedCount', 'Generated: {{count}}', {
-                  count: formatNumber(progressStats.generated, locale),
+                {t('posts.progress.generatedCount', 'Generated: {{formattedCount}}', {
+                  count: progressStats.generated,
+                  formattedCount: formatNumber(progressStats.generated, locale),
                 })}
               </span>
               <span>
-                {t('posts.progress.failedCount', 'Failed: {{count}}', {
-                  count: formatNumber(progressStats.failed, locale),
+                {t('posts.progress.failedCount', 'Failed: {{formattedCount}}', {
+                  count: progressStats.failed,
+                  formattedCount: formatNumber(progressStats.failed, locale),
                 })}
               </span>
               <span>
-                {t('posts.progress.skippedCount', 'Skipped (cooldown): {{count}}', {
-                  count: formatNumber(progressStats.skipped, locale),
+                {t('posts.progress.skippedCount', 'Skipped (cooldown): {{formattedCount}}', {
+                  count: progressStats.skipped,
+                  formattedCount: formatNumber(progressStats.skipped, locale),
                 })}
               </span>
             </div>
