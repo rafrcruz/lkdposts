@@ -184,7 +184,7 @@ export const AllowlistPage = () => {
         </p>
       </header>
 
-      <section className="card space-y-4 px-6 py-6">
+      <section className="card space-y-4 px-4 py-6 sm:px-6">
         <h2 className="text-lg font-medium text-foreground">{t('allowlist.form.title', 'Adicionar email')}</h2>
         <form className="grid gap-4 sm:grid-cols-[2fr,1fr,auto]" onSubmit={handleSubmit}>
           <label className="text-sm">
@@ -207,7 +207,7 @@ export const AllowlistPage = () => {
             <select
               value={role}
               onChange={(event) => setRole(event.target.value as AllowedRole)}
-              className="w-full min-w-[8rem] rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="w-full min-w-0 rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40 sm:min-w-[8rem]"
               disabled={isBusy}
             >
               <option value="user">{t('allowlist.roles.user', 'Usuario')}</option>

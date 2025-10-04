@@ -407,7 +407,7 @@ const AppParamsPage = () => {
             <button
               type="button"
               onClick={handleRetry}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+              className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               disabled={appParams.isFetching}
             >
               {appParams.isFetching
@@ -516,14 +516,14 @@ const AppParamsPage = () => {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <button
             type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             disabled={!canSave}
           >
             {isSaving ? t('appParams.actions.saving', 'Salvando...') : t('appParams.actions.save', 'Salvar')}
           </button>
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             onClick={() => {
               if (!params) {
                 return;

@@ -1822,8 +1822,8 @@ const PromptsPage = () => {
         </p>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-[220px] flex-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="w-full sm:flex-1 sm:min-w-[220px]">
           <label htmlFor="prompt-search" className="text-sm font-medium text-foreground">
             {t('prompts.search.label', 'Search prompts')}
           </label>
@@ -1837,7 +1837,7 @@ const PromptsPage = () => {
             autoComplete="off"
           />
         </div>
-        <div className="min-w-[180px]">
+        <div className="w-full sm:w-auto sm:min-w-[180px]">
           <label htmlFor="prompt-status-filter" className="text-sm font-medium text-foreground">
             {t('prompts.filter.status.label', 'Status filter')}
           </label>
@@ -1852,11 +1852,11 @@ const PromptsPage = () => {
             <option value="disabled">{t('prompts.filter.status.disabled', 'Disabled')}</option>
           </select>
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <button
             type="button"
             onClick={handleOpenCreateForm}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             disabled={isSaving}
           >
             {t('prompts.actions.new', 'New prompt')}
@@ -1864,7 +1864,7 @@ const PromptsPage = () => {
           <button
             type="button"
             onClick={handleOpenExportModal}
-            className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             disabled={!hasSelection}
           >
             {t('prompts.actions.exportSelected', 'Export selected')}
@@ -1887,7 +1887,7 @@ const PromptsPage = () => {
               : 'border-danger/30 bg-danger/10 text-danger',
           )}
         >
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
             <span>{feedback.message}</span>
             {feedback.action ? (
               <button
@@ -1908,8 +1908,8 @@ const PromptsPage = () => {
       ) : null}
 
       {isFormOpen ? (
-        <form onSubmit={handleSubmit} className="card space-y-4 p-6" noValidate>
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <form onSubmit={handleSubmit} className="card space-y-4 p-4 sm:p-6" noValidate>
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold text-foreground">
               {formMode === 'create'
                 ? t('prompts.form.createTitle', 'Create prompt')
@@ -1918,7 +1918,7 @@ const PromptsPage = () => {
             <button
               type="button"
               onClick={handleCancelForm}
-              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-muted"
+              className="inline-flex w-full items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-muted sm:w-auto"
             >
               {t('prompts.actions.cancel', 'Cancel')}
             </button>
@@ -1945,7 +1945,7 @@ const PromptsPage = () => {
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
               <label htmlFor="prompt-content" className="text-sm font-medium text-foreground">
                 {t('prompts.form.contentLabel', 'Content')}
               </label>
@@ -1980,10 +1980,10 @@ const PromptsPage = () => {
             ) : null}
           </div>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button
               type="submit"
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               disabled={isSaving}
             >
               {isSaving
@@ -2016,7 +2016,7 @@ const PromptsPage = () => {
                 setFeedback(null);
                 refetchPromptList();
               }}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+              className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 sm:w-auto"
             >
               {t('prompts.actions.retry', 'Try again')}
             </button>
@@ -2032,7 +2032,7 @@ const PromptsPage = () => {
             <button
               type="button"
               onClick={handleOpenCreateForm}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+              className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 sm:w-auto"
             >
               {t('prompts.actions.createFirst', 'Create prompt')}
             </button>
@@ -2209,7 +2209,7 @@ const PromptsPage = () => {
                 aria-labelledby="export-modal-title"
                 className="w-full max-w-2xl rounded-lg border border-border bg-background p-6 shadow-lg"
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-1">
                     <h2 id="export-modal-title" className="text-lg font-semibold text-foreground">
                       {t('prompts.export.title', 'Export selected prompts')}
@@ -2224,7 +2224,7 @@ const PromptsPage = () => {
                   <button
                     type="button"
                     onClick={handleCloseExportModal}
-                    className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-muted"
+                    className="inline-flex w-full items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-muted sm:w-auto"
                   >
                     {t('prompts.export.close', 'Close')}
                   </button>
@@ -2246,7 +2246,7 @@ const PromptsPage = () => {
                     className="h-64 w-full resize-none rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground focus:outline-none"
                   />
                 </div>
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                   <div className="text-sm">
                     {copyStatus === 'success' ? (
                       <p className="text-primary">
@@ -2266,7 +2266,7 @@ const PromptsPage = () => {
                         console.error('[PromptsPage] Failed to copy export content', error);
                       });
                     }}
-                    className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+                    className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 sm:w-auto"
                   >
                     {t('prompts.export.copy', 'Copy')}
                   </button>
