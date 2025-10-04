@@ -1386,14 +1386,14 @@ const PostsPage = () => {
         </p>
       </div>
 
-      <div className="flex flex-col gap-4 rounded-md border border-border bg-card px-6 py-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-md border border-border bg-card px-4 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-6">
         <div className="flex flex-col gap-2">
           <label className="text-xs font-medium text-muted-foreground" htmlFor="feed-filter">
             {t('posts.filters.feedLabel', 'Filter by feed')}
           </label>
           <select
             id="feed-filter"
-            className="w-full min-w-[16rem] rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            className="w-full min-w-0 rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40 sm:min-w-[16rem]"
             value={selectedFeedId ?? ''}
             onChange={handleFeedChange}
             disabled={feedList.isLoading || feedList.isFetching || (!hasFeeds && feedList.isSuccess)}
@@ -1411,7 +1411,7 @@ const PostsPage = () => {
             </p>
           ) : null}
         </div>
-        <div className="flex flex-col items-start gap-2 sm:items-end">
+        <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
           {isSyncing || isFetching ? (
             <span className="text-xs text-muted-foreground">{t('posts.messages.syncing', 'Syncing...')}</span>
           ) : null}
@@ -1423,7 +1423,7 @@ const PostsPage = () => {
           <button
             type="button"
             className={clsx(
-              'inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60',
+              'inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto',
               !isSyncing && isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
             )}
             onClick={() => runSequence({ resetPagination: true })}
@@ -1435,7 +1435,7 @@ const PostsPage = () => {
           {isAdmin ? (
             <button
               type="button"
-              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               onClick={() => handleOpenPreview()}
               disabled={previewIsLoading}
               aria-disabled={previewIsLoading}
@@ -1463,7 +1463,7 @@ const PostsPage = () => {
             <button
               type="button"
               className={clsx(
-                'mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60',
+                'mt-3 inline-flex w-full items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto',
                 !isSyncing && isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
               )}
               onClick={() => runSequence()}
@@ -1484,7 +1484,7 @@ const PostsPage = () => {
             <button
               type="button"
               className={clsx(
-                'mt-3 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60',
+                'mt-3 inline-flex w-full items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto',
                 !isSyncing && isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
               )}
               onClick={() => runSequence()}
