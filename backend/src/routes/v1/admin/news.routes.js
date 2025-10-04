@@ -12,6 +12,11 @@ router.get(
   validateRequest({ query: previewPayloadQuerySchema }),
   newsGenerationController.previewPayload,
 );
+router.get(
+  '/preview-openai',
+  validateRequest({ query: previewPayloadQuerySchema }),
+  newsGenerationController.previewOpenAI,
+);
 
 module.exports = router;
 
