@@ -131,7 +131,7 @@ const isRateLimitHttpError = (error: HttpError) => {
   return parseRateLimitPayload(error.payload);
 };
 
-const getTimestamp = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const getTimestamp = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
 
 const isAbortError = (error: unknown): boolean => {
   if (error instanceof DOMException && error.name === 'AbortError') {
@@ -757,8 +757,8 @@ const PostsPage = () => {
 
   useEffect(() => {
     return () => {
-      if (rateLimitBackoffRef.current.timeoutId !== null && typeof window !== 'undefined') {
-        window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
+      if (rateLimitBackoffRef.current.timeoutId !== null) {
+        globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
         rateLimitBackoffRef.current.timeoutId = null;
       }
     };
@@ -1242,8 +1242,8 @@ const PostsPage = () => {
       const status = await fetchRefreshProgress();
       setRefreshProgress(status);
 
-      if (rateLimitBackoffRef.current.timeoutId !== null && typeof window !== 'undefined') {
-        window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
+      if (rateLimitBackoffRef.current.timeoutId !== null) {
+        globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
         rateLimitBackoffRef.current.timeoutId = null;
       }
 
@@ -1263,8 +1263,8 @@ const PostsPage = () => {
 
         if (nextAttempts > RATE_LIMIT_MAX_ATTEMPTS) {
           rateLimitBackoffRef.current.active = false;
-          if (rateLimitBackoffRef.current.timeoutId !== null && typeof window !== 'undefined') {
-            window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
+          if (rateLimitBackoffRef.current.timeoutId !== null) {
+            globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
             rateLimitBackoffRef.current.timeoutId = null;
           }
           setRefreshError(
@@ -1287,24 +1287,22 @@ const PostsPage = () => {
           ),
         );
 
-        if (typeof window !== 'undefined') {
-          if (rateLimitBackoffRef.current.timeoutId !== null) {
-            window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
-          }
-
-          rateLimitBackoffRef.current.timeoutId = window.setTimeout(() => {
-            rateLimitBackoffRef.current.timeoutId = null;
-            requestProgressUpdate();
-          }, delay);
+        if (rateLimitBackoffRef.current.timeoutId !== null) {
+          globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
         }
+
+        rateLimitBackoffRef.current.timeoutId = globalThis.setTimeout(() => {
+          rateLimitBackoffRef.current.timeoutId = null;
+          requestProgressUpdate();
+        }, delay);
 
         return;
       }
 
       rateLimitBackoffRef.current.active = false;
       rateLimitBackoffRef.current.attempts = 0;
-      if (rateLimitBackoffRef.current.timeoutId !== null && typeof window !== 'undefined') {
-        window.clearTimeout(rateLimitBackoffRef.current.timeoutId);
+      if (rateLimitBackoffRef.current.timeoutId !== null) {
+        globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
         rateLimitBackoffRef.current.timeoutId = null;
       }
     } finally {
@@ -1384,8 +1382,8 @@ const PostsPage = () => {
         openAiPreviewControllerRef.current.abort();
         openAiPreviewControllerRef.current = null;
       }
-      if (refreshProgressIntervalRef.current !== null && typeof window !== 'undefined') {
-        window.clearInterval(refreshProgressIntervalRef.current);
+      if (refreshProgressIntervalRef.current !== null) {
+        globalThis.clearInterval(refreshProgressIntervalRef.current);
         refreshProgressIntervalRef.current = null;
       }
     };
@@ -1401,8 +1399,8 @@ const PostsPage = () => {
 
   useEffect(() => {
     if (!isRefreshRunning) {
-      if (refreshProgressIntervalRef.current !== null && typeof window !== 'undefined') {
-        window.clearInterval(refreshProgressIntervalRef.current);
+      if (refreshProgressIntervalRef.current !== null) {
+        globalThis.clearInterval(refreshProgressIntervalRef.current);
         refreshProgressIntervalRef.current = null;
       }
       return;
@@ -1420,13 +1418,7 @@ const PostsPage = () => {
 
     void poll();
 
-    if (typeof window === 'undefined') {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const intervalId = window.setInterval(() => {
+    const intervalId = globalThis.setInterval(() => {
       void poll();
     }, 5000);
 
@@ -1434,8 +1426,8 @@ const PostsPage = () => {
 
     return () => {
       cancelled = true;
-      if (refreshProgressIntervalRef.current !== null && typeof window !== 'undefined') {
-        window.clearInterval(refreshProgressIntervalRef.current);
+      if (refreshProgressIntervalRef.current !== null) {
+        globalThis.clearInterval(refreshProgressIntervalRef.current);
         refreshProgressIntervalRef.current = null;
       }
     };
@@ -1456,8 +1448,8 @@ const PostsPage = () => {
   }, [refreshSummary?.now]);
 
   useEffect(() => {
-    if (cooldownIntervalRef.current !== null && typeof window !== 'undefined') {
-      window.clearInterval(cooldownIntervalRef.current);
+    if (cooldownIntervalRef.current !== null) {
+      globalThis.clearInterval(cooldownIntervalRef.current);
       cooldownIntervalRef.current = null;
     }
 
@@ -1476,14 +1468,14 @@ const PostsPage = () => {
 
     const initialRemaining = computeRemaining();
 
-    if (initialRemaining <= 0 || typeof window === 'undefined') {
+    if (initialRemaining <= 0) {
       return;
     }
 
-    const intervalId = window.setInterval(() => {
+    const intervalId = globalThis.setInterval(() => {
       const next = computeRemaining();
-      if (next <= 0 && cooldownIntervalRef.current !== null && typeof window !== 'undefined') {
-        window.clearInterval(cooldownIntervalRef.current);
+      if (next <= 0 && cooldownIntervalRef.current !== null) {
+        globalThis.clearInterval(cooldownIntervalRef.current);
         cooldownIntervalRef.current = null;
       }
     }, 1000);
@@ -1491,8 +1483,8 @@ const PostsPage = () => {
     cooldownIntervalRef.current = intervalId;
 
     return () => {
-      if (cooldownIntervalRef.current !== null && typeof window !== 'undefined') {
-        window.clearInterval(cooldownIntervalRef.current);
+      if (cooldownIntervalRef.current !== null) {
+        globalThis.clearInterval(cooldownIntervalRef.current);
         cooldownIntervalRef.current = null;
       }
     };
@@ -1500,34 +1492,30 @@ const PostsPage = () => {
 
   useEffect(() => {
     return () => {
-      if (cooldownNoticeTimeoutRef.current !== null && typeof window !== 'undefined') {
-        window.clearTimeout(cooldownNoticeTimeoutRef.current);
+      if (cooldownNoticeTimeoutRef.current !== null) {
+        globalThis.clearTimeout(cooldownNoticeTimeoutRef.current);
       }
 
-      if (cooldownIntervalRef.current !== null && typeof window !== 'undefined') {
-        window.clearInterval(cooldownIntervalRef.current);
+      if (cooldownIntervalRef.current !== null) {
+        globalThis.clearInterval(cooldownIntervalRef.current);
       }
     };
   }, []);
 
   useEffect(() => {
     if (!cooldownNotice) {
-      if (cooldownNoticeTimeoutRef.current !== null && typeof window !== 'undefined') {
-        window.clearTimeout(cooldownNoticeTimeoutRef.current);
+      if (cooldownNoticeTimeoutRef.current !== null) {
+        globalThis.clearTimeout(cooldownNoticeTimeoutRef.current);
         cooldownNoticeTimeoutRef.current = null;
       }
       return;
     }
 
-    if (typeof window === 'undefined') {
-      return;
-    }
-
     if (cooldownNoticeTimeoutRef.current !== null) {
-      window.clearTimeout(cooldownNoticeTimeoutRef.current);
+      globalThis.clearTimeout(cooldownNoticeTimeoutRef.current);
     }
 
-    const timeoutId = window.setTimeout(() => {
+    const timeoutId = globalThis.setTimeout(() => {
       setCooldownNotice(null);
       cooldownNoticeTimeoutRef.current = null;
     }, 4000);
@@ -1535,9 +1523,7 @@ const PostsPage = () => {
     cooldownNoticeTimeoutRef.current = timeoutId;
 
     return () => {
-      if (typeof window !== 'undefined') {
-        window.clearTimeout(timeoutId);
-      }
+      globalThis.clearTimeout(timeoutId);
       cooldownNoticeTimeoutRef.current = null;
     };
   }, [cooldownNotice]);
@@ -1956,9 +1942,9 @@ const PostsPage = () => {
                   progressStats.percent === null ? 'w-1/3 animate-pulse' : null,
                 )}
                 style={
-                  progressStats.percent !== null
-                    ? { width: `${progressStats.percent}%` }
-                    : undefined
+                  progressStats.percent === null
+                    ? undefined
+                    : { width: `${progressStats.percent}%` }
                 }
               />
             </div>

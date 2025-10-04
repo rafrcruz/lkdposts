@@ -15,13 +15,7 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
-import type {
-  DraggableAttributes,
-  DragEndEvent,
-  DragOverEvent,
-  DragStartEvent,
-  DropAnimation,
-} from '@dnd-kit/core';
+import type { DragEndEvent, DragOverEvent, DragStartEvent, DropAnimation } from '@dnd-kit/core';
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
   SortableContext,
@@ -429,6 +423,9 @@ const PromptsPage = () => {
 
   const showForceSaveButton =
     canReorder && dirty && !arraysShallowEqual(visibleOrder, baselineOrder);
+  const forceSaveButtonLabel = reorderPrompts.isPending
+    ? t('prompts.reorder.forceSaveSaving', 'Salvando...')
+    : t('prompts.reorder.forceSave', 'Forçar salvar ordem');
 
   const activePrompt = useMemo(() => {
     if (!activeId) {
@@ -1686,7 +1683,10 @@ const PromptsPage = () => {
       .join('\n\n---\n\n');
   }, [exportablePrompts]);
 
-  const loadingSkeletons = useMemo(() => Array.from({ length: 3 }), []);
+  const loadingSkeletons = useMemo(
+    () => Array.from({ length: 3 }, (_, index) => `prompt-loading-skeleton-${index}`),
+    [],
+  );
 
   const renderPromptCard = (prompt: Prompt, options?: PromptCardRenderOptions) => {
     const isExpanded = expandedPromptIds.has(prompt.id);
@@ -2003,8 +2003,8 @@ const PromptsPage = () => {
 
       {isLoading ? (
         <div className="space-y-3" aria-live="polite" aria-atomic="true">
-          {loadingSkeletons.map((_, index) => (
-            <div key={index} className="card space-y-3 p-4">
+          {loadingSkeletons.map((skeletonId) => (
+            <div key={skeletonId} className="card space-y-3 p-4">
               <LoadingSkeleton className="h-5 w-3/4" />
               <LoadingSkeleton className="h-4 w-full" />
               <LoadingSkeleton className="h-4 w-2/3" />
@@ -2074,9 +2074,7 @@ const PromptsPage = () => {
                   className="inline-flex items-center justify-center rounded-md border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={reorderPrompts.isPending}
                 >
-                  {reorderPrompts.isPending
-                    ? t('prompts.reorder.forceSaveSaving', 'Salvando...')
-                    : t('prompts.reorder.forceSave', 'Forçar salvar ordem')}
+                  {forceSaveButtonLabel}
                 </button>
               ) : null}
             </div>
@@ -2115,7 +2113,6 @@ const PromptsPage = () => {
                             <li
                               key={virtualItem.key}
                               className="absolute inset-x-0"
-                              role="listitem"
                               style={{
                                 transform: `translate3d(0, ${virtualItem.start}px, 0)`,
                                 willChange: 'transform',
@@ -2158,7 +2155,7 @@ const PromptsPage = () => {
                         const isActivePrompt = activeId === prompt.id;
 
                         return (
-                          <li key={prompt.id} role="listitem">
+                          <li key={prompt.id}>
                             <SortablePromptCard
                               prompt={prompt}
                               canMoveUp={index > 0}

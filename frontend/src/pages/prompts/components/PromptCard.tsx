@@ -91,6 +91,21 @@ export const PromptCard = ({
   const reorderHandleLabel = t('prompts.list.dragHandleLabel', 'Drag handle: hold and move to reorder.');
   const dropPlaceholderLabel = t('prompts.list.dropPlaceholder', 'Release to place the prompt here.');
   const containerAttributes = options?.containerAttributes ?? {};
+  const {
+    role: providedRole,
+    tabIndex: providedTabIndex,
+    onKeyDown: providedOnKeyDown,
+    ...restContainerAttributes
+  } = containerAttributes as DraggableAttributes & {
+    role?: string;
+    tabIndex?: number;
+    onKeyDown?: PromptCardRenderOptions['onKeyDown'];
+  };
+  const interactiveRole = providedRole ?? (canReorder ? 'button' : 'group');
+  const interactiveTabIndex = providedTabIndex ?? (canReorder ? 0 : undefined);
+  const interactiveKeyDown = canReorder
+    ? options?.onKeyDown ?? providedOnKeyDown
+    : undefined;
   const handleListeners = canReorder ? options?.handleListeners ?? {} : {};
 
   const assignRef = (element: HTMLDivElement | null) => {
@@ -110,8 +125,9 @@ export const PromptCard = ({
   return (
     <div
       ref={assignRef}
-      {...containerAttributes}
-      role="group"
+      {...restContainerAttributes}
+      role={interactiveRole}
+      tabIndex={interactiveTabIndex}
       className={clsx(
         'relative card flex flex-col gap-4 p-4 outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary',
         'hover:shadow-sm',
@@ -126,7 +142,7 @@ export const PromptCard = ({
       data-dragging={isDragging}
       data-keyboard-grabbed={isKeyboardActive ? 'true' : undefined}
       aria-grabbed={isGrabbed}
-      onKeyDown={canReorder ? options?.onKeyDown : undefined}
+      onKeyDown={interactiveKeyDown}
     >
       {showPlaceholder ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-primary/5">

@@ -39,7 +39,7 @@ const mockedUseFeedList = vi.mocked(useFeedList);
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedUseAppParams = vi.mocked(useAppParams);
 const mockedUsePostRequestPreview = vi.mocked(usePostRequestPreview);
-const originalFetch = global.fetch;
+const originalFetch = globalThis.fetch;
 const originalClipboard = navigator.clipboard;
 
 type PostOverride = Partial<Omit<PostListItem, 'post'>> & {
@@ -314,7 +314,7 @@ describe('PostsPage', () => {
       throw new Error(`Unhandled request in PostsPage test fetch mock: ${method} ${url.pathname}`);
     });
 
-    global.fetch = fetchMock as unknown as typeof global.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const feeds: Feed[] = [buildFeed({ id: 1, title: 'Feed 1' }), buildFeed({ id: 2, title: 'Feed 2' })];
     const defaultPosts: PostListItem[] = [
@@ -369,9 +369,9 @@ describe('PostsPage', () => {
     vi.clearAllMocks();
 
     if (originalFetch) {
-      global.fetch = originalFetch;
+      globalThis.fetch = originalFetch;
     } else {
-      delete (globalThis as { fetch?: typeof global.fetch }).fetch;
+      delete (globalThis as { fetch?: typeof globalThis.fetch }).fetch;
     }
 
     if (originalClipboard !== undefined) {
@@ -777,7 +777,7 @@ describe('PostsPage', () => {
       text: () => Promise.resolve(rawResponse),
       headers: new Headers(),
     } as Response);
-    global.fetch = fetchMock as unknown as typeof global.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
@@ -902,7 +902,7 @@ describe('PostsPage', () => {
       text: () => Promise.resolve(rawError),
       headers: new Headers(),
     } as Response);
-    global.fetch = fetchMock as unknown as typeof global.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     renderPage();
 
@@ -973,7 +973,7 @@ describe('PostsPage', () => {
 
     const fetchError = new TypeError('Network failure');
     const fetchMock = vi.fn().mockRejectedValue(fetchError);
-    global.fetch = fetchMock as unknown as typeof global.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -1057,7 +1057,7 @@ describe('PostsPage', () => {
         }
       });
     });
-    global.fetch = fetchMock as unknown as typeof global.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     renderPage();
 
