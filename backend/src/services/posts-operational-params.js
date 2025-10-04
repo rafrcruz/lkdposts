@@ -9,7 +9,7 @@ const normalizeCooldownSeconds = (value) => {
   }
 
   const normalized = Math.trunc(value);
-  return normalized < 0 ? 0 : normalized;
+  return Math.max(0, normalized);
 };
 
 const normalizeWindowDays = (value) => {
@@ -18,7 +18,7 @@ const normalizeWindowDays = (value) => {
   }
 
   const normalized = Math.trunc(value);
-  return normalized < 1 ? 1 : normalized;
+  return Math.max(1, normalized);
 };
 
 const buildOperationalParams = ({ cooldownSeconds, windowDays }) => {

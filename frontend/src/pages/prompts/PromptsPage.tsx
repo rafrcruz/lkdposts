@@ -16,7 +16,6 @@ import {
   useSensors,
 } from '@dnd-kit/core';
 import type { DragEndEvent, DragOverEvent, DragStartEvent, DropAnimation } from '@dnd-kit/core';
-import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
   SortableContext,
   arrayMove,

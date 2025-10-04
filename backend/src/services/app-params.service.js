@@ -190,18 +190,21 @@ const updateAppParams = async ({ updates, updatedBy }) => {
 const getOpenAIModel = async () => {
   const record = await appParamsRepository.ensureDefaultSingleton(DEFAULT_APP_PARAMS);
 
-  if (!record || typeof record.openAiModel !== 'string') {
-    return DEFAULT_OPENAI_MODEL;
+  if (record && typeof record.openAiModel === 'string') {
+    const trimmed = record.openAiModel.trim();
+
+    if (trimmed !== '') {
+      return trimmed;
+    }
   }
 
-  const trimmed = record.openAiModel.trim();
-  return trimmed !== '' ? trimmed : DEFAULT_OPENAI_MODEL;
+  return DEFAULT_OPENAI_MODEL;
 };
 
 const normalizePersistedOpenAiModel = async () => {
   const record = await appParamsRepository.findSingleton();
 
-  if (!record) {
+  if (record == null) {
     return null;
   }
 
