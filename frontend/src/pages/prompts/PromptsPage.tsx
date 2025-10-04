@@ -159,11 +159,19 @@ const PromptsPage = () => {
 
   const promptList = usePromptList();
   const refetchPromptList = useCallback(() => {
-    return promptList
-      .refetch()
-      .catch((error) => {
-        console.error('[PromptsPage] Failed to refetch prompts', error);
-      });
+    try {
+      const result = promptList.refetch();
+      if (result && typeof (result as PromiseLike<unknown>).catch === 'function') {
+        return (result as PromiseLike<unknown>).catch((error) => {
+          console.error('[PromptsPage] Failed to refetch prompts', error);
+        });
+      }
+
+      return Promise.resolve(result);
+    } catch (error) {
+      console.error('[PromptsPage] Failed to refetch prompts', error);
+      return Promise.resolve(undefined);
+    }
   }, [promptList]);
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
@@ -2110,6 +2118,7 @@ const PromptsPage = () => {
                             <li
                               key={virtualItem.key}
                               className="absolute inset-x-0"
+                              role="listitem"
                               style={{
                                 transform: `translate3d(0, ${virtualItem.start}px, 0)`,
                                 willChange: 'transform',
@@ -2152,7 +2161,7 @@ const PromptsPage = () => {
                         const isActivePrompt = activeId === prompt.id;
 
                         return (
-                          <li key={prompt.id}>
+                          <li key={prompt.id} role="listitem">
                             <SortablePromptCard
                               prompt={prompt}
                               canMoveUp={index > 0}
