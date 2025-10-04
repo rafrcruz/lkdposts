@@ -375,6 +375,19 @@ const resources = {
           newsEmpty: 'News content is not available for this preview.',
           empty: 'No eligible news item is available for preview.',
           rowAction: 'Preview',
+          request: {
+            button: 'Preview Request',
+            loading: 'Loading request...',
+            title: 'OpenAI request payload',
+            placeholder: 'Load the request preview to inspect the raw payload.',
+            prettyToggle: 'Pretty print (visual)',
+            copyButton: 'Copy raw JSON',
+            copySuccess: 'Copied raw JSON to clipboard.',
+            textareaLabel: 'OpenAI raw response',
+            errors: {
+              network: 'Failed to call the API. Check the console for details.',
+            },
+          },
           errors: {
             network: 'We could not load the preview. Check your connection and try again.',
             generic: 'We could not load the preview. Try again.',
@@ -866,6 +879,19 @@ const resources = {
           newsEmpty: 'Conteudo da noticia indisponivel para esta pre-visualizacao.',
           empty: 'Nenhuma noticia elegivel disponivel para pre-visualizacao.',
           rowAction: 'Pre-visualizar',
+          request: {
+            button: 'Preview Request',
+            loading: 'Carregando request...',
+            title: 'Payload da requisicao OpenAI',
+            placeholder: 'Clique em "Preview Request" para carregar o payload bruto.',
+            prettyToggle: 'Pretty print (visual)',
+            copyButton: 'Copiar JSON bruto',
+            copySuccess: 'JSON bruto copiado para a area de transferencia.',
+            textareaLabel: 'Resposta bruta da OpenAI',
+            errors: {
+              network: 'Falha ao chamar a API. Veja o console para detalhes.',
+            },
+          },
           errors: {
             network: 'Nao foi possivel carregar a pre-visualizacao. Verifique sua conexao e tente novamente.',
             generic: 'Nao foi possivel carregar a pre-visualizacao. Tente novamente.',

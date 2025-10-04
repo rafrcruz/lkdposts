@@ -24,6 +24,7 @@ import { HttpError } from '@/lib/api/http';
 import { formatDate, formatNumber, useLocale } from '@/utils/formatters';
 import { useAppParams } from '@/features/app-params/hooks/useAppParams';
 import { usePostsDiagnostics } from '@/features/posts/hooks/usePostsDiagnostics';
+import { fetchAdminOpenAiPreviewRaw } from '@/features/posts/api/posts';
 
 const PAGE_SIZE = 10;
 const FEED_OPTIONS_LIMIT = 50;
@@ -598,10 +599,15 @@ const PostsPage = () => {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewCopyFeedback, setPreviewCopyFeedback] = useState<CopyFeedback>(null);
   const [lastPreviewRequest, setLastPreviewRequest] = useState<number | null>(null);
+  const [openAiPreviewRaw, setOpenAiPreviewRaw] = useState<string | null>(null);
+  const [openAiPreviewError, setOpenAiPreviewError] = useState<string | null>(null);
+  const [isOpenAiPreviewLoading, setIsOpenAiPreviewLoading] = useState(false);
+  const [isOpenAiPrettyPrintEnabled, setIsOpenAiPrettyPrintEnabled] = useState(false);
 
   const cooldownNoticeTimeoutRef = useRef<number | null>(null);
   const cooldownIntervalRef = useRef<number | null>(null);
   const fetchStartTimeRef = useRef<number | null>(null);
+  const openAiPreviewControllerRef = useRef<AbortController | null>(null);
 
   const { metrics: diagnosticsMetrics, recordRefresh, recordCooldownBlock, recordFetchSuccess } = usePostsDiagnostics();
   const diagnosticsPanelId = 'posts-diagnostics-panel';
@@ -654,6 +660,60 @@ const PostsPage = () => {
     ? resolvePreviewErrorMessage(previewMutation.error, t)
     : null;
   const previewIsLoading = previewMutation.isPending;
+  const resetOpenAiPreviewState = useCallback(() => {
+    setOpenAiPreviewRaw(null);
+    setOpenAiPreviewError(null);
+    setIsOpenAiPreviewLoading(false);
+    setIsOpenAiPrettyPrintEnabled(false);
+  }, []);
+  const previewArticleId = previewArticle?.id;
+  const previewRequestNewsId = useMemo(() => {
+    if (typeof previewArticleId === 'number') {
+      return previewArticleId;
+    }
+
+    if (typeof lastPreviewRequest === 'number') {
+      return lastPreviewRequest;
+    }
+
+    return null;
+  }, [lastPreviewRequest, previewArticleId]);
+  const openAiPreviewParsed = useMemo(() => {
+    if (typeof openAiPreviewRaw !== 'string' || openAiPreviewRaw.length === 0) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(openAiPreviewRaw);
+    } catch {
+      return null;
+    }
+  }, [openAiPreviewRaw]);
+  const openAiPreviewDisplay = useMemo(() => {
+    if (typeof openAiPreviewRaw !== 'string') {
+      return '';
+    }
+
+    if (isOpenAiPrettyPrintEnabled && openAiPreviewParsed !== null) {
+      return JSON.stringify(openAiPreviewParsed, null, 2);
+    }
+
+    return openAiPreviewRaw;
+  }, [isOpenAiPrettyPrintEnabled, openAiPreviewParsed, openAiPreviewRaw]);
+  const canPrettyPrintOpenAiPreview = openAiPreviewParsed !== null;
+  const canRequestOpenAiPreview = typeof previewRequestNewsId === 'number';
+  const openAiPreviewPlaceholder = isOpenAiPreviewLoading
+    ? t('posts.preview.request.loading', 'Loading request...')
+    : t(
+        'posts.preview.request.placeholder',
+        'Load the request preview to inspect the raw payload.',
+      );
+
+  useEffect(() => {
+    if (!canPrettyPrintOpenAiPreview && isOpenAiPrettyPrintEnabled) {
+      setIsOpenAiPrettyPrintEnabled(false);
+    }
+  }, [canPrettyPrintOpenAiPreview, isOpenAiPrettyPrintEnabled]);
 
   const handleRefreshSettled = useCallback(
     (result: PromiseSettledResult<RefreshSummary>) => {
@@ -689,6 +749,11 @@ const PostsPage = () => {
 
       setPreviewCopyFeedback(null);
       setLastPreviewRequest(typeof newsId === 'number' ? newsId : null);
+      if (openAiPreviewControllerRef.current) {
+        openAiPreviewControllerRef.current.abort();
+        openAiPreviewControllerRef.current = null;
+      }
+      resetOpenAiPreviewState();
       previewMutation.reset();
       setIsPreviewModalOpen(true);
 
@@ -700,14 +765,19 @@ const PostsPage = () => {
         }
       }
     },
-    [isAdmin, previewMutation],
+    [isAdmin, previewMutation, resetOpenAiPreviewState],
   );
 
   const handleClosePreview = useCallback(() => {
     setIsPreviewModalOpen(false);
     setPreviewCopyFeedback(null);
+    if (openAiPreviewControllerRef.current) {
+      openAiPreviewControllerRef.current.abort();
+      openAiPreviewControllerRef.current = null;
+    }
+    resetOpenAiPreviewState();
     previewMutation.reset();
-  }, [previewMutation]);
+  }, [previewMutation, resetOpenAiPreviewState]);
 
   const handleCopyPreviewContent = useCallback(
     async (value: string, successMessage: string) => {
@@ -739,6 +809,62 @@ const PostsPage = () => {
     },
     [t],
   );
+
+  const handleLoadOpenAiPreview = useCallback(async () => {
+    if (!canRequestOpenAiPreview) {
+      return;
+    }
+
+    const controller = new AbortController();
+    if (openAiPreviewControllerRef.current) {
+      openAiPreviewControllerRef.current.abort();
+    }
+
+    openAiPreviewControllerRef.current = controller;
+    setIsOpenAiPreviewLoading(true);
+    setOpenAiPreviewError(null);
+    setOpenAiPreviewRaw(null);
+    setIsOpenAiPrettyPrintEnabled(false);
+
+    try {
+      const raw = await fetchAdminOpenAiPreviewRaw({
+        newsId: previewRequestNewsId as number,
+        signal: controller.signal,
+      });
+      setOpenAiPreviewRaw(raw);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+
+      if (error instanceof HttpError) {
+        const payload =
+          typeof error.payload === 'string'
+            ? error.payload
+            : error.payload !== undefined
+              ? JSON.stringify(error.payload)
+              : '';
+        setOpenAiPreviewRaw(payload);
+      } else {
+        const message = t(
+          'posts.preview.request.errors.network',
+          'Failed to call the API. Check the console for details.',
+        );
+        setOpenAiPreviewError(message);
+        console.error('Failed to load OpenAI preview request', error);
+      }
+    } finally {
+      if (openAiPreviewControllerRef.current === controller) {
+        openAiPreviewControllerRef.current = null;
+      }
+
+      setIsOpenAiPreviewLoading(false);
+    }
+  }, [canRequestOpenAiPreview, previewRequestNewsId, t]);
 
   const syncPosts = useCallback(
     async ({ resetPagination = false }: RefreshOptions = {}) => {
@@ -794,6 +920,14 @@ const PostsPage = () => {
   );
 
   useInitialSync(hasExecutedSequence, syncPosts);
+  useEffect(() => {
+    return () => {
+      if (openAiPreviewControllerRef.current) {
+        openAiPreviewControllerRef.current.abort();
+        openAiPreviewControllerRef.current = null;
+      }
+    };
+  }, []);
 
   useRefreshSummaryReset(refreshSummary, setIsSummaryDismissed);
 
@@ -1571,6 +1705,25 @@ const PostsPage = () => {
                     <button
                       type="button"
                       className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={handleLoadOpenAiPreview}
+                      disabled={!canRequestOpenAiPreview || isOpenAiPreviewLoading}
+                      aria-disabled={!canRequestOpenAiPreview || isOpenAiPreviewLoading}
+                    >
+                      {isOpenAiPreviewLoading ? (
+                        <span className="flex items-center gap-2">
+                          <span
+                            aria-hidden="true"
+                            className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
+                          />
+                          {t('posts.preview.request.loading', 'Loading request...')}
+                        </span>
+                      ) : (
+                        t('posts.preview.request.button', 'Preview Request')
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                       onClick={() => handleCopyPreviewContent(previewCombinedText, t('posts.preview.copySuccess', 'Copied to clipboard.'))}
                       disabled={previewIsLoading || previewCombinedText.length === 0}
                     >
@@ -1696,6 +1849,63 @@ const PostsPage = () => {
                             {t('posts.preview.empty', 'No eligible news item is available for preview.')}
                           </p>
                         )}
+                      </section>
+
+                      <section className="space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <h3 className="text-sm font-semibold text-foreground">
+                            {t('posts.preview.request.title', 'OpenAI request payload')}
+                          </h3>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="inline-flex items-center gap-2 text-xs text-foreground">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border border-border text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                                checked={isOpenAiPrettyPrintEnabled && canPrettyPrintOpenAiPreview}
+                                onChange={(event) => {
+                                  if (!canPrettyPrintOpenAiPreview) {
+                                    return;
+                                  }
+
+                                  setIsOpenAiPrettyPrintEnabled(event.target.checked);
+                                }}
+                                disabled={!canPrettyPrintOpenAiPreview || !openAiPreviewRaw}
+                              />
+                              <span
+                                className={
+                                  !canPrettyPrintOpenAiPreview || !openAiPreviewRaw
+                                    ? 'text-muted-foreground'
+                                    : undefined
+                                }
+                              >
+                                {t('posts.preview.request.prettyToggle', 'Pretty print (visual)')}
+                              </span>
+                            </label>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() =>
+                                handleCopyPreviewContent(
+                                  openAiPreviewRaw ?? '',
+                                  t('posts.preview.request.copySuccess', 'Copied raw JSON to clipboard.'),
+                                )
+                              }
+                              disabled={!openAiPreviewRaw || isOpenAiPreviewLoading}
+                            >
+                              {t('posts.preview.request.copyButton', 'Copy raw JSON')}
+                            </button>
+                          </div>
+                        </div>
+                        {openAiPreviewError ? (
+                          <p className="text-xs text-danger">{openAiPreviewError}</p>
+                        ) : null}
+                        <textarea
+                          value={openAiPreviewDisplay}
+                          readOnly
+                          aria-label={t('posts.preview.request.textareaLabel', 'OpenAI raw response')}
+                          placeholder={openAiPreviewPlaceholder}
+                          className="min-h-[15rem] w-full resize-none rounded-md border border-border bg-muted/20 p-3 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        />
                       </section>
                     </>
                   )}
