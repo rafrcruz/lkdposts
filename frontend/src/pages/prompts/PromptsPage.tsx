@@ -69,6 +69,10 @@ const arraysShallowEqual = (first: readonly string[], second: readonly string[])
   return true;
 };
 
+const isNonNullable = <T,>(value: T | null | undefined): value is T => {
+  return value !== null && value !== undefined;
+};
+
 type FormMode = 'create' | 'edit';
 
 type FormErrors = {
@@ -399,15 +403,15 @@ const PromptsPage = () => {
   };
   const promptMap = useMemo(() => {
     const map = new Map<string, Prompt>();
-    filteredPrompts.forEach((prompt) => {
+    for (const prompt of filteredPrompts) {
       map.set(prompt.id, prompt);
-    });
+    }
     return map;
   }, [filteredPrompts]);
   const orderedPrompts = useMemo(() => {
     return visibleOrder
       .map((id) => promptMap.get(id))
-      .filter((prompt): prompt is Prompt => Boolean(prompt));
+      .filter(isNonNullable);
   }, [promptMap, visibleOrder]);
   const shouldVirtualize = false; // Temporarily disable virtualization to ensure DnD collisions work reliably
   const isReorderEnabled = normalizedSearch.length === 0 && statusFilter === 'all';
@@ -639,11 +643,11 @@ const PromptsPage = () => {
   useEffect(() => {
     setSelectedPromptIds((current) => {
       const next = new Set<string>();
-      prompts.forEach((prompt) => {
+      for (const prompt of prompts) {
         if (current.has(prompt.id)) {
           next.add(prompt.id);
         }
-      });
+      }
 
       if (next.size === current.size && Array.from(current).every((id) => next.has(id))) {
         return current;
@@ -1112,7 +1116,7 @@ const PromptsPage = () => {
     const itemsById = new Map(prompts.map((item) => [item.id, item] as const));
     const nextPrompts = completeNextIds
       .map((id) => itemsById.get(id))
-      .filter((item): item is Prompt => Boolean(item));
+      .filter(isNonNullable);
 
     if (nextPrompts.length !== prompts.length) {
       setHasReorderSaveQueued(false);
@@ -1126,7 +1130,7 @@ const PromptsPage = () => {
     const normalizedNext = normalizePromptOrder(nextPrompts);
     const previousPrompts = completePreviousIds
       .map((id) => itemsById.get(id))
-      .filter((item): item is Prompt => Boolean(item));
+      .filter(isNonNullable);
     const normalizedPrevious = normalizePromptOrder(previousPrompts);
 
     const payloadItems = normalizedNext.map((item) => ({ id: item.id, position: item.position }));
@@ -1202,7 +1206,7 @@ const PromptsPage = () => {
 
           return { ...prompt, position: index + 1 };
         })
-        .filter((item): item is Prompt => Boolean(item));
+        .filter(isNonNullable);
 
       queryClient.setQueryData(PROMPTS_QUERY_KEY, finalPrompts);
       const finalVisible = [...finalIds];
