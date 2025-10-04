@@ -15,7 +15,7 @@ describe('extractTextFromResponses', () => {
         {
           content: [
             { type: 'text', text: 'Primeiro parágrafo.' },
-            { type: 'output_text', data: 'Segundo parágrafo.' },
+            { type: 'output_text', text: 'Segundo parágrafo.' },
           ],
         },
         {
@@ -44,6 +44,30 @@ describe('extractTextFromResponses', () => {
     };
 
     expect(extractTextFromResponses(response)).toBeNull();
+  });
+
+  it('extracts text from summary_text entries', () => {
+    const response = {
+      output: [
+        {
+          content: [{ type: 'summary_text', text: 'Resumo final.' }],
+        },
+      ],
+    };
+
+    expect(extractTextFromResponses(response)).toBe('Resumo final.');
+  });
+
+  it('extracts text from refusal entries', () => {
+    const response = {
+      output: [
+        {
+          content: [{ type: 'refusal', text: 'Solicitação recusada.' }],
+        },
+      ],
+    };
+
+    expect(extractTextFromResponses(response)).toBe('Solicitação recusada.');
   });
 });
 

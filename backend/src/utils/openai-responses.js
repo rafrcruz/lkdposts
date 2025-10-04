@@ -1,4 +1,4 @@
-const TEXTUAL_TYPES = new Set(['text', 'output_text']);
+const TEXTUAL_TYPES = new Set(['text', 'output_text', 'summary_text', 'refusal']);
 
 const pickFirstString = (value) => {
   if (typeof value === 'string' && value.trim().length > 0) {
@@ -22,7 +22,15 @@ const extractFromEntry = (entry) => {
     return null;
   }
 
-  const candidates = [entry.text, entry.data, entry.output_text, entry.value, entry.content];
+  const candidates = [
+    entry.text,
+    entry.data,
+    entry.output_text,
+    entry.summary_text,
+    entry.refusal,
+    entry.value,
+    entry.content,
+  ];
 
   for (const candidate of candidates) {
     const text = pickFirstString(candidate);
