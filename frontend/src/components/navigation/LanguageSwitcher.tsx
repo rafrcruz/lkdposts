@@ -1,5 +1,6 @@
 import { ChangeEvent, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { clsx } from 'clsx';
 
 const SUPPORTED_LOCALES = [
   { value: 'pt-BR', label: '\u{1F1E7}\u{1F1F7} Português' },
@@ -8,7 +9,12 @@ const SUPPORTED_LOCALES = [
 
 const LANGUAGE_STORAGE_KEY = 'lkdposts-language';
 
-export const LanguageSwitcher = () => {
+type LanguageSwitcherProps = {
+  className?: string;
+  selectClassName?: string;
+};
+
+export const LanguageSwitcher = ({ className, selectClassName }: LanguageSwitcherProps) => {
   const { i18n } = useTranslation();
 
   const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -38,12 +44,17 @@ export const LanguageSwitcher = () => {
   }, [i18n]);
 
   return (
-    <label className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+    <label
+      className={clsx('flex items-center gap-2 text-sm font-medium text-muted-foreground', className)}
+    >
       <span className="sr-only">Idioma</span>
       <select
         value={i18n.language}
         onChange={handleChange}
-        className="min-w-[10rem] rounded-md border border-border bg-surface px-3 py-1 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring"
+        className={clsx(
+          'w-full rounded-md border border-border bg-surface px-3 py-1 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring sm:w-auto sm:min-w-[10rem]',
+          selectClassName,
+        )}
         aria-label="Selecionar idioma"
       >
         {SUPPORTED_LOCALES.map((locale) => (

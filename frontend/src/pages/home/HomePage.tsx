@@ -42,7 +42,7 @@ const HomePage = () => {
           )}
         </div>
       </section>
-      <div className="card space-y-3 px-8 py-10 text-center">
+      <div className="card space-y-3 px-6 py-8 text-center sm:px-8 sm:py-10">
         <h2 className="text-lg font-semibold text-foreground">{t('home.auth.title', 'Autenticacao necessaria')}</h2>
         <p className="text-sm text-muted-foreground">{t('home.auth.description', 'Entre com sua conta Google autorizada para acessar o conteudo.')}</p>
       </div>
