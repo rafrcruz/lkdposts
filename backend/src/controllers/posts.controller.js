@@ -35,12 +35,8 @@ const toIsoString = (value) => {
   if (value instanceof Date) {
     return Number.isNaN(value.valueOf()) ? null : value.toISOString();
   }
-  try {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.valueOf()) ? null : parsed.toISOString();
-  } catch (error) {
-    return null;
-  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? null : parsed.toISOString();
 };
 
 const mapPostListItem = (article, { includeDiagnostics = false } = {}) => {

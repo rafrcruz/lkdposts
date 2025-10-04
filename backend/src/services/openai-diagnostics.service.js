@@ -43,7 +43,9 @@ const extractErrorDetails = (error) => {
     }
   }
 
-  if (!details.message && error instanceof Error && typeof error.message === 'string') {
+  const isMessageMissing =
+    details.message === null || details.message === undefined || details.message === '';
+  if (isMessageMissing && error instanceof Error && typeof error.message === 'string') {
     details.message = error.message;
   }
 

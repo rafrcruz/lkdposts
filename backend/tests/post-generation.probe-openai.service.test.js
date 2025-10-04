@@ -115,8 +115,15 @@ describe('postGenerationService.probeOpenAIResponse', () => {
 
     __mockClient.responses.create.mockRejectedValueOnce(error);
 
-    await expect(
-      postGenerationService.probeOpenAIResponse({ ownerKey, newsId: article.id }),
-    ).rejects.toEqual({ status: 429, payloadBruto: error.payload });
+    expect.assertions(3);
+
+    try {
+      await postGenerationService.probeOpenAIResponse({ ownerKey, newsId: article.id });
+      throw new Error('Expected probeOpenAIResponse to reject');
+    } catch (caughtError) {
+      expect(caughtError).toBeInstanceOf(postGenerationService.OpenAIResponseError);
+      expect(caughtError.status).toBe(429);
+      expect(caughtError.payloadBruto).toEqual(error.payload);
+    }
   });
 });

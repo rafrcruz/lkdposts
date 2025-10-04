@@ -48,19 +48,19 @@ jest.mock('../src/lib/prisma', () => {
         return !matchesScalar(actual, condition.not);
       }
 
-      if (condition.gt !== undefined && !(actual > condition.gt)) {
+      if (condition.gt !== undefined && actual <= condition.gt) {
         return false;
       }
 
-      if (condition.gte !== undefined && !(actual >= condition.gte)) {
+      if (condition.gte !== undefined && actual < condition.gte) {
         return false;
       }
 
-      if (condition.lt !== undefined && !(actual < condition.lt)) {
+      if (condition.lt !== undefined && actual >= condition.lt) {
         return false;
       }
 
-      if (condition.lte !== undefined && !(actual <= condition.lte)) {
+      if (condition.lte !== undefined && actual > condition.lte) {
         return false;
       }
 
@@ -156,6 +156,22 @@ jest.mock('../src/lib/prisma', () => {
     return matchDateCondition(actual, expected);
   };
 
+  const matchesUrlCondition = (feed, urlCondition) => {
+    if (!urlCondition) {
+      return true;
+    }
+
+    if (Array.isArray(urlCondition.in)) {
+      return urlCondition.in.includes(feed.url);
+    }
+
+    if (typeof urlCondition === 'string') {
+      return feed.url === urlCondition;
+    }
+
+    return true;
+  };
+
   const matchFeedWhere = (feed, where = {}) => {
     if (where == null) {
       return true;
@@ -191,22 +207,6 @@ jest.mock('../src/lib/prisma', () => {
 
     return true;
   };
-
-  function matchesUrlCondition(feed, urlCondition) {
-    if (!urlCondition) {
-      return true;
-    }
-
-    if (Array.isArray(urlCondition.in)) {
-      return urlCondition.in.includes(feed.url);
-    }
-
-    if (typeof urlCondition === 'string') {
-      return feed.url === urlCondition;
-    }
-
-    return true;
-  }
 
   function matchesLogicalGroup(feed, conditions, predicate) {
     if (!Array.isArray(conditions) || conditions.length === 0) {

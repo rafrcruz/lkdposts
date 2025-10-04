@@ -244,7 +244,7 @@ describe('Prompts API', () => {
         .expect('Content-Type', /json/)
         .expect(200);
 
-      const lastPrompt = list.body.data.items[list.body.data.items.length - 1];
+      const lastPrompt = list.body.data.items.at(-1);
       expect(lastPrompt.id).toBe(first.id);
       expect(lastPrompt.enabled).toBe(false);
     });

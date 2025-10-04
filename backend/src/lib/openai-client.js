@@ -64,6 +64,7 @@ const createClient = ({ timeoutMs }) => {
               parsedPayload = await response.text();
             }
           } catch (parseError) {
+            console.warn('Failed to parse OpenAI error response payload', parseError);
             parsedPayload = null;
           }
 

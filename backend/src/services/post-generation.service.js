@@ -388,6 +388,15 @@ class ArticleNotFoundError extends Error {
   }
 }
 
+class OpenAIResponseError extends Error {
+  constructor({ status, payload }) {
+    super(`OpenAI response failed with status ${status}`);
+    this.name = 'OpenAIResponseError';
+    this.status = status;
+    this.payloadBruto = payload;
+  }
+}
+
 
 const getErrorStatus = (error) => error?.status ?? error?.response?.status ?? error?.cause?.status ?? null;
 
@@ -572,13 +581,13 @@ const buildPostRequestPreview = async ({
 
   if (newsId != null) {
     const normalizedId = Number.parseInt(newsId, 10);
-    if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+    if (Number.isInteger(normalizedId) && normalizedId > 0) {
+      article = await articleRepository.findByIdForOwner({ id: normalizedId, ownerKey });
+      if (article == null) {
+        throw new ArticleNotFoundError(normalizedId);
+      }
+    } else {
       throw new TypeError('newsId must be a positive integer');
-    }
-
-    article = await articleRepository.findByIdForOwner({ id: normalizedId, ownerKey });
-    if (!article) {
-      throw new ArticleNotFoundError(normalizedId);
     }
   } else {
     const { eligible } = await collectEligibleArticles({
@@ -697,7 +706,7 @@ const probeOpenAIResponse = async ({ ownerKey, newsId, timeoutMs } = {}) => {
 
     if (typeof status === 'number') {
       const payloadBruto = buildRawOpenAIErrorPayload(error);
-      throw { status, payloadBruto };
+      throw new OpenAIResponseError({ status, payload: payloadBruto });
     }
 
     throw error;
@@ -1166,6 +1175,7 @@ module.exports = {
   buildArticleContext,
   buildPostRequestPreview,
   ArticleNotFoundError,
+  OpenAIResponseError,
   MAX_GENERATION_ATTEMPTS,
   probeOpenAIResponse,
 };
