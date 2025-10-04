@@ -389,7 +389,7 @@ describe('PromptsPage', () => {
       expect(reorderMutateMock).toHaveBeenCalled();
     }, { timeout: 1500 });
 
-    const lastCall = reorderMutateMock.mock.calls[reorderMutateMock.mock.calls.length - 1];
+    const lastCall = reorderMutateMock.mock.calls.at(-1);
     const reorderPayload = lastCall?.[0] as unknown;
     expect(Array.isArray(reorderPayload)).toBe(true);
     if (Array.isArray(reorderPayload)) {

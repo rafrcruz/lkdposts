@@ -1575,22 +1575,23 @@ const PromptsPage = () => {
     keyboardStartOrderRef.current = null;
     clearActiveOverlayDimensions();
 
-    if (!arraysShallowEqual(currentOrder, baselineOrder)) {
-      scheduleReorderPersist([...currentOrder], [...baselineOrder]);
-      announce(
-        t('prompts.reorder.keyboardDropped', {
-          title: prompt.title,
-          position: currentOrder.indexOf(prompt.id) + 1,
-          total: currentOrder.length,
-        }),
-      );
-    } else {
+    if (arraysShallowEqual(currentOrder, baselineOrder)) {
       announce(
         t('prompts.reorder.keyboardCancelled', {
           title: prompt.title,
         }),
       );
+      return;
     }
+
+    scheduleReorderPersist([...currentOrder], [...baselineOrder]);
+    announce(
+      t('prompts.reorder.keyboardDropped', {
+        title: prompt.title,
+        position: currentOrder.indexOf(prompt.id) + 1,
+        total: currentOrder.length,
+      }),
+    );
   };
 
   const movePromptWithKeyboard = (prompt: Prompt, direction: 'up' | 'down') => {
@@ -1808,6 +1809,194 @@ const PromptsPage = () => {
   };
 
   const hasPrompts = prompts.length > 0;
+
+  const renderPromptsContent = () => {
+    if (isLoading || isError) {
+      return null;
+    }
+
+    if (!hasPrompts) {
+      return (
+        <EmptyState
+          title={t('prompts.empty.title', 'No prompt registered yet.')}
+          description={t('prompts.empty.description', 'Create your first prompt to get started.')}
+          action={
+            <button
+              type="button"
+              onClick={handleOpenCreateForm}
+              className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 sm:w-auto"
+            >
+              {t('prompts.actions.createFirst', 'Create prompt')}
+            </button>
+          }
+        />
+      );
+    }
+
+    if (!hasFilteredPrompts) {
+      return (
+        <div className="rounded-md border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
+          {noResultsMessage}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            {t('prompts.list.reorderHint', 'Drag the handle or card to change the order.')}
+          </p>
+          {isReorderEnabled ? null : (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'prompts.list.reorderDisabledWithFilters',
+                'Clear filters to reorder the full list before reordering.',
+              )}
+            </p>
+          )}
+          {isReorderPending ? (
+            <p className="text-xs font-medium text-primary" aria-live="polite" aria-atomic="true">
+              {t('prompts.reorder.pending', 'Updating order...')}
+            </p>
+          ) : null}
+          {showForceSaveButton ? (
+            <button
+              type="button"
+              onClick={handleForceSaveClick}
+              className="inline-flex items-center justify-center rounded-md border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={reorderPrompts.isPending}
+            >
+              {forceSaveButtonLabel}
+            </button>
+          ) : null}
+        </div>
+
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+          modifiers={[restrictToVerticalAxis]}
+        >
+          <SortableContext items={visibleOrder} strategy={verticalListSortingStrategy}>
+            {shouldVirtualize ? (
+              <div
+                ref={(element) => {
+                  listContainerRef.current = element;
+                }}
+                className="relative max-h-[65vh] overflow-auto"
+                style={{ touchAction: 'pan-y' }}
+                aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
+              >
+                <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+                  <ul className="absolute inset-0 m-0 list-none p-0">
+                    {virtualizer.getVirtualItems().map((virtualItem) => {
+                      const prompt = orderedPrompts[virtualItem.index];
+
+                      if (!prompt) {
+                        return null;
+                      }
+
+                      const isLast = virtualItem.index === orderedPrompts.length - 1;
+                      const isActivePrompt = activeId === prompt.id;
+
+                      return (
+                        <li
+                          key={virtualItem.key}
+                          className="absolute inset-x-0"
+                          style={{
+                            transform: `translate3d(0, ${virtualItem.start}px, 0)`,
+                            willChange: 'transform',
+                          }}
+                          ref={(element) => {
+                            if (element) {
+                              virtualizer.measureElement(element);
+                            }
+                          }}
+                        >
+                          <SortablePromptCard
+                            prompt={prompt}
+                            canMoveUp={virtualItem.index > 0}
+                            canMoveDown={!isLast}
+                            onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
+                            onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
+                            isActive={isActivePrompt}
+                            showPlaceholder={isSorting && isActivePrompt}
+                            onKeyDown={(event) => handlePromptKeyDown(event, prompt)}
+                            isKeyboardActive={keyboardActiveId === prompt.id}
+                          />
+                          {isLast ? null : <div className="h-3" aria-hidden="true" />}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              <div
+                ref={(element) => {
+                  listContainerRef.current = element;
+                }}
+                className="relative max-h-[65vh] overflow-auto"
+                style={{ touchAction: 'pan-y' }}
+                aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
+              >
+                <ul className="space-y-3 pr-1">
+                  {orderedPrompts.map((prompt, index) => {
+                    const isActivePrompt = activeId === prompt.id;
+
+                    return (
+                      <li key={prompt.id}>
+                        <SortablePromptCard
+                          prompt={prompt}
+                          canMoveUp={index > 0}
+                          canMoveDown={index < orderedPrompts.length - 1}
+                          onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
+                          onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
+                          isActive={isActivePrompt}
+                          showPlaceholder={isSorting && isActivePrompt}
+                          onKeyDown={(event) => handlePromptKeyDown(event, prompt)}
+                          isKeyboardActive={keyboardActiveId === prompt.id}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </SortableContext>
+          {canReorder && orderedPrompts.length > 0 ? (
+            <div
+              ref={setDropZoneRef}
+              className={clsx(
+                'mt-3 rounded-md border border-dashed border-border/70 px-3 py-2 text-center text-xs text-muted-foreground transition',
+                isDropZoneOver ? 'border-primary bg-primary/5 text-primary' : '',
+              )}
+            >
+              {t('prompts.list.dropZone', 'Drop here to move the prompt to the end.')}
+            </div>
+          ) : null}
+          <DragOverlay dropAnimation={dropAnimation}>
+            {activePrompt
+              ? renderPromptCard(activePrompt, {
+                  isOverlay: true,
+                  style: {
+                    width: activeOverlayDimensionsRef.current
+                      ? activeOverlayDimensionsRef.current.width
+                      : '100%',
+                    height: activeOverlayDimensionsRef.current?.height,
+                  },
+                  isActive: true,
+                })
+              : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
+    );
+  };
   const hasFilteredPrompts = filteredPrompts.length > 0;
 
   const noResultsMessage = useMemo(() => {
@@ -2051,182 +2240,7 @@ const PromptsPage = () => {
         />
       ) : null}
 
-      {!isLoading && !isError && !hasPrompts ? (
-        <EmptyState
-          title={t('prompts.empty.title', 'No prompt registered yet.')}
-          description={t('prompts.empty.description', 'Create your first prompt to get started.')}
-          action={
-            <button
-              type="button"
-              onClick={handleOpenCreateForm}
-              className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 sm:w-auto"
-            >
-              {t('prompts.actions.createFirst', 'Create prompt')}
-            </button>
-          }
-        />
-      ) : null}
-
-      {!isLoading && !isError && hasPrompts ? (
-        hasFilteredPrompts ? (
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                {t('prompts.list.reorderHint', 'Drag the handle or card to change the order.')}
-              </p>
-              {!isReorderEnabled ? (
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    'prompts.list.reorderDisabledWithFilters',
-                    'Clear filters to reorder the full list before reordering.',
-                  )}
-                </p>
-              ) : null}
-              {isReorderPending ? (
-                <p className="text-xs font-medium text-primary" aria-live="polite" aria-atomic="true">
-                  {t('prompts.reorder.pending', 'Updating order...')}
-                </p>
-              ) : null}
-              {showForceSaveButton ? (
-                <button
-                  type="button"
-                  onClick={handleForceSaveClick}
-                  className="inline-flex items-center justify-center rounded-md border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={reorderPrompts.isPending}
-                >
-                  {forceSaveButtonLabel}
-                </button>
-              ) : null}
-            </div>
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDragEnd={handleDragEnd}
-              onDragCancel={handleDragCancel}
-              modifiers={[restrictToVerticalAxis]}
-            >
-              <SortableContext items={visibleOrder} strategy={verticalListSortingStrategy}>
-                {shouldVirtualize ? (
-                  <div
-                    ref={(element) => {
-                      listContainerRef.current = element;
-                    }}
-                    className="relative max-h-[65vh] overflow-auto"
-                    style={{ touchAction: 'pan-y' }}
-                    aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
-                  >
-                    <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
-                      <ul className="absolute inset-0 m-0 list-none p-0">
-                        {virtualizer.getVirtualItems().map((virtualItem) => {
-                          const prompt = orderedPrompts[virtualItem.index];
-
-                          if (!prompt) {
-                            return null;
-                          }
-
-                          const isLast = virtualItem.index === orderedPrompts.length - 1;
-                          const isActivePrompt = activeId === prompt.id;
-
-                          return (
-                            <li
-                              key={virtualItem.key}
-                              className="absolute inset-x-0"
-                              style={{
-                                transform: `translate3d(0, ${virtualItem.start}px, 0)`,
-                                willChange: 'transform',
-                              }}
-                              ref={(element) => {
-                                if (element) {
-                                  virtualizer.measureElement(element);
-                                }
-                              }}
-                            >
-                              <SortablePromptCard
-                                prompt={prompt}
-                                canMoveUp={virtualItem.index > 0}
-                                canMoveDown={!isLast}
-                                onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
-                                onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
-                                isActive={isActivePrompt}
-                                showPlaceholder={isSorting && isActivePrompt}
-                                onKeyDown={(event) => handlePromptKeyDown(event, prompt)}
-                                isKeyboardActive={keyboardActiveId === prompt.id}
-                              />
-                              {isLast ? null : <div className="h-3" aria-hidden="true" />}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    ref={(element) => {
-                      listContainerRef.current = element;
-                    }}
-                    className="relative max-h-[65vh] overflow-auto"
-                    style={{ touchAction: 'pan-y' }}
-                    aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
-                  >
-                    <ul className="space-y-3 pr-1">
-                      {orderedPrompts.map((prompt, index) => {
-                        const isActivePrompt = activeId === prompt.id;
-
-                        return (
-                          <li key={prompt.id}>
-                            <SortablePromptCard
-                              prompt={prompt}
-                              canMoveUp={index > 0}
-                              canMoveDown={index < orderedPrompts.length - 1}
-                              onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
-                              onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
-                              isActive={isActivePrompt}
-                              showPlaceholder={isSorting && isActivePrompt}
-                              onKeyDown={(event) => handlePromptKeyDown(event, prompt)}
-                              isKeyboardActive={keyboardActiveId === prompt.id}
-                            />
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
-              </SortableContext>
-              {canReorder && orderedPrompts.length > 0 ? (
-                <div
-                  ref={setDropZoneRef}
-                  className={clsx(
-                    'mt-3 rounded-md border border-dashed border-border/70 px-3 py-2 text-center text-xs text-muted-foreground transition',
-                    isDropZoneOver ? 'border-primary bg-primary/5 text-primary' : '',
-                  )}
-                >
-                  {t('prompts.list.dropZone', 'Drop here to move the prompt to the end.')}
-                </div>
-              ) : null}
-              <DragOverlay dropAnimation={dropAnimation}>
-                {activePrompt
-                  ? renderPromptCard(activePrompt, {
-                      isOverlay: true,
-                      style: {
-                        width: activeOverlayDimensionsRef.current
-                          ? activeOverlayDimensionsRef.current.width
-                          : '100%',
-                        height: activeOverlayDimensionsRef.current?.height,
-                      },
-                      isActive: true,
-                    })
-                  : null}
-              </DragOverlay>
-            </DndContext>
-          </div>
-        ) : (
-          <div className="rounded-md border border-dashed border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
-            {noResultsMessage}
-          </div>
-        )
-      ) : null}
+      {renderPromptsContent()}
       {isExportModalOpen && typeof document !== 'undefined'
         ? createPortal(
             <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">

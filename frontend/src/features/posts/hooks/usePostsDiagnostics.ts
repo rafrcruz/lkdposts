@@ -22,11 +22,18 @@ const DEFAULT_STATE: RawDiagnostics = {
   fetchCount: 0,
 };
 
-const isSessionStorageAvailable = () => {
+let hasLoggedSessionStorageError = false;
+
+const getSessionStorage = (): Storage | null => {
   try {
-    return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
-  } catch (_error) {
-    return false;
+    const { sessionStorage } = globalThis as typeof globalThis & { sessionStorage?: Storage };
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch (error) {
+    if (!hasLoggedSessionStorageError) {
+      console.warn('Unable to access sessionStorage for posts diagnostics.', error);
+      hasLoggedSessionStorageError = true;
+    }
+    return null;
   }
 };
 
@@ -36,7 +43,7 @@ const sanitizeCount = (value: unknown, minimum = 0) => {
   }
 
   const normalized = Math.trunc(value);
-  return normalized < minimum ? minimum : normalized;
+  return Math.max(normalized, minimum);
 };
 
 const sanitizeTotal = (value: unknown) => {
@@ -44,16 +51,17 @@ const sanitizeTotal = (value: unknown) => {
     return 0;
   }
 
-  return value < 0 ? 0 : value;
+  return Math.max(value, 0);
 };
 
 const readDiagnosticsFromStorage = (): RawDiagnostics | null => {
-  if (!isSessionStorageAvailable()) {
+  const storage = getSessionStorage();
+  if (!storage) {
     return null;
   }
 
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    const raw = storage.getItem(STORAGE_KEY);
     if (!raw) {
       return null;
     }
@@ -69,20 +77,28 @@ const readDiagnosticsFromStorage = (): RawDiagnostics | null => {
       totalFetchDurationMs: sanitizeTotal(parsed.totalFetchDurationMs),
       fetchCount: sanitizeCount(parsed.fetchCount),
     };
-  } catch (_error) {
+  } catch (error) {
+    if (!hasLoggedSessionStorageError) {
+      console.warn('Unable to read posts diagnostics from sessionStorage.', error);
+      hasLoggedSessionStorageError = true;
+    }
     return null;
   }
 };
 
 const persistDiagnostics = (state: RawDiagnostics) => {
-  if (!isSessionStorageAvailable()) {
+  const storage = getSessionStorage();
+  if (!storage) {
     return;
   }
 
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (_error) {
-    // ignore storage failures
+    storage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    if (!hasLoggedSessionStorageError) {
+      console.warn('Unable to persist posts diagnostics into sessionStorage.', error);
+      hasLoggedSessionStorageError = true;
+    }
   }
 };
 

@@ -295,9 +295,8 @@ describe('PostsPage', () => {
   let previewMutationResult: UseMutationResult<PostRequestPreview, HttpError, { newsId?: number }>;
 
   beforeEach(() => {
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      window.sessionStorage.clear();
-    }
+    const storage = globalThis.sessionStorage ?? globalThis.window?.sessionStorage;
+    storage?.clear();
     mockedUseAuth.mockReturnValue(buildAuthContext());
     mockedUseAppParams.mockReturnValue(buildAppParamsHook());
 
