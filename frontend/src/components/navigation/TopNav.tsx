@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,29 @@ type MainLink = { to: string; label: string };
 type AuthSections = {
   desktop: ReactNode;
   mobile: ReactNode;
+};
+
+type TranslateFunction = ReturnType<typeof useTranslation>['t'];
+
+type DesktopSettingsMenuProps = {
+  settingsLinks: MainLink[];
+  isSettingsOpen: boolean;
+  isSettingsActive: boolean;
+  toggleSettings: () => void;
+  closeSettings: () => void;
+  settingsToggleRef: RefObject<HTMLButtonElement | null>;
+  settingsMenuRef: RefObject<HTMLDivElement | null>;
+  t: TranslateFunction;
+};
+
+type MobileMenuProps = {
+  isMenuOpen: boolean;
+  mainLinks: MainLink[];
+  settingsLinks: MainLink[];
+  closeMenu: () => void;
+  menuRef: RefObject<HTMLDialogElement | null>;
+  t: TranslateFunction;
+  authSectionMobile: ReactNode;
 };
 
 const useMobileMenu = () => {
@@ -150,7 +173,160 @@ const useSettingsMenu = () => {
   return { isSettingsOpen, toggleSettings, closeSettings, settingsMenuRef, settingsToggleRef };
 };
 
-type TranslateFunction = ReturnType<typeof useTranslation>['t'];
+const DesktopSettingsMenu = ({
+  settingsLinks,
+  isSettingsOpen,
+  isSettingsActive,
+  toggleSettings,
+  closeSettings,
+  settingsToggleRef,
+  settingsMenuRef,
+  t,
+}: DesktopSettingsMenuProps) => {
+  if (settingsLinks.length === 0) {
+    return null;
+  }
+
+  return (
+    <li className="relative">
+      <button
+        type="button"
+        ref={settingsToggleRef}
+        className={clsx(
+          'flex items-center gap-1 rounded-md px-3 py-2 text-sm transition-colors duration-200',
+          isSettingsOpen || isSettingsActive
+            ? 'bg-primary/10 text-primary'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+        )}
+        onClick={toggleSettings}
+        aria-haspopup="menu"
+        aria-expanded={isSettingsOpen}
+      >
+        <span>{t('navigation.settings', 'Configurações')}</span>
+        <svg
+          aria-hidden
+          className={clsx('h-4 w-4 transition-transform', isSettingsOpen ? 'rotate-180' : 'rotate-0')}
+          viewBox="0 0 20 20"
+          fill="currentColor"
+        >
+          <path
+            fillRule="evenodd"
+            d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.086l3.71-3.855a.75.75 0 1 1 1.08 1.04l-4.25 4.417a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      {isSettingsOpen ? (
+        <div
+          ref={settingsMenuRef}
+          className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-md border border-border bg-background py-1 shadow-lg"
+          role="menu"
+          aria-label={t('navigation.settings', 'Configurações')}
+        >
+          {settingsLinks.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              className={({ isActive }) =>
+                clsx(
+                  'block px-4 py-2 text-sm transition-colors',
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-foreground hover:bg-muted hover:text-foreground',
+                )
+              }
+              onClick={closeSettings}
+              role="menuitem"
+            >
+              {link.label}
+            </NavLink>
+          ))}
+        </div>
+      ) : null}
+    </li>
+  );
+};
+
+const MobileMenu = ({
+  isMenuOpen,
+  mainLinks,
+  settingsLinks,
+  closeMenu,
+  menuRef,
+  t,
+  authSectionMobile,
+}: MobileMenuProps) => {
+  if (!isMenuOpen) {
+    return null;
+  }
+
+  return (
+    <div className="sm:hidden">
+      <div className="fixed inset-0 z-40 bg-background/60 backdrop-blur-sm" aria-hidden="true" />
+      <dialog
+        id="mobile-menu"
+        ref={menuRef}
+        className="fixed inset-x-4 top-20 z-50 overflow-hidden rounded-lg border border-border bg-background shadow-xl"
+        open
+        aria-modal="true"
+        aria-label={t('navigation.mobileMenu', 'Navigation menu')}
+      >
+        <div className="space-y-6 p-6">
+          <nav aria-label={t('navigation.primary')} className="space-y-4">
+            <div className="space-y-2">
+              {mainLinks.map((link) => (
+                <NavLink
+                  key={link.to}
+                  to={link.to}
+                  end={link.to === '/'}
+                  className={({ isActive }) =>
+                    clsx(
+                      'block rounded-md px-4 py-2 text-base font-medium transition-colors',
+                      isActive
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-foreground hover:bg-muted hover:text-foreground',
+                    )
+                  }
+                  onClick={closeMenu}
+                >
+                  {link.label}
+                </NavLink>
+              ))}
+            </div>
+            {settingsLinks.length > 0 ? (
+              <div className="space-y-2">
+                <p className="px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('navigation.settings', 'Configurações')}
+                </p>
+                {settingsLinks.map((link) => (
+                  <NavLink
+                    key={link.to}
+                    to={link.to}
+                    className={({ isActive }) =>
+                      clsx(
+                        'block rounded-md px-4 py-2 text-base font-medium transition-colors',
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-foreground hover:bg-muted hover:text-foreground',
+                      )
+                    }
+                    onClick={closeMenu}
+                  >
+                    {link.label}
+                  </NavLink>
+                ))}
+              </div>
+            ) : null}
+          </nav>
+          <div className="space-y-4">
+            <LanguageSwitcher className="flex-col items-start gap-3" selectClassName="sm:min-w-0" />
+            {authSectionMobile}
+          </div>
+        </div>
+      </dialog>
+    </div>
+  );
+};
 
 const createAuthSections = ({
   status,
@@ -306,64 +482,16 @@ export const TopNav = () => {
                   </NavLink>
                 </li>
               ))}
-              {settingsLinks.length > 0 ? (
-                <li className="relative">
-                  <button
-                    type="button"
-                    ref={settingsToggleRef}
-                    className={clsx(
-                      'flex items-center gap-1 rounded-md px-3 py-2 text-sm transition-colors duration-200',
-                      isSettingsOpen || isSettingsActive
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                    )}
-                    onClick={toggleSettings}
-                    aria-haspopup="menu"
-                    aria-expanded={isSettingsOpen}
-                  >
-                    <span>{t('navigation.settings', 'Configurações')}</span>
-                    <svg
-                      aria-hidden
-                      className={clsx('h-4 w-4 transition-transform', isSettingsOpen ? 'rotate-180' : 'rotate-0')}
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.086l3.71-3.855a.75.75 0 1 1 1.08 1.04l-4.25 4.417a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
-                  {isSettingsOpen ? (
-                    <div
-                      ref={settingsMenuRef}
-                      className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-md border border-border bg-background py-1 shadow-lg"
-                      role="menu"
-                      aria-label={t('navigation.settings', 'Configurações')}
-                    >
-                      {settingsLinks.map((link) => (
-                        <NavLink
-                          key={link.to}
-                          to={link.to}
-                          className={({ isActive }) =>
-                            clsx(
-                              'block px-4 py-2 text-sm transition-colors',
-                              isActive
-                                ? 'bg-primary text-primary-foreground'
-                                : 'text-foreground hover:bg-muted hover:text-foreground',
-                            )
-                          }
-                          onClick={closeSettings}
-                          role="menuitem"
-                        >
-                          {link.label}
-                        </NavLink>
-                      ))}
-                    </div>
-                  ) : null}
-                </li>
-              ) : null}
+              <DesktopSettingsMenu
+                settingsLinks={settingsLinks}
+                isSettingsOpen={isSettingsOpen}
+                isSettingsActive={isSettingsActive}
+                toggleSettings={toggleSettings}
+                closeSettings={closeSettings}
+                settingsToggleRef={settingsToggleRef}
+                settingsMenuRef={settingsMenuRef}
+                t={t}
+              />
             </ul>
           </nav>
         </div>
@@ -401,72 +529,15 @@ export const TopNav = () => {
           </button>
         </div>
       </div>
-      {isMenuOpen ? (
-        <div className="sm:hidden">
-          <div className="fixed inset-0 z-40 bg-background/60 backdrop-blur-sm" aria-hidden="true" />
-          <dialog
-            id="mobile-menu"
-            ref={menuRef}
-            className="fixed inset-x-4 top-20 z-50 overflow-hidden rounded-lg border border-border bg-background shadow-xl"
-            open
-            aria-modal="true"
-            aria-label={t('navigation.mobileMenu', 'Navigation menu')}
-          >
-            <div className="space-y-6 p-6">
-              <nav aria-label={t('navigation.primary')} className="space-y-4">
-                <div className="space-y-2">
-                  {mainLinks.map((link) => (
-                    <NavLink
-                      key={link.to}
-                      to={link.to}
-                      end={link.to === '/'}
-                      className={({ isActive }) =>
-                        clsx(
-                          'block rounded-md px-4 py-2 text-base font-medium transition-colors',
-                          isActive
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-foreground hover:bg-muted hover:text-foreground',
-                        )
-                      }
-                      onClick={closeMenu}
-                    >
-                      {link.label}
-                    </NavLink>
-                  ))}
-                </div>
-                {settingsLinks.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('navigation.settings', 'Configurações')}
-                    </p>
-                    {settingsLinks.map((link) => (
-                      <NavLink
-                        key={link.to}
-                        to={link.to}
-                        className={({ isActive }) =>
-                          clsx(
-                            'block rounded-md px-4 py-2 text-base font-medium transition-colors',
-                            isActive
-                              ? 'bg-primary text-primary-foreground'
-                              : 'text-foreground hover:bg-muted hover:text-foreground',
-                          )
-                        }
-                        onClick={closeMenu}
-                      >
-                        {link.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                ) : null}
-              </nav>
-              <div className="space-y-4">
-                <LanguageSwitcher className="flex-col items-start gap-3" selectClassName="sm:min-w-0" />
-                {authSectionMobile}
-              </div>
-            </div>
-          </dialog>
-        </div>
-      ) : null}
+      <MobileMenu
+        isMenuOpen={isMenuOpen}
+        mainLinks={mainLinks}
+        settingsLinks={settingsLinks}
+        closeMenu={closeMenu}
+        menuRef={menuRef}
+        t={t}
+        authSectionMobile={authSectionMobile}
+      />
     </header>
   );
 };
