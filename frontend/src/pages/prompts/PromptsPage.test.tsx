@@ -151,6 +151,18 @@ const renderPage = () => {
   );
 };
 
+const findButtonByName = (pattern: RegExp) => {
+  const button = screen
+    .getAllByRole('button', { name: pattern })
+    .find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement);
+
+  if (!button) {
+    throw new Error(`Button matching ${pattern} not found`);
+  }
+
+  return button;
+};
+
 describe('PromptsPage', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -193,7 +205,8 @@ describe('PromptsPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: /prompts/i })).toBeInTheDocument();
     expect(screen.getByText('Welcome message')).toBeInTheDocument();
     expect(screen.getByText(/Write an enthusiastic LinkedIn post/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /expand/i })).toBeInTheDocument();
+    const expandButtons = screen.getAllByRole('button', { name: /expand/i });
+    expect(expandButtons.length).toBeGreaterThan(0);
   });
 
   it('toggles prompt content expansion inline', async () => {
@@ -213,16 +226,16 @@ describe('PromptsPage', () => {
 
     renderPage();
 
-    const toggle = screen.getByRole('button', { name: /expand/i });
+    const toggle = findButtonByName(/expand/i);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     await user.click(toggle);
 
-    const collapseToggle = await screen.findByRole('button', { name: /collapse/i });
+    const collapseToggle = await waitFor(() => findButtonByName(/collapse/i));
     expect(collapseToggle).toHaveAttribute('aria-expanded', 'true');
 
     await user.click(collapseToggle);
-    const expandToggle = await screen.findByRole('button', { name: /expand/i });
+    const expandToggle = await waitFor(() => findButtonByName(/expand/i));
     expect(expandToggle).toHaveAttribute('aria-expanded', 'false');
   });
 
@@ -285,8 +298,8 @@ describe('PromptsPage', () => {
 
     renderPage();
 
-    const duplicateButtons = screen.getAllByRole('button', { name: /duplicate/i });
-    await user.click(duplicateButtons[0]);
+    const duplicateButton = findButtonByName(/^duplicate$/i);
+    await user.click(duplicateButton);
 
     expect(mutateMock).toHaveBeenCalledWith(
       {
@@ -337,8 +350,8 @@ describe('PromptsPage', () => {
 
     renderPage();
 
-    const duplicateButtons = screen.getAllByRole('button', { name: /duplicate/i });
-    await user.click(duplicateButtons[0]);
+    const duplicateButton = findButtonByName(/^duplicate$/i);
+    await user.click(duplicateButton);
 
     expect(createMutateMock).toHaveBeenCalledWith(
       {
@@ -354,18 +367,23 @@ describe('PromptsPage', () => {
     const itemsAfterDuplicate = screen.getAllByRole('listitem');
     expect(itemsAfterDuplicate).toHaveLength(3);
 
-    const duplicatedCard = screen.getByText('Primary prompt (cópia)').closest('[role="listitem"]');
+    const duplicatedCard = screen.getByText('Primary prompt (cópia)').closest('li');
     expect(duplicatedCard).not.toBeNull();
 
-    const moveUpButton = within(duplicatedCard as HTMLElement).getByRole('button', {
-      name: /move prompt up/i,
-    });
+    const moveUpButton = within(duplicatedCard as HTMLElement)
+      .getAllByRole('button', { name: /move prompt up/i })
+      .find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement);
 
-    await user.click(moveUpButton);
-    const updatedCard = screen.getByText('Primary prompt (cópia)').closest('[role="listitem"]');
+    expect(moveUpButton).toBeDefined();
+
+    await user.click(moveUpButton as HTMLButtonElement);
+    const updatedCard = screen.getByText('Primary prompt (cópia)').closest('li');
     expect(updatedCard).not.toBeNull();
-    const moveUpAgain = within(updatedCard as HTMLElement).getByRole('button', { name: /move prompt up/i });
-    await user.click(moveUpAgain);
+    const moveUpAgain = within(updatedCard as HTMLElement)
+      .getAllByRole('button', { name: /move prompt up/i })
+      .find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement);
+    expect(moveUpAgain).toBeDefined();
+    await user.click(moveUpAgain as HTMLButtonElement);
 
     await waitFor(() => {
       expect(reorderMutateMock).toHaveBeenCalled();
@@ -414,16 +432,14 @@ describe('PromptsPage', () => {
     mockedUseDeletePrompt.mockReturnValue(createMutationResult(mutateMock));
     mockedUseReorderPrompts.mockReturnValue(createMutationResult(vi.fn()));
 
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-
     renderPage();
 
-    await user.click(screen.getByRole('button', { name: /delete/i }));
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
 
-    expect(confirmSpy).toHaveBeenCalledWith('Are you sure you want to delete this prompt?');
+    const dialog = await screen.findByRole('dialog', { name: /delete prompt/i });
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }));
+
     expect(mutateMock).toHaveBeenCalledWith('prompt-5', expect.any(Object));
-
-    confirmSpy.mockRestore();
   });
 
   it('reorders prompts using move buttons', async () => {
@@ -447,10 +463,10 @@ describe('PromptsPage', () => {
 
     renderPage();
 
-    const moveDownButtons = screen.getAllByRole('button', { name: /move prompt down/i });
-    expect(moveDownButtons[0]).not.toBeDisabled();
+    const moveDownButton = findButtonByName(/move prompt down/i);
+    expect(moveDownButton).not.toBeDisabled();
 
-    await user.click(moveDownButtons[0]);
+    await user.click(moveDownButton);
 
     await waitFor(() => {
       expect(mutateAsyncMock).toHaveBeenCalled();
@@ -497,8 +513,8 @@ describe('PromptsPage', () => {
 
     renderPage();
 
-    const moveDownButtons = screen.getAllByRole('button', { name: /move prompt down/i });
-    await user.click(moveDownButtons[0]);
+    const moveDownButton = findButtonByName(/move prompt down/i);
+    await user.click(moveDownButton);
 
     const errorAlert = await screen.findByRole('alert');
     expect(errorAlert).toHaveTextContent(/reorder/i);

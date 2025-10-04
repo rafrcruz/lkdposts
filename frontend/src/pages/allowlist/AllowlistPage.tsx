@@ -7,8 +7,9 @@ import {
   useRemoveAllowlistEntry,
   useUpdateAllowlistEntryRole,
 } from '@/features/allowlist/hooks/useAllowlist';
-import type { AllowedRole } from '@/features/allowlist/types/allowlist';
+import type { AllowedRole, AllowlistEntry } from '@/features/allowlist/types/allowlist';
 import { HttpError } from '@/lib/api/http';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 
 const DEFAULT_ROLE: AllowedRole = 'user';
 
@@ -22,6 +23,7 @@ export const AllowlistPage = () => {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<AllowedRole>(DEFAULT_ROLE);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [entryPendingRemoval, setEntryPendingRemoval] = useState<AllowlistEntry | null>(null);
 
   const sortedEntries = useMemo(() => {
     if (!data) {
@@ -90,7 +92,20 @@ export const AllowlistPage = () => {
 
   const handleRemove = (id: number) => {
     setFeedback(null);
-    removeEntry.mutate(id, { onError: handleError });
+    removeEntry.mutate(id, {
+      onError: handleError,
+      onSuccess: () => {
+        setEntryPendingRemoval(null);
+      },
+    });
+  };
+
+  const handleCancelRemoval = () => {
+    if (removeEntry.isPending) {
+      return;
+    }
+
+    setEntryPendingRemoval(null);
   };
 
   const renderTableContent = () => {
@@ -153,13 +168,8 @@ export const AllowlistPage = () => {
                         if (entry.immutable) {
                           return;
                         }
-                        const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
-                        const confirmed =
-                          browserWindow?.confirm(t('allowlist.table.removeConfirm', 'Remover este email da allowlist?')) ?? false;
-                        if (!confirmed) {
-                          return;
-                        }
-                        handleRemove(entry.id);
+                        setFeedback(null);
+                        setEntryPendingRemoval(entry);
                       }}
                       disabled={entry.immutable || isBusy}
                     >
@@ -239,6 +249,34 @@ export const AllowlistPage = () => {
         </div>
         {renderTableContent()}
       </section>
+      <ConfirmDialog
+        open={entryPendingRemoval !== null}
+        title={t('allowlist.table.removeTitle', 'Remover email da allowlist')}
+        description={t('allowlist.table.removeConfirm', 'Remover este email da allowlist?')}
+        cancelLabel={t('allowlist.table.cancel', 'Cancelar')}
+        confirmLabel={t('allowlist.table.remove', 'Remover')}
+        confirmLoadingLabel={t('allowlist.table.removing', 'Removendo...')}
+        confirmDisabled={removeEntry.isPending}
+        cancelDisabled={removeEntry.isPending}
+        onCancel={handleCancelRemoval}
+        onConfirm={() => {
+          if (!entryPendingRemoval) {
+            return;
+          }
+          handleRemove(entryPendingRemoval.id);
+        }}
+      >
+        {entryPendingRemoval ? (
+          <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-sm">
+            <p className="font-medium text-foreground">{entryPendingRemoval.email}</p>
+            <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">
+              {entryPendingRemoval.role === 'admin'
+                ? t('allowlist.roles.admin', 'Administrador')
+                : t('allowlist.roles.user', 'Usuario')}
+            </p>
+          </div>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 };

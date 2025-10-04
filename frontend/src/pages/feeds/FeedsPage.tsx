@@ -1,6 +1,5 @@
-import { FormEvent, useEffect, useId, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { createPortal } from 'react-dom';
 
 import {
   useBulkCreateFeeds,
@@ -21,6 +20,7 @@ import { HttpError } from '@/lib/api/http';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { formatDate, useLocale } from '@/utils/formatters';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 
 const PAGE_SIZE = 10;
 
@@ -119,8 +119,10 @@ const FeedsPage = () => {
 
   const [listFeedback, setListFeedback] = useState<FeedbackMessage | null>(null);
   const [deleteFeedback, setDeleteFeedback] = useState<FeedbackMessage | null>(null);
+  const [resetFeedback, setResetFeedback] = useState<FeedbackMessage | null>(null);
   const [shouldRefreshFeeds, setShouldRefreshFeeds] = useState(false);
   const [feedPendingDeletion, setFeedPendingDeletion] = useState<Feed | null>(null);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
   const feedList = useFeedList({ cursor, limit: PAGE_SIZE });
   const { refetch: refetchFeedList } = feedList;
@@ -442,28 +444,33 @@ const FeedsPage = () => {
     });
   };
 
-  const deleteDialogTitleId = useId();
-  const deleteDialogDescriptionId = useId();
+  const handleOpenResetDialog = () => {
+    if (!isAdmin) {
+      return;
+    }
+
+    setListFeedback(null);
+    setDeleteFeedback(null);
+    setResetFeedback(null);
+    setIsResetDialogOpen(true);
+  };
+
+  const handleCancelResetDialog = () => {
+    if (isResettingFeeds) {
+      return;
+    }
+
+    setIsResetDialogOpen(false);
+    setResetFeedback(null);
+  };
 
   const handleResetFeeds = async () => {
     if (!isAdmin) {
       return;
     }
 
-    const browserWindow = 'window' in globalThis ? globalThis.window : undefined;
-    const confirmed =
-      browserWindow?.confirm(
-        t(
-          'feeds.reset.confirmation',
-          'Esta ação excluirá todas as notícias e posts gerados a partir dos feeds e reiniciará o processamento de todos os feeds. Deseja continuar?',
-        ),
-      ) ?? false;
-
-    if (!confirmed) {
-      return;
-    }
-
     setListFeedback(null);
+    setResetFeedback(null);
 
     try {
       const result = await resetFeedsMutation.mutateAsync();
@@ -477,14 +484,14 @@ const FeedsPage = () => {
         },
       );
       setListFeedback({ type: 'success', message });
+      setIsResetDialogOpen(false);
     } catch {
-      setListFeedback({
-        type: 'error',
-        message: t(
-          'feeds.reset.error',
-          'Não foi possível concluir o reset. Tente novamente ou contate o administrador.',
-        ),
-      });
+      const message = t(
+        'feeds.reset.error',
+        'Não foi possível concluir o reset. Tente novamente ou contate o administrador.',
+      );
+      setResetFeedback({ type: 'error', message });
+      setListFeedback({ type: 'error', message });
     }
   };
 
@@ -744,64 +751,6 @@ const FeedsPage = () => {
     setCursor(nextCursor);
   };
 
-  const deleteDialog =
-    feedPendingDeletion && typeof document !== 'undefined'
-      ? createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
-            <div className="fixed inset-0 bg-background/80 backdrop-blur" aria-hidden="true" />
-            <dialog
-              aria-labelledby={deleteDialogTitleId}
-              aria-describedby={deleteDialogDescriptionId}
-              className="relative z-10 w-full max-w-md space-y-6 rounded-lg border border-border bg-background p-6 shadow-lg"
-              aria-modal="true"
-              open
-            >
-              <div className="space-y-2">
-                <h2 id={deleteDialogTitleId} className="text-lg font-semibold text-foreground">
-                  {t('feeds.list.deleteConfirmTitle', 'Remover feed')}
-                </h2>
-                <p id={deleteDialogDescriptionId} className="text-sm text-muted-foreground">
-                  {t('feeds.list.deleteConfirm', 'Remover este feed?')}
-                </p>
-              </div>
-              <div className="space-y-1 rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-sm">
-                <span className="font-medium text-foreground">
-                  {feedPendingDeletion.title ?? t('feeds.list.untitled', 'Sem titulo')}
-                </span>
-                <span className="break-all text-xs text-muted-foreground">{feedPendingDeletion.url}</span>
-              </div>
-              {deleteFeedback ? (
-                <p
-                  className={buildFeedbackClassName(deleteFeedback)}
-                  {...buildFeedbackAccessibilityProps(deleteFeedback)}
-                >
-                  {deleteFeedback.message}
-                </p>
-              ) : null}
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                <button
-                  type="button"
-                  className="inline-flex w-full items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                  onClick={handleCloseDeleteDialog}
-                  disabled={isDeleting}
-                >
-                  {t('feeds.list.edit.cancel', 'Cancelar')}
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex w-full items-center justify-center rounded-md border border-destructive px-4 py-2 text-sm font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                  onClick={handleConfirmDelete}
-                  disabled={isDeleting}
-                >
-                  {isDeleting ? t('feeds.list.deleting', 'Removendo...') : t('feeds.list.delete', 'Excluir')}
-                </button>
-              </div>
-            </dialog>
-          </div>,
-          document.body,
-        )
-      : null;
-
   return (
     <div className="space-y-8">
       <header className="space-y-2">
@@ -911,14 +860,12 @@ const FeedsPage = () => {
             <button
               type="button"
               className="inline-flex w-full items-center justify-center rounded-md border border-destructive px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                onClick={() => {
-                  void handleResetFeeds();
-                }}
-                disabled={isResettingFeeds}
-              >
-                {isResettingFeeds
-                  ? t('feeds.reset.pending', 'Resetando...')
-                  : t('feeds.reset.action', 'Resetar feeds (admin)')}
+              onClick={handleOpenResetDialog}
+              disabled={isResettingFeeds}
+            >
+              {isResettingFeeds
+                ? t('feeds.reset.pending', 'Resetando...')
+                : t('feeds.reset.action', 'Resetar feeds (admin)')}
               </button>
             ) : null}
             {isFetching ? (
@@ -957,7 +904,61 @@ const FeedsPage = () => {
           </div>
         </div>
       </section>
-      {deleteDialog}
+      <ConfirmDialog
+        open={feedPendingDeletion !== null}
+        title={t('feeds.list.deleteConfirmTitle', 'Remover feed')}
+        description={t('feeds.list.deleteConfirm', 'Remover este feed?')}
+        cancelLabel={t('feeds.list.edit.cancel', 'Cancelar')}
+        confirmLabel={t('feeds.list.delete', 'Excluir')}
+        confirmLoadingLabel={t('feeds.list.deleting', 'Removendo...')}
+        confirmDisabled={isDeleting}
+        cancelDisabled={isDeleting}
+        onCancel={handleCloseDeleteDialog}
+        onConfirm={handleConfirmDelete}
+      >
+        {feedPendingDeletion ? (
+          <div className="space-y-1 rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-sm">
+            <span className="font-medium text-foreground">
+              {feedPendingDeletion.title ?? t('feeds.list.untitled', 'Sem titulo')}
+            </span>
+            <span className="break-all text-xs text-muted-foreground">{feedPendingDeletion.url}</span>
+          </div>
+        ) : null}
+        {deleteFeedback ? (
+          <p
+            className={buildFeedbackClassName(deleteFeedback)}
+            {...buildFeedbackAccessibilityProps(deleteFeedback)}
+          >
+            {deleteFeedback.message}
+          </p>
+        ) : null}
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={isResetDialogOpen}
+        title={t('feeds.reset.title', 'Resetar feeds')}
+        description={t(
+          'feeds.reset.confirmation',
+          'Esta ação excluirá todas as notícias e posts gerados a partir dos feeds e reiniciará o processamento de todos os feeds. Deseja continuar?',
+        )}
+        cancelLabel={t('feeds.list.edit.cancel', 'Cancelar')}
+        confirmLabel={t('feeds.reset.action', 'Resetar feeds (admin)')}
+        confirmLoadingLabel={t('feeds.reset.pending', 'Resetando...')}
+        confirmDisabled={isResettingFeeds}
+        cancelDisabled={isResettingFeeds}
+        onCancel={handleCancelResetDialog}
+        onConfirm={() => {
+          void handleResetFeeds();
+        }}
+      >
+        {resetFeedback ? (
+          <p
+            className={buildFeedbackClassName(resetFeedback)}
+            {...buildFeedbackAccessibilityProps(resetFeedback)}
+          >
+            {resetFeedback.message}
+          </p>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 };
