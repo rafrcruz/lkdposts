@@ -198,6 +198,35 @@ const EMPTY_ARTICLE_ANALYSIS: ArticleAnalysis = {
   isWeak: true,
 };
 
+const parseDateValue = (value: string | null | undefined): number | null => {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = Date.parse(value);
+
+  return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const resolvePostSortTimestamp = (item: PostListItem): number => {
+  const candidates: Array<string | null | undefined> = [
+    item.publishedAt,
+    item.post?.createdAt ?? null,
+    item.post?.generatedAt ?? null,
+    item.post?.updatedAt ?? null,
+  ];
+
+  for (const candidate of candidates) {
+    const timestamp = parseDateValue(candidate);
+
+    if (timestamp !== null) {
+      return timestamp;
+    }
+  }
+
+  return 0;
+};
+
 const normaliseWhitespace = (input: string) => input.replaceAll(/\s+/g, ' ').trim();
 
 const analyseArticleHtml = (html: string): ArticleAnalysis => {
@@ -656,7 +685,15 @@ const PostsPage = () => {
     enabled: hasExecutedSequence,
   });
   const postListData = postListQuery.data;
-  const posts = useMemo<PostListItem[]>(() => postListData?.items ?? [], [postListData?.items]);
+  const posts = useMemo<PostListItem[]>(() => {
+    if (!postListData?.items) {
+      return [];
+    }
+
+    return [...postListData.items].sort(
+      (first, second) => resolvePostSortTimestamp(second) - resolvePostSortTimestamp(first),
+    );
+  }, [postListData?.items]);
   const nextCursor: string | null = postListData?.meta.nextCursor ?? null;
   const isLoading = postListQuery.isLoading && !postListQuery.isFetched;
   const isError = postListQuery.isError;

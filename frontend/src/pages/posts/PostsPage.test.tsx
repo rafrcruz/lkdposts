@@ -368,6 +368,43 @@ describe('PostsPage', () => {
     expect(screen.getByText('Conteudo gerado 1')).toBeInTheDocument();
   });
 
+  it('orders posts by most recent publication date', async () => {
+    const olderPost = buildPost({
+      id: 10,
+      title: 'Notícia antiga',
+      publishedAt: '2024-01-01T00:00:00.000Z',
+    });
+    const newerPost = buildPost({
+      id: 11,
+      title: 'Notícia recente',
+      publishedAt: '2024-02-01T00:00:00.000Z',
+    });
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (!params.enabled) {
+        return createPostQueryResult();
+      }
+
+      return createPostQueryResult({
+        data: {
+          items: [olderPost, newerPost],
+          meta: { nextCursor: null, limit: 10 },
+        },
+        isSuccess: true,
+        isFetched: true,
+        status: 'success',
+      });
+    });
+
+    renderPage();
+
+    const articles = await screen.findAllByRole('article');
+
+    expect(articles).toHaveLength(2);
+    expect(within(articles[0]).getByRole('heading', { level: 2 })).toHaveTextContent('Notícia recente');
+    expect(within(articles[1]).getByRole('heading', { level: 2 })).toHaveTextContent('Notícia antiga');
+  });
+
   it('shows loading skeleton on mount and replaces it with content afterwards', async () => {
     renderPage();
 
