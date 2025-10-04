@@ -13,7 +13,7 @@ export const TopNav = () => {
   const { t } = useTranslation();
   const { status, user, logout, isAuthenticating } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDialogElement | null>(null);
   const toggleButtonRef = useRef<HTMLButtonElement | null>(null);
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
   const settingsToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -332,12 +332,15 @@ export const TopNav = () => {
         </div>
       </div>
       {isMenuOpen ? (
-        <div className="sm:hidden" role="dialog" aria-modal="true">
-          <div className="fixed inset-0 z-40 bg-background/60 backdrop-blur-sm" />
-          <div
+        <div className="sm:hidden">
+          <div className="fixed inset-0 z-40 bg-background/60 backdrop-blur-sm" aria-hidden="true" />
+          <dialog
             id="mobile-menu"
             ref={menuRef}
             className="fixed inset-x-4 top-20 z-50 overflow-hidden rounded-lg border border-border bg-background shadow-xl"
+            open
+            aria-modal="true"
+            aria-label={t('navigation.mobileMenu', 'Navigation menu')}
           >
             <div className="space-y-6 p-6">
               <nav aria-label={t('navigation.primary')} className="space-y-4">
@@ -391,7 +394,7 @@ export const TopNav = () => {
                 {authSectionMobile}
               </div>
             </div>
-          </div>
+          </dialog>
         </div>
       ) : null}
     </header>

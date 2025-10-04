@@ -81,12 +81,16 @@ const buildFeedbackClassName = (feedback: FeedbackMessage | null) => {
   return feedback.type === 'success' ? 'text-sm text-primary' : 'text-sm text-destructive';
 };
 
-const buildFeedbackRole = (feedback: FeedbackMessage | null) => {
+const buildFeedbackAccessibilityProps = (feedback: FeedbackMessage | null) => {
   if (!feedback) {
-    return undefined;
+    return {} as const;
   }
 
-  return feedback.type === 'error' ? 'alert' : 'status';
+  if (feedback.type === 'error') {
+    return { role: 'alert', 'aria-live': 'assertive' as const, 'aria-atomic': true as const };
+  }
+
+  return { 'aria-live': 'polite' as const, 'aria-atomic': true as const };
 };
 
 const FeedsPage = () => {
@@ -632,7 +636,10 @@ const FeedsPage = () => {
                         </label>
                       </div>
                       {editFeedback ? (
-                        <p className={buildFeedbackClassName(editFeedback)} role={buildFeedbackRole(editFeedback)}>
+                        <p
+                          className={buildFeedbackClassName(editFeedback)}
+                          {...buildFeedbackAccessibilityProps(editFeedback)}
+                        >
                           {editFeedback.message}
                         </p>
                       ) : null}
@@ -740,13 +747,14 @@ const FeedsPage = () => {
   const deleteDialog =
     feedPendingDeletion && typeof document !== 'undefined'
       ? createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur">
-            <div
-              role="dialog"
-              aria-modal="true"
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+            <div className="fixed inset-0 bg-background/80 backdrop-blur" aria-hidden="true" />
+            <dialog
               aria-labelledby={deleteDialogTitleId}
               aria-describedby={deleteDialogDescriptionId}
-              className="w-full max-w-md space-y-6 rounded-lg border border-border bg-background p-6 shadow-lg"
+              className="relative z-10 w-full max-w-md space-y-6 rounded-lg border border-border bg-background p-6 shadow-lg"
+              aria-modal="true"
+              open
             >
               <div className="space-y-2">
                 <h2 id={deleteDialogTitleId} className="text-lg font-semibold text-foreground">
@@ -763,7 +771,10 @@ const FeedsPage = () => {
                 <span className="break-all text-xs text-muted-foreground">{feedPendingDeletion.url}</span>
               </div>
               {deleteFeedback ? (
-                <p className={buildFeedbackClassName(deleteFeedback)} role={buildFeedbackRole(deleteFeedback)}>
+                <p
+                  className={buildFeedbackClassName(deleteFeedback)}
+                  {...buildFeedbackAccessibilityProps(deleteFeedback)}
+                >
                   {deleteFeedback.message}
                 </p>
               ) : null}
@@ -785,7 +796,7 @@ const FeedsPage = () => {
                   {isDeleting ? t('feeds.list.deleting', 'Removendo...') : t('feeds.list.delete', 'Excluir')}
                 </button>
               </div>
-            </div>
+            </dialog>
           </div>,
           document.body,
         )
@@ -837,7 +848,10 @@ const FeedsPage = () => {
           </div>
         </form>
         {singleFeedback ? (
-          <p className={buildFeedbackClassName(singleFeedback)} role={buildFeedbackRole(singleFeedback)}>
+          <p
+            className={buildFeedbackClassName(singleFeedback)}
+            {...buildFeedbackAccessibilityProps(singleFeedback)}
+          >
             {singleFeedback.message}
           </p>
         ) : null}
@@ -871,7 +885,10 @@ const FeedsPage = () => {
           </div>
         </form>
         {bulkFeedback ? (
-          <p className={buildFeedbackClassName(bulkFeedback)} role={buildFeedbackRole(bulkFeedback)}>
+          <p
+            className={buildFeedbackClassName(bulkFeedback)}
+            {...buildFeedbackAccessibilityProps(bulkFeedback)}
+          >
             {bulkFeedback.message}
           </p>
         ) : null}
@@ -908,7 +925,10 @@ const FeedsPage = () => {
               <span className="text-xs text-muted-foreground">{t('feeds.list.syncing', 'Sincronizando...')}</span>
             ) : null}
             {listFeedback ? (
-              <p className={buildFeedbackClassName(listFeedback)} role={buildFeedbackRole(listFeedback)}>
+              <p
+                className={buildFeedbackClassName(listFeedback)}
+                {...buildFeedbackAccessibilityProps(listFeedback)}
+              >
                 {listFeedback.message}
               </p>
             ) : null}

@@ -111,7 +111,6 @@ export const PromptCard = ({
     <div
       ref={assignRef}
       {...containerAttributes}
-      role="listitem"
       className={clsx(
         'relative card flex flex-col gap-4 p-4 outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary',
         'hover:shadow-sm',
@@ -122,12 +121,11 @@ export const PromptCard = ({
         isSorting ? 'transition-transform duration-200 ease-out' : '',
         !isEnabled ? 'border-dashed border-border/70 bg-muted/30' : '',
       )}
-      tabIndex={0}
       style={options?.style}
       data-dragging={isDragging}
       data-keyboard-grabbed={isKeyboardActive ? 'true' : undefined}
       aria-grabbed={isGrabbed}
-      onKeyDown={options?.onKeyDown}
+      onKeyDown={canReorder ? options?.onKeyDown : undefined}
     >
       {showPlaceholder ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-primary/5">
