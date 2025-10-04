@@ -512,13 +512,15 @@ const PromptsPage = () => {
       }
     };
 
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('resize', handleWindowResize);
+    const browserWindow = globalThis as Window & typeof globalThis;
+
+    browserWindow.addEventListener('pointermove', handlePointerMove);
+    browserWindow.addEventListener('resize', handleWindowResize);
     container.addEventListener('scroll', handleContainerScroll, { passive: true });
 
     return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('resize', handleWindowResize);
+      browserWindow.removeEventListener('pointermove', handlePointerMove);
+      browserWindow.removeEventListener('resize', handleWindowResize);
       container.removeEventListener('scroll', handleContainerScroll);
       listContainerBoundsRef.current = null;
     };
@@ -664,10 +666,12 @@ const PromptsPage = () => {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    const browserWindow = globalThis as Window & typeof globalThis;
+
+    browserWindow.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      browserWindow.removeEventListener('keydown', handleKeyDown);
     };
   }, [isExportModalOpen]);
 

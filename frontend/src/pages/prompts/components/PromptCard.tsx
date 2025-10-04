@@ -46,6 +46,94 @@ export type PromptCardProps = {
   contentPreviewLimit: number;
 };
 
+type PromptContentInfo = {
+  displayContent: string;
+  shouldShowToggle: boolean;
+  statusLabel: string;
+  toggleAriaLabel: string;
+};
+
+type PromptContainerAttributes = DraggableAttributes & {
+  role?: string;
+  tabIndex?: number;
+  onKeyDown?: PromptCardRenderOptions['onKeyDown'];
+};
+
+type PromptReorderConfig = {
+  containerAttributes: Partial<PromptContainerAttributes>;
+  role: string;
+  tabIndex?: number;
+  onKeyDown?: PromptCardRenderOptions['onKeyDown'];
+  handleListeners: SyntheticListenerMap;
+  showPlaceholder: boolean;
+  isDragging: boolean;
+  isSorting: boolean;
+  isOverlay: boolean;
+  isKeyboardActive: boolean;
+  isGrabbed: boolean;
+};
+
+const resolvePromptContentInfo = (
+  prompt: Prompt,
+  t: TFunction,
+  contentPreviewLimit: number,
+): PromptContentInfo => {
+  const normalizedContent = prompt.content.trim();
+  const displayContent = normalizedContent.length > 0 ? prompt.content : '...';
+  const shouldShowToggle =
+    normalizedContent.length > contentPreviewLimit || normalizedContent.includes('\n');
+  const statusLabel = prompt.enabled
+    ? t('prompts.status.enabled', 'Enabled')
+    : t('prompts.status.disabled', 'Disabled');
+  const toggleAriaLabel = prompt.enabled
+    ? t('prompts.toggle.disable', 'Disable prompt')
+    : t('prompts.toggle.enable', 'Enable prompt');
+
+  return { displayContent, shouldShowToggle, statusLabel, toggleAriaLabel };
+};
+
+const resolveReorderConfig = (
+  options: PromptCardRenderOptions | undefined,
+  canReorder: boolean,
+): PromptReorderConfig => {
+  const containerAttributes: Partial<PromptContainerAttributes> = options?.containerAttributes ?? {};
+  const { role, tabIndex, onKeyDown, ...restContainerAttributes } = containerAttributes;
+  const isOverlay = options?.isOverlay ?? false;
+  const isDragging = options?.isDragging ?? false;
+  const isSorting = options?.isSorting ?? false;
+  const isKeyboardActive = options?.isKeyboardActive ?? false;
+
+  return {
+    containerAttributes: restContainerAttributes,
+    role: role ?? (canReorder ? 'button' : 'group'),
+    tabIndex: tabIndex ?? (canReorder ? 0 : undefined),
+    onKeyDown: canReorder ? options?.onKeyDown ?? onKeyDown : undefined,
+    handleListeners: (canReorder ? options?.handleListeners ?? {} : {}) as SyntheticListenerMap,
+    showPlaceholder: Boolean(options?.showPlaceholder && !isOverlay),
+    isDragging,
+    isSorting,
+    isOverlay,
+    isKeyboardActive,
+    isGrabbed: Boolean(isDragging || isKeyboardActive || options?.isActive),
+  };
+};
+
+const createPromptRefAssigner = (
+  promptId: string,
+  registerItemRef: (id: string) => (element: HTMLDivElement | null) => void,
+  options: PromptCardRenderOptions | undefined,
+) => {
+  const register = registerItemRef(promptId);
+
+  return (element: HTMLDivElement | null) => {
+    if (!options?.isOverlay) {
+      register(element);
+    }
+
+    options?.setNodeRef?.(element);
+  };
+};
+
 export const PromptCard = ({
   prompt,
   options,
@@ -67,58 +155,19 @@ export const PromptCard = ({
   deletingId,
   contentPreviewLimit,
 }: PromptCardProps) => {
-  const normalizedContent = prompt.content.trim();
-  const displayContent = normalizedContent.length > 0 ? prompt.content : '...';
-  const shouldShowToggle =
-    normalizedContent.length > contentPreviewLimit || normalizedContent.includes('\n');
+  const { displayContent, shouldShowToggle, statusLabel, toggleAriaLabel } = resolvePromptContentInfo(
+    prompt,
+    t,
+    contentPreviewLimit,
+  );
   const contentElementId = `prompt-content-${prompt.id}`;
   const isEnabled = prompt.enabled;
-  const statusLabel = isEnabled
-    ? t('prompts.status.enabled', 'Enabled')
-    : t('prompts.status.disabled', 'Disabled');
-  const toggleAriaLabel = isEnabled
-    ? t('prompts.toggle.disable', 'Disable prompt')
-    : t('prompts.toggle.enable', 'Enable prompt');
-
   const canMoveUp = options?.canMoveUp ?? false;
   const canMoveDown = options?.canMoveDown ?? false;
-  const showPlaceholder = Boolean(options?.showPlaceholder && !options?.isOverlay);
-  const isDragging = options?.isDragging ?? false;
-  const isSorting = options?.isSorting ?? false;
-  const isOverlay = options?.isOverlay ?? false;
-  const isKeyboardActive = options?.isKeyboardActive ?? false;
-  const isGrabbed = Boolean(isDragging || isKeyboardActive || options?.isActive);
   const reorderHandleLabel = t('prompts.list.dragHandleLabel', 'Drag handle: hold and move to reorder.');
   const dropPlaceholderLabel = t('prompts.list.dropPlaceholder', 'Release to place the prompt here.');
-  type PromptContainerAttributes = DraggableAttributes & {
-    role?: string;
-    tabIndex?: number;
-    onKeyDown?: PromptCardRenderOptions['onKeyDown'];
-  };
-  const containerAttributes: Partial<PromptContainerAttributes> =
-    options?.containerAttributes ?? {};
-  const {
-    role: providedRole,
-    tabIndex: providedTabIndex,
-    onKeyDown: providedOnKeyDown,
-    ...restContainerAttributes
-  } = containerAttributes;
-  const interactiveRole = providedRole ?? (canReorder ? 'button' : 'group');
-  const interactiveTabIndex = providedTabIndex ?? (canReorder ? 0 : undefined);
-  const interactiveKeyDown = canReorder
-    ? options?.onKeyDown ?? providedOnKeyDown
-    : undefined;
-  const handleListeners = canReorder ? options?.handleListeners ?? {} : {};
-
-  const assignRef = (element: HTMLDivElement | null) => {
-    if (!options?.isOverlay) {
-      registerItemRef(prompt.id)(element);
-    }
-
-    if (options?.setNodeRef) {
-      options.setNodeRef(element);
-    }
-  };
+  const reorderConfig = resolveReorderConfig(options, canReorder);
+  const assignRef = createPromptRefAssigner(prompt.id, registerItemRef, options);
 
   const handleSelectionChange = (event: ChangeEvent<HTMLInputElement>) => {
     onSelectionChange(event.target.checked);
@@ -127,166 +176,316 @@ export const PromptCard = ({
   return (
     <div
       ref={assignRef}
-      {...restContainerAttributes}
-      role={interactiveRole}
-      tabIndex={interactiveTabIndex}
+      {...reorderConfig.containerAttributes}
+      role={reorderConfig.role}
+      tabIndex={reorderConfig.tabIndex}
       className={clsx(
         'relative card flex flex-col gap-4 p-4 outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary',
         'hover:shadow-sm',
-        isOverlay ? 'pointer-events-none' : '',
-        showPlaceholder ? 'border-2 border-dashed border-primary/60 bg-primary/5 shadow-none' : '',
-        isDragging || isOverlay ? 'scale-[1.01] shadow-xl ring-2 ring-primary/40' : '',
-        isKeyboardActive ? 'ring-2 ring-primary/70 ring-offset-2 ring-offset-background shadow-lg border-primary/70' : '',
-        isSorting ? 'transition-transform duration-200 ease-out' : '',
+        reorderConfig.isOverlay ? 'pointer-events-none' : '',
+        reorderConfig.showPlaceholder ? 'border-2 border-dashed border-primary/60 bg-primary/5 shadow-none' : '',
+        reorderConfig.isDragging || reorderConfig.isOverlay ? 'scale-[1.01] shadow-xl ring-2 ring-primary/40' : '',
+        reorderConfig.isKeyboardActive ? 'ring-2 ring-primary/70 ring-offset-2 ring-offset-background shadow-lg border-primary/70' : '',
+        reorderConfig.isSorting ? 'transition-transform duration-200 ease-out' : '',
         isEnabled ? '' : 'border-dashed border-border/70 bg-muted/30',
       )}
       style={options?.style}
-      data-dragging={isDragging}
-      data-keyboard-grabbed={isKeyboardActive ? 'true' : undefined}
-      aria-grabbed={isGrabbed}
-      onKeyDown={interactiveKeyDown}
+      data-dragging={reorderConfig.isDragging}
+      data-keyboard-grabbed={reorderConfig.isKeyboardActive ? 'true' : undefined}
+      aria-grabbed={reorderConfig.isGrabbed}
+      onKeyDown={reorderConfig.onKeyDown}
     >
-      {showPlaceholder ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-primary/5">
-          <span className="animate-pulse text-sm font-medium text-primary/80">{dropPlaceholderLabel}</span>
-        </div>
-      ) : null}
-      <div className={clsx('flex flex-col gap-4', showPlaceholder ? 'invisible' : '')}>
+      <PromptPlaceholderOverlay show={reorderConfig.showPlaceholder} label={dropPlaceholderLabel} />
+      <div className={clsx('flex flex-col gap-4', reorderConfig.showPlaceholder ? 'invisible' : '')}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-1 gap-3">
             <div className="flex items-start gap-3">
-              <div className="pt-1">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/40"
-                  checked={isSelected}
-                  onChange={handleSelectionChange}
-                  aria-label={t('prompts.selection.toggle', 'Select prompt')}
-                />
-              </div>
-              <div className="flex flex-col items-center gap-1">
-                <button
-                  type="button"
-                  className={clsx(
-                    'group flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-muted/40 text-foreground/80 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-                    canReorder
-                      ? 'cursor-grab hover:border-primary hover:text-foreground active:cursor-grabbing'
-                      : 'cursor-not-allowed opacity-60',
-                    isDragging ? 'cursor-grabbing border-primary bg-background text-foreground shadow-sm' : '',
-                  )}
-                  {...handleListeners}
-                  disabled={!canReorder}
-                  aria-label={reorderHandleLabel}
-                  data-active={options?.isActive ? 'true' : undefined}
-                >
-                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
-                    <path d="M7 4h6M7 10h6M7 16h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
-                </button>
-                {canReorder ? (
-                  <div className="sr-only space-y-1">
-                    <button type="button" onClick={options?.onMoveUp} disabled={!canMoveUp || !canReorder}>
-                      {t('prompts.list.moveUp', 'Move prompt up')}
-                    </button>
-                    <button type="button" onClick={options?.onMoveDown} disabled={!canMoveDown || !canReorder}>
-                      {t('prompts.list.moveDown', 'Move prompt down')}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            <div className="flex flex-1 flex-col gap-3">
-              <h3 className="text-base font-semibold text-foreground">{prompt.title}</h3>
-              <div className="space-y-2">
-                <div
-                  id={contentElementId}
-                  className={clsx(
-                    'whitespace-pre-wrap break-words text-sm text-muted-foreground',
-                    !isExpanded && shouldShowToggle ? 'line-clamp-3' : '',
-                  )}
-                >
-                  {displayContent}
-                </div>
-                {shouldShowToggle ? (
-                  <button
-                    type="button"
-                    onClick={onToggleExpansion}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary transition hover:text-primary/80"
-                    aria-expanded={isExpanded}
-                    aria-controls={contentElementId}
-                  >
-                    {isExpanded
-                      ? t('prompts.actions.collapse', 'Collapse')
-                      : t('prompts.actions.expand', 'Expand')}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col items-stretch gap-3 sm:items-end">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={isEnabled}
-              aria-label={toggleAriaLabel}
-              onClick={() => onToggleEnabled(prompt, !isEnabled)}
-              disabled={isTogglePending}
-              className={clsx(
-                'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition',
-                isEnabled
-                  ? 'border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
-                  : 'border-border text-muted-foreground hover:bg-muted',
-                isTogglePending ? 'cursor-not-allowed opacity-60' : '',
-              )}
-            >
-              <span
-                aria-hidden="true"
-                className={clsx('inline-flex h-2.5 w-2.5 rounded-full', isEnabled ? 'bg-emerald-500' : 'bg-muted-foreground')}
+              <PromptSelectionCheckbox
+                isSelected={isSelected}
+                onChange={handleSelectionChange}
+                label={t('prompts.selection.toggle', 'Select prompt')}
               />
-              {statusLabel}
-            </button>
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
-              <button
-                type="button"
-                onClick={() => onEdit(prompt)}
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
-              >
-                {t('prompts.actions.edit', 'Edit')}
-              </button>
-              <button
-                type="button"
-                onClick={() => onDuplicate(prompt)}
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
-                disabled={isDuplicating}
-              >
-                {isDuplicateInFlight
-                  ? t('prompts.actions.duplicating', 'Duplicating...')
-                  : t('prompts.actions.duplicate', 'Duplicate')}
-              </button>
-              <button
-                type="button"
-                onClick={() => onDelete(prompt)}
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10"
-                disabled={isDeleting}
-              >
-                {isDeleting && deletingId === prompt.id
-                  ? t('prompts.actions.deleting', 'Deleting...')
-                  : t('prompts.actions.delete', 'Delete')}
-              </button>
+              <PromptReorderHandle
+                canReorder={canReorder}
+                handleListeners={reorderConfig.handleListeners}
+                isDragging={reorderConfig.isDragging}
+                isActive={options?.isActive ?? false}
+                reorderHandleLabel={reorderHandleLabel}
+                canMoveUp={canMoveUp}
+                canMoveDown={canMoveDown}
+                onMoveUp={options?.onMoveUp}
+                onMoveDown={options?.onMoveDown}
+                t={t}
+              />
             </div>
+            <PromptContentSection
+              prompt={prompt}
+              displayContent={displayContent}
+              shouldShowToggle={shouldShowToggle}
+              isExpanded={isExpanded}
+              onToggleExpansion={onToggleExpansion}
+              contentElementId={contentElementId}
+              t={t}
+            />
           </div>
+          <PromptSideControls
+            isEnabled={isEnabled}
+            toggleAriaLabel={toggleAriaLabel}
+            statusLabel={statusLabel}
+            onToggleEnabled={() => onToggleEnabled(prompt, !isEnabled)}
+            isTogglePending={isTogglePending}
+            prompt={prompt}
+            onEdit={onEdit}
+            onDuplicate={onDuplicate}
+            onDelete={onDelete}
+            isDuplicating={isDuplicating}
+            isDuplicateInFlight={isDuplicateInFlight}
+            isDeleting={isDeleting}
+            deletingId={deletingId}
+            t={t}
+          />
         </div>
-        <div className="space-y-2 text-xs text-muted-foreground">
-          <p>
-            <span className="font-medium text-foreground">{t('prompts.list.updatedAt', 'Last updated:')}</span>{' '}
-            {new Date(prompt.updatedAt).toLocaleString()}
-          </p>
-          <p>
-            <span className="font-medium text-foreground">{t('prompts.list.createdAt', 'Created:')}</span>{' '}
-            {new Date(prompt.createdAt).toLocaleString()}
-          </p>
-        </div>
+        <PromptMetadata prompt={prompt} t={t} />
       </div>
     </div>
   );
 };
+
+type PromptSelectionCheckboxProps = {
+  isSelected: boolean;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  label: string;
+};
+
+const PromptSelectionCheckbox = ({ isSelected, onChange, label }: PromptSelectionCheckboxProps) => (
+  <div className="pt-1">
+    <input
+      type="checkbox"
+      className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/40"
+      checked={isSelected}
+      onChange={onChange}
+      aria-label={label}
+    />
+  </div>
+);
+
+type PromptReorderHandleProps = {
+  canReorder: boolean;
+  handleListeners: SyntheticListenerMap;
+  isDragging: boolean;
+  isActive: boolean;
+  reorderHandleLabel: string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  t: TFunction;
+};
+
+const PromptReorderHandle = ({
+  canReorder,
+  handleListeners,
+  isDragging,
+  isActive,
+  reorderHandleLabel,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  t,
+}: PromptReorderHandleProps) => (
+  <div className="flex flex-col items-center gap-1">
+    <button
+      type="button"
+      className={clsx(
+        'group flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-muted/40 text-foreground/80 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+        canReorder
+          ? 'cursor-grab hover:border-primary hover:text-foreground active:cursor-grabbing'
+          : 'cursor-not-allowed opacity-60',
+        isDragging ? 'cursor-grabbing border-primary bg-background text-foreground shadow-sm' : '',
+      )}
+      {...handleListeners}
+      disabled={!canReorder}
+      aria-label={reorderHandleLabel}
+      data-active={isActive ? 'true' : undefined}
+    >
+      <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4">
+        <path d="M7 4h6M7 10h6M7 16h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </button>
+    {canReorder ? (
+      <div className="sr-only space-y-1">
+        <button type="button" onClick={onMoveUp} disabled={!canMoveUp}>
+          {t('prompts.list.moveUp', 'Move prompt up')}
+        </button>
+        <button type="button" onClick={onMoveDown} disabled={!canMoveDown}>
+          {t('prompts.list.moveDown', 'Move prompt down')}
+        </button>
+      </div>
+    ) : null}
+  </div>
+);
+
+type PromptContentSectionProps = {
+  prompt: Prompt;
+  displayContent: string;
+  shouldShowToggle: boolean;
+  isExpanded: boolean;
+  onToggleExpansion: () => void;
+  contentElementId: string;
+  t: TFunction;
+};
+
+const PromptContentSection = ({
+  prompt,
+  displayContent,
+  shouldShowToggle,
+  isExpanded,
+  onToggleExpansion,
+  contentElementId,
+  t,
+}: PromptContentSectionProps) => (
+  <div className="flex flex-1 flex-col gap-3">
+    <h3 className="text-base font-semibold text-foreground">{prompt.title}</h3>
+    <div className="space-y-2">
+      <div
+        id={contentElementId}
+        className={clsx(
+          'whitespace-pre-wrap break-words text-sm text-muted-foreground',
+          !isExpanded && shouldShowToggle ? 'line-clamp-3' : '',
+        )}
+      >
+        {displayContent}
+      </div>
+      {shouldShowToggle ? (
+        <button
+          type="button"
+          onClick={onToggleExpansion}
+          className="inline-flex items-center gap-1 text-xs font-medium text-primary transition hover:text-primary/80"
+          aria-expanded={isExpanded}
+          aria-controls={contentElementId}
+        >
+          {isExpanded ? t('prompts.actions.collapse', 'Collapse') : t('prompts.actions.expand', 'Expand')}
+        </button>
+      ) : null}
+    </div>
+  </div>
+);
+
+type PromptSideControlsProps = {
+  isEnabled: boolean;
+  toggleAriaLabel: string;
+  statusLabel: string;
+  onToggleEnabled: () => void;
+  isTogglePending: boolean;
+  prompt: Prompt;
+  onEdit: (prompt: Prompt) => void;
+  onDuplicate: (prompt: Prompt) => void;
+  onDelete: (prompt: Prompt) => void;
+  isDuplicating: boolean;
+  isDuplicateInFlight: boolean;
+  isDeleting: boolean;
+  deletingId: string | null;
+  t: TFunction;
+};
+
+const PromptSideControls = ({
+  isEnabled,
+  toggleAriaLabel,
+  statusLabel,
+  onToggleEnabled,
+  isTogglePending,
+  prompt,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  isDuplicating,
+  isDuplicateInFlight,
+  isDeleting,
+  deletingId,
+  t,
+}: PromptSideControlsProps) => (
+  <div className="flex flex-col items-stretch gap-3 sm:items-end">
+    <button
+      type="button"
+      role="switch"
+      aria-checked={isEnabled}
+      aria-label={toggleAriaLabel}
+      onClick={onToggleEnabled}
+      disabled={isTogglePending}
+      className={clsx(
+        'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition',
+        isEnabled
+          ? 'border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+          : 'border-border text-muted-foreground hover:bg-muted',
+        isTogglePending ? 'cursor-not-allowed opacity-60' : '',
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={clsx('inline-flex h-2.5 w-2.5 rounded-full', isEnabled ? 'bg-emerald-500' : 'bg-muted-foreground')}
+      />
+      {statusLabel}
+    </button>
+    <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
+      <button
+        type="button"
+        onClick={() => onEdit(prompt)}
+        className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+      >
+        {t('prompts.actions.edit', 'Edit')}
+      </button>
+      <button
+        type="button"
+        onClick={() => onDuplicate(prompt)}
+        className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+        disabled={isDuplicating}
+      >
+        {isDuplicateInFlight
+          ? t('prompts.actions.duplicating', 'Duplicating...')
+          : t('prompts.actions.duplicate', 'Duplicate')}
+      </button>
+      <button
+        type="button"
+        onClick={() => onDelete(prompt)}
+        className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/10"
+        disabled={isDeleting}
+      >
+        {isDeleting && deletingId === prompt.id
+          ? t('prompts.actions.deleting', 'Deleting...')
+          : t('prompts.actions.delete', 'Delete')}
+      </button>
+    </div>
+  </div>
+);
+
+type PromptMetadataProps = {
+  prompt: Prompt;
+  t: TFunction;
+};
+
+const PromptMetadata = ({ prompt, t }: PromptMetadataProps) => (
+  <div className="space-y-2 text-xs text-muted-foreground">
+    <p>
+      <span className="font-medium text-foreground">{t('prompts.list.updatedAt', 'Last updated:')}</span>{' '}
+      {new Date(prompt.updatedAt).toLocaleString()}
+    </p>
+    <p>
+      <span className="font-medium text-foreground">{t('prompts.list.createdAt', 'Created:')}</span>{' '}
+      {new Date(prompt.createdAt).toLocaleString()}
+    </p>
+  </div>
+);
+
+type PromptPlaceholderOverlayProps = {
+  show: boolean;
+  label: string;
+};
+
+const PromptPlaceholderOverlay = ({ show, label }: PromptPlaceholderOverlayProps) => (
+  show ? (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-primary/5">
+      <span className="animate-pulse text-sm font-medium text-primary/80">{label}</span>
+    </div>
+  ) : null
+);
