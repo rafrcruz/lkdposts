@@ -8,6 +8,7 @@ import { clsx } from 'clsx';
 import { useCleanupPosts, usePostList, useRefreshPosts } from '@/features/posts/hooks/usePosts';
 import type {
   CleanupResult,
+  PostGenerationProgress,
   PostListItem,
   RefreshFeedSummary,
   RefreshSummary,
@@ -24,7 +25,7 @@ import { HttpError } from '@/lib/api/http';
 import { formatDate, formatNumber, useLocale } from '@/utils/formatters';
 import { useAppParams } from '@/features/app-params/hooks/useAppParams';
 import { usePostsDiagnostics } from '@/features/posts/hooks/usePostsDiagnostics';
-import { fetchAdminOpenAiPreviewRaw } from '@/features/posts/api/posts';
+import { fetchAdminOpenAiPreviewRaw, fetchRefreshProgress } from '@/features/posts/api/posts';
 
 const PAGE_SIZE = 10;
 const FEED_OPTIONS_LIMIT = 50;
@@ -55,6 +56,17 @@ type CopyFeedback = { type: 'success' | 'error'; message: string } | null;
 type PreviewRequestSummary = {
   status: number | 'network_error' | null;
   durationMs: number;
+};
+
+const PROGRESS_PHASE_FALLBACKS: Record<PostGenerationProgress['phase'], string> = {
+  initializing: 'Preparing generation...',
+  resolving_params: 'Loading configuration...',
+  loading_prompts: 'Loading prompts...',
+  collecting_articles: 'Collecting eligible news...',
+  generating_posts: 'Generating posts...',
+  finalizing: 'Finalizing generation...',
+  completed: 'Generation completed.',
+  failed: 'Generation failed.',
 };
 
 const getTimestamp = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -632,10 +644,12 @@ const PostsPage = () => {
   const [previousCursors, setPreviousCursors] = useState<(string | null)[]>([]);
   const [hasExecutedSequence, setHasExecutedSequence] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRefreshRunning, setIsRefreshRunning] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [cleanupError, setCleanupError] = useState<string | null>(null);
   const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
   const [refreshSummary, setRefreshSummary] = useState<RefreshSummary | null>(null);
+  const [refreshProgress, setRefreshProgress] = useState<PostGenerationProgress | null>(null);
   const [isSummaryDismissed, setIsSummaryDismissed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<ExpandedSections>({});
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
@@ -659,6 +673,8 @@ const PostsPage = () => {
   const fetchStartTimeRef = useRef<number | null>(null);
   const previewRequestStartTimeRef = useRef<number | null>(null);
   const openAiPreviewControllerRef = useRef<AbortController | null>(null);
+  const refreshProgressIntervalRef = useRef<number | null>(null);
+  const isProgressRequestInFlightRef = useRef(false);
 
   const { metrics: diagnosticsMetrics, recordRefresh, recordCooldownBlock, recordFetchSuccess } = usePostsDiagnostics();
   const diagnosticsPanelId = 'posts-diagnostics-panel';
@@ -703,6 +719,94 @@ const PostsPage = () => {
 
   const { mutateAsync: refreshPostsAsync } = useRefreshPosts();
   const { mutateAsync: cleanupPostsAsync } = useCleanupPosts();
+  const progressStats = useMemo(() => {
+    if (!refreshProgress) {
+      return {
+        totalEligible: null,
+        processed: 0,
+        percent: null,
+        generated: 0,
+        failed: 0,
+        skipped: 0,
+      } as const;
+    }
+
+    const totalEligible = refreshProgress.eligibleCount ?? null;
+    const processedRaw = refreshProgress.processedCount;
+    const processed =
+      totalEligible !== null && totalEligible >= 0
+        ? Math.min(processedRaw, totalEligible)
+        : processedRaw;
+    const percent =
+      totalEligible && totalEligible > 0
+        ? Math.min(100, Math.round((processed / totalEligible) * 100))
+        : null;
+
+    return {
+      totalEligible,
+      processed,
+      percent,
+      generated: refreshProgress.generatedCount,
+      failed: refreshProgress.failedCount,
+      skipped: refreshProgress.skippedCount,
+    } as const;
+  }, [refreshProgress]);
+
+  const progressPhaseLabel = useMemo(() => {
+    if (!refreshProgress) {
+      return t('posts.progress.title', 'Generating posts');
+    }
+
+    const fallback = PROGRESS_PHASE_FALLBACKS[refreshProgress.phase];
+    return t(`posts.progress.phase.${refreshProgress.phase}`, fallback);
+  }, [refreshProgress, t]);
+
+  const progressDetailText = useMemo(() => {
+    if (!refreshProgress) {
+      return t('posts.progress.waitingEligible', 'Waiting for eligible news...');
+    }
+
+    if (progressStats.totalEligible && progressStats.totalEligible > 0) {
+      return t('posts.progress.processed', 'Processed {{processed}} of {{total}} news.', {
+        processed: formatNumber(progressStats.processed, locale),
+        total: formatNumber(progressStats.totalEligible, locale),
+      });
+    }
+
+    if (refreshProgress.phase === 'collecting_articles') {
+      return t('posts.progress.collecting', 'Collecting eligible news...');
+    }
+
+    if (
+      refreshProgress.phase === 'resolving_params' ||
+      refreshProgress.phase === 'loading_prompts' ||
+      refreshProgress.phase === 'initializing'
+    ) {
+      return t('posts.progress.preparing', 'Preparing generation...');
+    }
+
+    return t('posts.progress.waitingEligible', 'Waiting for eligible news...');
+  }, [locale, progressStats, refreshProgress, t]);
+
+  const progressCurrentArticle = useMemo(() => {
+    if (!refreshProgress?.currentArticleTitle) {
+      return null;
+    }
+
+    return t('posts.progress.currentArticle', 'Current news: {{title}}', {
+      title: refreshProgress.currentArticleTitle,
+    });
+  }, [refreshProgress?.currentArticleTitle, t]);
+
+  const progressModelLabel = useMemo(() => {
+    if (!refreshProgress?.modelUsed) {
+      return null;
+    }
+
+    return t('posts.progress.model', 'Model: {{model}}', { model: refreshProgress.modelUsed });
+  }, [refreshProgress?.modelUsed, t]);
+
+  const progressMessage = refreshProgress?.message ?? null;
   const previewData: PostRequestPreview | null = previewMutation.data ?? null;
   const previewNewsPayload = previewData?.news_payload ?? null;
   const previewPrefix = previewData?.prompt_base ?? '';
@@ -1050,6 +1154,23 @@ const PostsPage = () => {
     }
   }, [canRequestOpenAiPreview, previewRequestNewsId, t]);
 
+  const requestProgressUpdate = useCallback(async () => {
+    if (isProgressRequestInFlightRef.current) {
+      return;
+    }
+
+    isProgressRequestInFlightRef.current = true;
+
+    try {
+      const status = await fetchRefreshProgress();
+      setRefreshProgress(status);
+    } catch (error) {
+      console.error('posts.refresh.progress.error', error);
+    } finally {
+      isProgressRequestInFlightRef.current = false;
+    }
+  }, []);
+
   const syncPosts = useCallback(
     async ({ resetPagination = false }: RefreshOptions = {}) => {
       setRefreshError(null);
@@ -1063,9 +1184,16 @@ const PostsPage = () => {
       const wasExecutedBefore = hasExecutedSequence;
 
       try {
+        setIsRefreshRunning(true);
+        setRefreshProgress(null);
+        void requestProgressUpdate();
+
+        const refreshPromise = refreshPostsAsync();
+        const cleanupPromise = cleanupPostsAsync();
+
         const [refreshResult, cleanupResultEntry] = await Promise.allSettled([
-          refreshPostsAsync(),
-          cleanupPostsAsync(),
+          refreshPromise,
+          cleanupPromise,
         ]);
 
         handleRefreshSettled(refreshResult);
@@ -1088,6 +1216,8 @@ const PostsPage = () => {
 
         return { shouldRefetchList };
       } finally {
+        setIsRefreshRunning(false);
+        setRefreshProgress(null);
         setIsSyncing(false);
       }
     },
@@ -1099,6 +1229,7 @@ const PostsPage = () => {
       hasExecutedSequence,
       isWindowPending,
       previousCursors.length,
+      requestProgressUpdate,
       refreshPostsAsync,
     ],
   );
@@ -1110,6 +1241,10 @@ const PostsPage = () => {
         openAiPreviewControllerRef.current.abort();
         openAiPreviewControllerRef.current = null;
       }
+      if (refreshProgressIntervalRef.current !== null && typeof window !== 'undefined') {
+        window.clearInterval(refreshProgressIntervalRef.current);
+        refreshProgressIntervalRef.current = null;
+      }
     };
   }, []);
 
@@ -1120,6 +1255,48 @@ const PostsPage = () => {
       setListWindowDays(postsTimeWindowDays);
     }
   }, [hasExecutedSequence, postsTimeWindowDays]);
+
+  useEffect(() => {
+    if (!isRefreshRunning) {
+      if (refreshProgressIntervalRef.current !== null && typeof window !== 'undefined') {
+        window.clearInterval(refreshProgressIntervalRef.current);
+        refreshProgressIntervalRef.current = null;
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      await requestProgressUpdate();
+    };
+
+    void poll();
+
+    if (typeof window === 'undefined') {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const intervalId = window.setInterval(() => {
+      void poll();
+    }, 5000);
+
+    refreshProgressIntervalRef.current = intervalId;
+
+    return () => {
+      cancelled = true;
+      if (refreshProgressIntervalRef.current !== null && typeof window !== 'undefined') {
+        window.clearInterval(refreshProgressIntervalRef.current);
+        refreshProgressIntervalRef.current = null;
+      }
+    };
+  }, [isRefreshRunning, requestProgressUpdate]);
 
   useEffect(() => {
     if (!refreshSummary?.now) {
@@ -1614,6 +1791,60 @@ const PostsPage = () => {
             days: formattedTimeWindowDays,
           })}
         </div>
+      ) : null}
+
+      {isRefreshRunning ? (
+        <section className="card space-y-4 px-6 py-5">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('posts.progress.title', 'Generating posts')}
+            </h2>
+            <p className="text-base font-semibold text-foreground">{progressPhaseLabel}</p>
+            {progressMessage ? (
+              <p className="text-xs text-muted-foreground">{progressMessage}</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-3">
+            <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={clsx(
+                  'h-full rounded-full bg-primary transition-all',
+                  progressStats.percent === null ? 'w-1/3 animate-pulse' : null,
+                )}
+                style={
+                  progressStats.percent !== null
+                    ? { width: `${progressStats.percent}%` }
+                    : undefined
+                }
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{progressDetailText}</p>
+            {progressCurrentArticle ? (
+              <p className="text-xs text-muted-foreground">{progressCurrentArticle}</p>
+            ) : null}
+            {progressModelLabel ? (
+              <p className="text-xs text-muted-foreground">{progressModelLabel}</p>
+            ) : null}
+            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+              <span>
+                {t('posts.progress.generatedCount', 'Generated: {{count}}', {
+                  count: formatNumber(progressStats.generated, locale),
+                })}
+              </span>
+              <span>
+                {t('posts.progress.failedCount', 'Failed: {{count}}', {
+                  count: formatNumber(progressStats.failed, locale),
+                })}
+              </span>
+              <span>
+                {t('posts.progress.skippedCount', 'Skipped (cooldown): {{count}}', {
+                  count: formatNumber(progressStats.skipped, locale),
+                })}
+              </span>
+            </div>
+          </div>
+        </section>
       ) : null}
 
       {refreshSummary && !isSummaryDismissed ? (

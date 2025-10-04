@@ -95,13 +95,23 @@ const refresh = asyncHandler(async (req, res) => {
     generationSummary = await postGenerationService.generatePostsForOwner({ ownerKey });
   } catch (error) {
     console.error('Failed to generate posts for LinkedIn', { ownerKey, error });
-    generationSummary = postGenerationService.getLatestStatus(ownerKey);
+    const latestStatus = postGenerationService.getLatestStatus(ownerKey);
+    generationSummary = latestStatus?.summary ?? null;
   }
 
   return res.success({
     now: result.now.toISOString(),
     feeds: result.results.map(mapFeedSummary),
     generation: generationSummary,
+  });
+});
+
+const refreshStatus = asyncHandler(async (req, res) => {
+  const ownerKey = getOwnerKey(req);
+  const status = postGenerationService.getLatestStatus(ownerKey);
+
+  return res.success({
+    status: status ?? null,
   });
 });
 
@@ -144,6 +154,7 @@ const list = asyncHandler(async (req, res) => {
 
 module.exports = {
   refresh,
+  refreshStatus,
   cleanup,
   list,
 };
