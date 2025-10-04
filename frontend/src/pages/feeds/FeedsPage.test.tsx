@@ -192,7 +192,7 @@ let resetMutateAsync: MockedFunction<
   UseMutateAsyncFunction<FeedResetSummary, HttpError, void, unknown>
 >;
 let feedListQueryResult: UseQueryResult<FeedListResponse, HttpError>;
-let originalConfirm: typeof window.confirm | undefined;
+let originalConfirm: typeof globalThis.confirm | undefined;
 
 beforeEach(() => {
   const feeds = [
@@ -241,18 +241,17 @@ beforeEach(() => {
 
   mockedUseAuth.mockReturnValue(buildAuthContext());
 
-  if ('window' in globalThis) {
-    const browserWindow = globalThis.window;
-    originalConfirm = browserWindow.confirm;
-    browserWindow.confirm = vi.fn().mockReturnValue(true);
+  if (typeof globalThis.confirm === 'function') {
+    originalConfirm = globalThis.confirm;
+    globalThis.confirm = vi.fn().mockReturnValue(true);
   }
 });
 
 afterEach(() => {
   vi.clearAllMocks();
 
-  if ('window' in globalThis && originalConfirm) {
-    globalThis.window.confirm = originalConfirm;
+  if (originalConfirm) {
+    globalThis.confirm = originalConfirm;
     originalConfirm = undefined;
   }
 });

@@ -164,7 +164,7 @@ describe('Posts API', () => {
     });
 
     it('stores generated text from structured responses and exposes it in the list endpoint', async () => {
-      const feed = await prisma.feed.create({
+      await prisma.feed.create({
         data: {
           ownerKey: '1',
           url: 'https://example.com/structured.xml',
