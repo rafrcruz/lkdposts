@@ -161,13 +161,10 @@ const PromptsPage = () => {
   const refetchPromptList = useCallback(() => {
     try {
       const result = promptList.refetch();
-      if (result && typeof (result as PromiseLike<unknown>).catch === 'function') {
-        return (result as PromiseLike<unknown>).catch((error) => {
-          console.error('[PromptsPage] Failed to refetch prompts', error);
-        });
-      }
-
-      return Promise.resolve(result);
+      return Promise.resolve(result).catch((error: unknown) => {
+        console.error('[PromptsPage] Failed to refetch prompts', error);
+        return undefined;
+      });
     } catch (error) {
       console.error('[PromptsPage] Failed to refetch prompts', error);
       return Promise.resolve(undefined);
