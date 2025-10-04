@@ -1810,7 +1810,7 @@ const PromptsPage = () => {
 
   return (
     <section className="space-y-6" aria-labelledby="prompts-heading">
-      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
         {liveAnnouncement}
       </div>
       <header className="space-y-2">
@@ -1879,7 +1879,9 @@ const PromptsPage = () => {
 
       {feedback ? (
         <div
-          role={feedback.type === 'error' ? 'alert' : 'status'}
+          role={feedback.type === 'error' ? 'alert' : undefined}
+          aria-live={feedback.type === 'error' ? undefined : 'polite'}
+          aria-atomic={feedback.type === 'error' ? undefined : true}
           className={clsx(
             'rounded-md border px-4 py-3 text-sm',
             feedback.type === 'success'
@@ -1995,7 +1997,7 @@ const PromptsPage = () => {
       ) : null}
 
       {isLoading ? (
-        <div className="space-y-3" role="status" aria-live="polite">
+        <div className="space-y-3" aria-live="polite" aria-atomic="true">
           {loadingSkeletons.map((_, index) => (
             <div key={index} className="card space-y-3 p-4">
               <LoadingSkeleton className="h-5 w-3/4" />
@@ -2056,7 +2058,7 @@ const PromptsPage = () => {
                 </p>
               ) : null}
               {isReorderPending ? (
-                <p className="text-xs font-medium text-primary" role="status" aria-live="polite">
+                <p className="text-xs font-medium text-primary" aria-live="polite" aria-atomic="true">
                   {t('prompts.reorder.pending', 'Updating order...')}
                 </p>
               ) : null}
@@ -2090,48 +2092,50 @@ const PromptsPage = () => {
                     }}
                     className="relative max-h-[65vh] overflow-auto"
                     style={{ touchAction: 'pan-y' }}
-                    role="list"
                     aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
                   >
                     <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
-                      {virtualizer.getVirtualItems().map((virtualItem) => {
-                        const prompt = orderedPrompts[virtualItem.index];
+                      <ul className="absolute inset-0 m-0 list-none p-0">
+                        {virtualizer.getVirtualItems().map((virtualItem) => {
+                          const prompt = orderedPrompts[virtualItem.index];
 
-                        if (!prompt) {
-                          return null;
-                        }
+                          if (!prompt) {
+                            return null;
+                          }
 
-                        const isLast = virtualItem.index === orderedPrompts.length - 1;
-                        const isActivePrompt = activeId === prompt.id;
+                          const isLast = virtualItem.index === orderedPrompts.length - 1;
+                          const isActivePrompt = activeId === prompt.id;
 
-                        return (
-                          <div
-                            key={virtualItem.key}
-                            className="absolute inset-x-0 pb-3"
-                            style={{
-                              transform: `translate3d(0, ${virtualItem.start}px, 0)`,
-                              willChange: 'transform',
-                            }}
-                            ref={(element) => {
-                              if (element) {
-                                virtualizer.measureElement(element);
-                              }
-                            }}
-                          >
-                            <SortablePromptCard
-                              prompt={prompt}
-                              canMoveUp={virtualItem.index > 0}
-                              canMoveDown={!isLast}
-                              onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
-                              onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
-                              isActive={isActivePrompt}
-                              showPlaceholder={isSorting && isActivePrompt}
-                              onKeyDown={(event) => handlePromptKeyDown(event, prompt)}
-                              isKeyboardActive={keyboardActiveId === prompt.id}
-                            />
-                          </div>
-                        );
-                      })}
+                          return (
+                            <li
+                              key={virtualItem.key}
+                              className="absolute inset-x-0"
+                              style={{
+                                transform: `translate3d(0, ${virtualItem.start}px, 0)`,
+                                willChange: 'transform',
+                              }}
+                              ref={(element) => {
+                                if (element) {
+                                  virtualizer.measureElement(element);
+                                }
+                              }}
+                            >
+                              <SortablePromptCard
+                                prompt={prompt}
+                                canMoveUp={virtualItem.index > 0}
+                                canMoveDown={!isLast}
+                                onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
+                                onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
+                                isActive={isActivePrompt}
+                                showPlaceholder={isSorting && isActivePrompt}
+                                onKeyDown={(event) => handlePromptKeyDown(event, prompt)}
+                                isKeyboardActive={keyboardActiveId === prompt.id}
+                              />
+                              {isLast ? null : <div className="h-3" aria-hidden="true" />}
+                            </li>
+                          );
+                        })}
+                      </ul>
                     </div>
                   </div>
                 ) : (
@@ -2141,29 +2145,29 @@ const PromptsPage = () => {
                     }}
                     className="relative max-h-[65vh] overflow-auto"
                     style={{ touchAction: 'pan-y' }}
-                    role="list"
                     aria-label={t('prompts.list.ariaLabel', 'Saved prompts')}
                   >
-                    <div className="space-y-3 pr-1">
+                    <ul className="space-y-3 pr-1">
                       {orderedPrompts.map((prompt, index) => {
                         const isActivePrompt = activeId === prompt.id;
 
                         return (
-                          <SortablePromptCard
-                            key={prompt.id}
-                            prompt={prompt}
-                            canMoveUp={index > 0}
-                            canMoveDown={index < orderedPrompts.length - 1}
-                            onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
-                            onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
-                            isActive={isActivePrompt}
-                            showPlaceholder={isSorting && isActivePrompt}
-                            onKeyDown={(event) => handlePromptKeyDown(event, prompt)}
-                            isKeyboardActive={keyboardActiveId === prompt.id}
-                          />
+                          <li key={prompt.id}>
+                            <SortablePromptCard
+                              prompt={prompt}
+                              canMoveUp={index > 0}
+                              canMoveDown={index < orderedPrompts.length - 1}
+                              onMoveUp={() => handleMovePrompt(prompt.id, 'up')}
+                              onMoveDown={() => handleMovePrompt(prompt.id, 'down')}
+                              isActive={isActivePrompt}
+                              showPlaceholder={isSorting && isActivePrompt}
+                              onKeyDown={(event) => handlePromptKeyDown(event, prompt)}
+                              isKeyboardActive={keyboardActiveId === prompt.id}
+                            />
+                          </li>
                         );
                       })}
-                    </div>
+                    </ul>
                   </div>
                 )}
               </SortableContext>
@@ -2202,12 +2206,13 @@ const PromptsPage = () => {
       ) : null}
       {isExportModalOpen && typeof document !== 'undefined'
         ? createPortal(
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur">
-              <div
-                role="dialog"
-                aria-modal="true"
+            <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+              <div className="fixed inset-0 bg-background/80 backdrop-blur" aria-hidden="true" />
+              <dialog
                 aria-labelledby="export-modal-title"
-                className="w-full max-w-2xl rounded-lg border border-border bg-background p-6 shadow-lg"
+                className="relative z-10 w-full max-w-2xl rounded-lg border border-border bg-background p-6 shadow-lg"
+                aria-modal="true"
+                open
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-1">
@@ -2271,7 +2276,7 @@ const PromptsPage = () => {
                     {t('prompts.export.copy', 'Copy')}
                   </button>
                 </div>
-              </div>
+              </dialog>
             </div>,
             document.body,
           )

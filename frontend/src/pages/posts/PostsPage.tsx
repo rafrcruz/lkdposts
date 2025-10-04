@@ -1186,7 +1186,9 @@ const PostsPage = () => {
       try {
         setIsRefreshRunning(true);
         setRefreshProgress(null);
-        void requestProgressUpdate();
+        requestProgressUpdate().catch((error) => {
+          console.error("Failed to request progress update", error);
+        });
 
         const refreshPromise = refreshPostsAsync();
         const cleanupPromise = cleanupPostsAsync();
@@ -1732,9 +1734,9 @@ const PostsPage = () => {
             </button>
           ) : null}
           {cooldownNotice ? (
-            <span className="text-xs text-warning" role="status">
+            <output className="text-xs text-warning" aria-live="polite" aria-atomic="true">
               {cooldownNotice}
-            </span>
+            </output>
           ) : cooldownMessage ? (
             <span className="text-xs text-muted-foreground">{cooldownMessage}</span>
           ) : null}
@@ -2061,12 +2063,13 @@ const PostsPage = () => {
 
       {isPreviewModalOpen && typeof document !== 'undefined'
         ? createPortal(
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur">
-              <div
-                role="dialog"
-                aria-modal="true"
+            <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+              <div className="fixed inset-0 bg-background/80 backdrop-blur" aria-hidden="true" />
+              <dialog
                 aria-labelledby="post-request-preview-title"
                 className="flex max-h-[90vh] w-full max-w-4xl flex-col gap-4 overflow-hidden rounded-lg border border-border bg-background p-6 shadow-lg"
+                aria-modal="true"
+                open
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-2">
@@ -2335,7 +2338,7 @@ const PostsPage = () => {
                     </>
                   )}
                 </div>
-              </div>
+              </dialog>
             </div>,
             document.body,
           )
@@ -2582,16 +2585,16 @@ const PostListContent = ({
                 </div>
               ) : null}
               {copyFeedbacks[item.id] ? (
-                <p
-                  role="status"
+                <output
                   aria-live="polite"
+                  aria-atomic="true"
                   className={clsx(
                     'text-xs',
                     copyFeedbacks[item.id]?.type === 'success' ? 'text-primary' : 'text-danger',
                   )}
                 >
                   {copyFeedbacks[item.id]?.message}
-                </p>
+                </output>
               ) : null}
             </section>
             <section className="space-y-2">
