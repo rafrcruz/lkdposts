@@ -8,13 +8,7 @@ import { clsx } from 'clsx';
 
 import { useCleanupPosts, useGeneratePost, usePostList, useRefreshPosts } from '@/features/posts/hooks/usePosts';
 import { POSTS_QUERY_KEY, type PostListResponse } from '@/features/posts/api/posts';
-import type {
-  CleanupResult,
-  PostGenerationProgress,
-  PostListItem,
-  RefreshFeedSummary,
-  RefreshSummary,
-} from '@/features/posts/types/post';
+import type { CleanupResult, PostListItem, RefreshFeedSummary, RefreshSummary } from '@/features/posts/types/post';
 import { usePostRequestPreview } from '@/features/posts/hooks/usePostRequestPreview';
 import type { PostRequestPreview } from '@/features/posts/types/post-preview';
 import { useFeedList } from '@/features/feeds/hooks/useFeeds';
@@ -27,7 +21,7 @@ import { HttpError } from '@/lib/api/http';
 import { formatDate, formatNumber, useLocale } from '@/utils/formatters';
 import { useAppParams } from '@/features/app-params/hooks/useAppParams';
 import { usePostsDiagnostics } from '@/features/posts/hooks/usePostsDiagnostics';
-import { fetchAdminOpenAiPreviewRaw, fetchRefreshProgress } from '@/features/posts/api/posts';
+import { fetchAdminOpenAiPreviewRaw } from '@/features/posts/api/posts';
 
 const PAGE_SIZE = 10;
 const FEED_OPTIONS_LIMIT = 50;
@@ -66,21 +60,7 @@ type PostGenerationUiState = {
   reused?: boolean;
 };
 
-const PROGRESS_PHASE_FALLBACKS: Record<PostGenerationProgress['phase'], string> = {
-  initializing: 'Preparing generation...',
-  resolving_params: 'Loading configuration...',
-  loading_prompts: 'Loading prompts...',
-  collecting_articles: 'Collecting eligible news...',
-  generating_posts: 'Generating posts...',
-  finalizing: 'Finalizing generation...',
-  completed: 'Generation completed.',
-  failed: 'Generation failed.',
-};
-
 const RATE_LIMIT_ERROR_CODES = new Set(['rate_limit', 'rate_limit_exceeded']);
-const RATE_LIMIT_BASE_DELAY_MS = 1500;
-const RATE_LIMIT_MAX_DELAY_MS = 12000;
-const RATE_LIMIT_MAX_ATTEMPTS = 5;
 const GENERATION_SUCCESS_CLEAR_DELAY_MS = 4000;
 
 const extractRateLimitCode = (value: unknown): string | null => {
@@ -635,160 +615,6 @@ const aggregateRefreshSummary = (summary: RefreshSummary | null): RefreshAggrega
   );
 };
 
-const DEFAULT_PROGRESS_STATS = {
-  totalEligible: null,
-  processed: 0,
-  percent: null,
-  generated: 0,
-  failed: 0,
-  skipped: 0,
-} as const;
-
-const buildProgressStats = (progress: PostGenerationProgress | null) => {
-  if (!progress) {
-    return DEFAULT_PROGRESS_STATS;
-  }
-
-  const totalEligible = progress.eligibleCount ?? null;
-  const processedRaw = progress.processedCount;
-  const processed =
-    totalEligible !== null && totalEligible >= 0 ? Math.min(processedRaw, totalEligible) : processedRaw;
-  const percent =
-    totalEligible && totalEligible > 0 ? Math.min(100, Math.round((processed / totalEligible) * 100)) : null;
-
-  return {
-    totalEligible,
-    processed,
-    percent,
-    generated: progress.generatedCount,
-    failed: progress.failedCount,
-    skipped: progress.skippedCount,
-  } as const;
-};
-
-const resolveProgressPhaseLabel = (progress: PostGenerationProgress | null, t: TranslateFunction) => {
-  if (!progress) {
-    return t('posts.progress.title', 'Generating posts');
-  }
-
-  const fallback = PROGRESS_PHASE_FALLBACKS[progress.phase];
-  return t(`posts.progress.phase.${progress.phase}`, fallback);
-};
-
-const resolveProgressDetailText = ({
-  progress,
-  progressStats,
-  t,
-  locale,
-}: {
-  progress: PostGenerationProgress | null;
-  progressStats: ReturnType<typeof buildProgressStats>;
-  t: TranslateFunction;
-  locale: ReturnType<typeof useLocale>;
-}) => {
-  if (!progress) {
-    return t('posts.progress.waitingEligible', 'Waiting for eligible news...');
-  }
-
-  if (progressStats.totalEligible && progressStats.totalEligible > 0) {
-    return t('posts.progress.processed', 'Processed {{processed}} of {{total}} news.', {
-      processed: formatNumber(progressStats.processed, locale),
-      total: formatNumber(progressStats.totalEligible, locale),
-    });
-  }
-
-  if (progress.phase === 'collecting_articles') {
-    return t('posts.progress.collecting', 'Collecting eligible news...');
-  }
-
-  if (
-    progress.phase === 'resolving_params' ||
-    progress.phase === 'loading_prompts' ||
-    progress.phase === 'initializing'
-  ) {
-    return t('posts.progress.preparing', 'Preparing generation...');
-  }
-
-  return t('posts.progress.waitingEligible', 'Waiting for eligible news...');
-};
-
-const resolveProgressCurrentArticle = (progress: PostGenerationProgress | null, t: TranslateFunction) => {
-  if (!progress?.currentArticleTitle) {
-    return null;
-  }
-
-  return t('posts.progress.currentArticle', 'Current news: {{title}}', {
-    title: progress.currentArticleTitle,
-  });
-};
-
-const resolveProgressModelLabel = (progress: PostGenerationProgress | null, t: TranslateFunction) => {
-  if (!progress?.modelUsed) {
-    return null;
-  }
-
-  return t('posts.progress.model', 'Model: {{model}}', { model: progress.modelUsed });
-};
-
-type RateLimitState = {
-  attempts: number;
-  timeoutId: ReturnType<typeof setTimeout> | null;
-  active: boolean;
-};
-
-const clearRateLimitTimeout = (state: RateLimitState) => {
-  if (state.timeoutId !== null) {
-    globalThis.clearTimeout(state.timeoutId);
-    state.timeoutId = null;
-  }
-};
-
-const resetRateLimitState = (state: RateLimitState) => {
-  state.active = false;
-  state.attempts = 0;
-  clearRateLimitTimeout(state);
-};
-
-const handleRateLimitFailure = ({
-  state,
-  t,
-  setRefreshError,
-  scheduleRetry,
-}: {
-  state: RateLimitState;
-  t: TranslateFunction;
-  setRefreshError: Dispatch<SetStateAction<string | null>>;
-  scheduleRetry: () => void;
-}) => {
-  const nextAttempts = state.attempts + 1;
-  state.attempts = nextAttempts;
-
-  if (nextAttempts > RATE_LIMIT_MAX_ATTEMPTS) {
-    resetRateLimitState(state);
-    setRefreshError(
-      t('posts.errors.rateLimited', 'OpenAI is receiving too many requests. Try again in a moment.'),
-    );
-    return 'exhausted' as const;
-  }
-
-  const delay = Math.min(RATE_LIMIT_BASE_DELAY_MS * 2 ** (nextAttempts - 1), RATE_LIMIT_MAX_DELAY_MS);
-  state.active = true;
-
-  setRefreshError(
-    t('posts.errors.rateLimitedRetry', 'OpenAI is receiving too many requests. Trying again in {{seconds}}s.', {
-      seconds: Math.max(1, Math.round(delay / 1000)),
-    }),
-  );
-
-  clearRateLimitTimeout(state);
-  state.timeoutId = globalThis.setTimeout(() => {
-    state.timeoutId = null;
-    scheduleRetry();
-  }, delay);
-
-  return 'scheduled' as const;
-};
-
 const clearIntervalRef = (ref: MutableRefObject<ReturnType<typeof setInterval> | null>) => {
   if (ref.current !== null) {
     globalThis.clearInterval(ref.current);
@@ -933,44 +759,6 @@ const clearCooldownNoticeWhenInactive = ({
   if (!isCooldownActive) {
     setCooldownNotice(null);
   }
-};
-
-const manageProgressPolling = ({
-  isRefreshRunning,
-  requestProgressUpdate,
-  refreshProgressIntervalRef,
-}: {
-  isRefreshRunning: boolean;
-  requestProgressUpdate: () => Promise<void>;
-  refreshProgressIntervalRef: MutableRefObject<ReturnType<typeof setInterval> | null>;
-}) => {
-  if (!isRefreshRunning) {
-    clearIntervalRef(refreshProgressIntervalRef);
-    return undefined;
-  }
-
-  let cancelled = false;
-
-  const poll = async () => {
-    if (cancelled) {
-      return;
-    }
-
-    await requestProgressUpdate();
-  };
-
-  void poll();
-
-  const intervalId = globalThis.setInterval(() => {
-    void poll();
-  }, 5000);
-
-  refreshProgressIntervalRef.current = intervalId;
-
-  return () => {
-    cancelled = true;
-    clearIntervalRef(refreshProgressIntervalRef);
-  };
 };
 
 const handlePostListFetchEffect = ({
@@ -1152,12 +940,10 @@ const PostsPage = () => {
   const [previousCursors, setPreviousCursors] = useState<(string | null)[]>([]);
   const [hasExecutedSequence, setHasExecutedSequence] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isRefreshRunning, setIsRefreshRunning] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [cleanupError, setCleanupError] = useState<string | null>(null);
   const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
   const [refreshSummary, setRefreshSummary] = useState<RefreshSummary | null>(null);
-  const [refreshProgress, setRefreshProgress] = useState<PostGenerationProgress | null>(null);
   const [isSummaryDismissed, setIsSummaryDismissed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<ExpandedSections>({});
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
@@ -1182,17 +968,6 @@ const PostsPage = () => {
   const fetchStartTimeRef = useRef<number | null>(null);
   const previewRequestStartTimeRef = useRef<number | null>(null);
   const openAiPreviewControllerRef = useRef<AbortController | null>(null);
-  const refreshProgressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isProgressRequestInFlightRef = useRef(false);
-  const rateLimitBackoffRef = useRef<{
-    attempts: number;
-    timeoutId: ReturnType<typeof setTimeout> | null;
-    active: boolean;
-  }>({
-    attempts: 0,
-    timeoutId: null,
-    active: false,
-  });
 
   const { metrics: diagnosticsMetrics, recordRefresh, recordCooldownBlock, recordFetchSuccess } = usePostsDiagnostics();
   const diagnosticsPanelId = 'posts-diagnostics-panel';
@@ -1204,8 +979,6 @@ const PostsPage = () => {
       message: 'posts:view_opened',
     });
   }, []);
-
-    useEffect(() => () => clearRateLimitTimeout(rateLimitBackoffRef.current), []);
 
   const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT });
   const feedListData = feedList.data;
@@ -1241,29 +1014,6 @@ const PostsPage = () => {
   const { mutateAsync: refreshPostsAsync } = useRefreshPosts();
   const { mutateAsync: cleanupPostsAsync } = useCleanupPosts();
   const generatePostMutation = useGeneratePost();
-  const progressStats = useMemo(() => buildProgressStats(refreshProgress), [refreshProgress]);
-
-  const progressPhaseLabel = useMemo(
-    () => resolveProgressPhaseLabel(refreshProgress, t),
-    [refreshProgress, t],
-  );
-
-  const progressDetailText = useMemo(
-    () => resolveProgressDetailText({ progress: refreshProgress, progressStats, t, locale }),
-    [locale, progressStats, refreshProgress, t],
-  );
-
-  const progressCurrentArticle = useMemo(
-    () => resolveProgressCurrentArticle(refreshProgress, t),
-    [refreshProgress, t],
-  );
-
-  const progressModelLabel = useMemo(
-    () => resolveProgressModelLabel(refreshProgress, t),
-    [refreshProgress, t],
-  );
-
-  const progressMessage = refreshProgress?.message ?? null;
   const previewData: PostRequestPreview | null = previewMutation.data ?? null;
   const previewNewsPayload = previewData?.news_payload ?? null;
   const previewPrefix = previewData?.prompt_base ?? '';
@@ -1680,55 +1430,6 @@ const PostsPage = () => {
     }
   }, [canRequestOpenAiPreview, previewRequestNewsId, t]);
 
-  const requestProgressUpdate = useCallback(async () => {
-    if (isProgressRequestInFlightRef.current) {
-      return;
-    }
-
-    isProgressRequestInFlightRef.current = true;
-
-    try {
-      const status = await fetchRefreshProgress();
-      setRefreshProgress(status);
-
-      const rateLimitState = rateLimitBackoffRef.current;
-      clearRateLimitTimeout(rateLimitState);
-
-      if (rateLimitState.active) {
-        rateLimitState.active = false;
-        rateLimitState.attempts = 0;
-        setRefreshError(null);
-      } else {
-        rateLimitState.attempts = 0;
-      }
-    } catch (error) {
-      console.error('posts.refresh.progress.error', error);
-
-      if (error instanceof HttpError && isRateLimitHttpError(error)) {
-        const rateLimitState = rateLimitBackoffRef.current;
-        const outcome = handleRateLimitFailure({
-          state: rateLimitState,
-          t,
-          setRefreshError,
-          scheduleRetry: () => {
-            requestProgressUpdate().catch((retryError) => {
-              console.error('posts.refresh.progress.retry.error', retryError);
-            });
-          },
-        });
-
-        if (outcome === 'scheduled') {
-          return;
-        }
-      }
-
-      const rateLimitState = rateLimitBackoffRef.current;
-      resetRateLimitState(rateLimitState);
-    } finally {
-      isProgressRequestInFlightRef.current = false;
-    }
-  }, [t]);
-
   const syncPosts = useCallback(
     async ({ resetPagination = false }: RefreshOptions = {}) => {
       setRefreshError(null);
@@ -1742,12 +1443,6 @@ const PostsPage = () => {
       const wasExecutedBefore = hasExecutedSequence;
 
       try {
-        setIsRefreshRunning(true);
-        setRefreshProgress(null);
-        requestProgressUpdate().catch((error) => {
-          console.error("Failed to request progress update", error);
-        });
-
         const refreshPromise = refreshPostsAsync();
         const cleanupPromise = cleanupPostsAsync();
 
@@ -1776,8 +1471,6 @@ const PostsPage = () => {
 
         return { shouldRefetchList };
       } finally {
-        setIsRefreshRunning(false);
-        setRefreshProgress(null);
         setIsSyncing(false);
       }
     },
@@ -1789,7 +1482,6 @@ const PostsPage = () => {
       hasExecutedSequence,
       isWindowPending,
       previousCursors.length,
-      requestProgressUpdate,
       refreshPostsAsync,
     ],
   );
@@ -1799,7 +1491,6 @@ const PostsPage = () => {
       () =>
         () => {
           abortControllerRef(openAiPreviewControllerRef);
-          clearIntervalRef(refreshProgressIntervalRef);
         },
       [],
     );
@@ -1809,16 +1500,6 @@ const PostsPage = () => {
     useEffect(() => {
       handleListWindowReset({ hasExecutedSequence, postsTimeWindowDays, setListWindowDays });
     }, [hasExecutedSequence, postsTimeWindowDays]);
-
-    useEffect(
-      () =>
-        manageProgressPolling({
-          isRefreshRunning,
-          requestProgressUpdate,
-          refreshProgressIntervalRef,
-        }),
-      [isRefreshRunning, requestProgressUpdate],
-    );
 
     useEffect(() => {
       handleLastRefreshUpdate({ refreshSummaryNow: refreshSummary?.now, setLastRefreshAt });
@@ -2374,63 +2055,6 @@ const PostsPage = () => {
             days: formattedTimeWindowDays,
           })}
         </div>
-      ) : null}
-
-      {isRefreshRunning ? (
-        <section className="card space-y-4 px-6 py-5">
-          <div className="space-y-1">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('posts.progress.title', 'Generating posts')}
-            </h2>
-            <p className="text-base font-semibold text-foreground">{progressPhaseLabel}</p>
-            {progressMessage ? (
-              <p className="text-xs text-muted-foreground">{progressMessage}</p>
-            ) : null}
-          </div>
-
-          <div className="space-y-3">
-            <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={clsx(
-                  'h-full rounded-full bg-primary transition-all',
-                  progressStats.percent === null ? 'w-1/3 animate-pulse' : null,
-                )}
-                style={
-                  progressStats.percent === null
-                    ? undefined
-                    : { width: `${progressStats.percent}%` }
-                }
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">{progressDetailText}</p>
-            {progressCurrentArticle ? (
-              <p className="text-xs text-muted-foreground">{progressCurrentArticle}</p>
-            ) : null}
-            {progressModelLabel ? (
-              <p className="text-xs text-muted-foreground">{progressModelLabel}</p>
-            ) : null}
-            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-              <span>
-                {t('posts.progress.generatedCount', 'Generated: {{formattedCount}}', {
-                  count: progressStats.generated,
-                  formattedCount: formatNumber(progressStats.generated, locale),
-                })}
-              </span>
-              <span>
-                {t('posts.progress.failedCount', 'Failed: {{formattedCount}}', {
-                  count: progressStats.failed,
-                  formattedCount: formatNumber(progressStats.failed, locale),
-                })}
-              </span>
-              <span>
-                {t('posts.progress.skippedCount', 'Skipped (cooldown): {{formattedCount}}', {
-                  count: progressStats.skipped,
-                  formattedCount: formatNumber(progressStats.skipped, locale),
-                })}
-              </span>
-            </div>
-          </div>
-        </section>
       ) : null}
 
       {refreshSummary && !isSummaryDismissed ? (

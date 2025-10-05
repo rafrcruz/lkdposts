@@ -395,13 +395,6 @@ const definition = {
             type: 'array',
             items: { $ref: '#/components/schemas/FeedRefreshSummary' },
           },
-          generation: {
-            oneOf: [
-              { $ref: '#/components/schemas/PostGenerationSummary' },
-              { type: 'null' },
-            ],
-            description: 'Resumo da última geração de posts executada durante o refresh.',
-          },
         },
       },
       PostGenerationErrorEntry: {

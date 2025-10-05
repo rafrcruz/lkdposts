@@ -137,7 +137,6 @@ describe('Posts API', () => {
 
       expect(globalThis.fetch).toHaveBeenCalledWith(feed.url, expect.any(Object));
       expect(response.body.data.feeds).toHaveLength(1);
-      expect(response.body.data.generation).toBeNull();
       expect(response.body.data.feeds[0]).toEqual(
         expect.objectContaining({
           feedId: feed.id,

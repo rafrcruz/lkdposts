@@ -8,12 +8,7 @@ import type { SpyInstance } from 'vitest';
 
 import PostsPage from './PostsPage';
 import i18n from '@/config/i18n';
-import type {
-  PostListItem,
-  RefreshSummary,
-  CleanupResult,
-  PostGenerationProgress,
-} from '@/features/posts/types/post';
+import type { PostListItem, RefreshSummary, CleanupResult } from '@/features/posts/types/post';
 import type { Feed } from '@/features/feeds/types/feed';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { AuthContextValue } from '@/features/auth/context/AuthContext';
@@ -37,7 +32,6 @@ type PostsApiMockConfig = {
     meta?: { nextCursor: string | null; total: number; limit: number };
   };
   refresh?: RefreshSummary;
-  refreshProgress?: PostGenerationProgress | null;
   cleanup?: CleanupResult;
   postsDelayMs?: number;
   postsError?: { status: number; message: string };
@@ -343,8 +337,6 @@ const defaultFeed = (override: Partial<Feed> = {}): Feed => ({
 
     const refreshPayload: RefreshSummary =
       config.refresh ?? ({ now: '2025-01-10T08:05:00.000Z', feeds: [] } as RefreshSummary);
-    const refreshProgressPayload: PostGenerationProgress | null =
-      'refreshProgress' in config ? config.refreshProgress ?? null : null;
     const cleanupPayload: CleanupResult =
       config.cleanup ?? ({ removedArticles: 0, removedPosts: 0 } as CleanupResult);
 
@@ -389,8 +381,6 @@ const defaultFeed = (override: Partial<Feed> = {}): Feed => ({
         buildJsonResponse({ success: true, data: { items: feedsPayload.items }, meta: feedsPayload.meta }),
       'POST /api/v1/posts/refresh': async () => buildJsonResponse({ success: true, data: refreshPayload }),
       'POST /api/v1/posts/cleanup': async () => buildJsonResponse({ success: true, data: cleanupPayload }),
-      'GET /api/v1/posts/refresh-status': async () =>
-        buildJsonResponse({ success: true, data: { status: refreshProgressPayload } }),
       'GET /api/v1/posts': buildPostsHandler(),
     };
 

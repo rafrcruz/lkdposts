@@ -74,74 +74,12 @@ export const refreshFeedSummarySchema = z.object({
 
 export type RefreshFeedSummary = z.infer<typeof refreshFeedSummarySchema>;
 
-export const postGenerationErrorSchema = z.object({
-  articleId: z.number().int().positive().nullable(),
-  reason: z.string(),
-});
-
-export const postGenerationSummarySchema = z
-  .object({
-    ownerKey: z.string(),
-    startedAt: z.string(),
-    finishedAt: z.string().nullable(),
-    eligibleCount: z.number().int().nonnegative(),
-    generatedCount: z.number().int().nonnegative(),
-    failedCount: z.number().int().nonnegative(),
-    skippedCount: z.number().int().nonnegative(),
-    promptBaseHash: z.string().nullable(),
-    modelUsed: z.string().nullable(),
-    errors: z.array(postGenerationErrorSchema).nullable(),
-  })
-  .nullable();
-
 export const refreshSummarySchema = z.object({
   now: z.string(),
   feeds: z.array(refreshFeedSummarySchema),
-  generation: postGenerationSummarySchema.optional(),
 });
 
 export type RefreshSummary = z.infer<typeof refreshSummarySchema>;
-
-export const generationStatusSchema = z.enum(['idle', 'in_progress', 'completed', 'failed']);
-
-export const generationPhaseSchema = z.enum([
-  'initializing',
-  'resolving_params',
-  'loading_prompts',
-  'collecting_articles',
-  'generating_posts',
-  'finalizing',
-  'completed',
-  'failed',
-]);
-
-export const postGenerationProgressSchema = z.object({
-  ownerKey: z.string(),
-  startedAt: z.string(),
-  updatedAt: z.string(),
-  finishedAt: z.string().nullable(),
-  status: generationStatusSchema,
-  phase: generationPhaseSchema,
-  message: z.string().nullable().optional(),
-  eligibleCount: z.number().int().nonnegative().nullable(),
-  processedCount: z.number().int().nonnegative(),
-  generatedCount: z.number().int().nonnegative(),
-  failedCount: z.number().int().nonnegative(),
-  skippedCount: z.number().int().nonnegative(),
-  currentArticleId: z.number().int().positive().nullable(),
-  currentArticleTitle: z.string().nullable(),
-  promptBaseHash: z.string().nullable(),
-  modelUsed: z.string().nullable(),
-  errors: z.array(postGenerationErrorSchema),
-  cacheInfo: z
-    .object({
-      cachedTokens: z.number().int().nonnegative(),
-    })
-    .nullable(),
-  summary: postGenerationSummarySchema.optional(),
-});
-
-export type PostGenerationProgress = z.infer<typeof postGenerationProgressSchema>;
 
 export const cleanupResultSchema = z.object({
   removedArticles: z.number().int().nonnegative(),
