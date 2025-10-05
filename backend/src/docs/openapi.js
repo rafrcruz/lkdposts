@@ -515,6 +515,89 @@ const definition = {
           },
         },
       },
+      PostPreviewArticle: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          title: { type: ['string', 'null'], example: 'Notícia exemplo' },
+          contentSnippet: {
+            type: ['string', 'null'],
+            example: 'Resumo breve da notícia selecionada.',
+          },
+          articleHtml: {
+            type: ['string', 'null'],
+            example: '<p>Conteúdo completo da notícia</p>',
+          },
+          link: { type: ['string', 'null'], format: 'uri', example: 'https://example.com/noticia' },
+          guid: { type: ['string', 'null'], example: 'guid-1' },
+          publishedAt: {
+            type: ['string', 'null'],
+            format: 'date-time',
+            example: '2025-01-20T12:00:00.000Z',
+          },
+          feed: {
+            type: ['object', 'null'],
+            allOf: [{ $ref: '#/components/schemas/PostFeedReference' }],
+            example: { id: 1, title: 'Feed principal', url: 'https://example.com/rss.xml' },
+          },
+        },
+      },
+      PostPreviewMessageContent: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', example: 'input_text' },
+          text: {
+            type: 'string',
+            example:
+              'Notícia ID interno: 1\nFeed: Feed principal · URL: https://example.com/rss.xml\nTítulo: Notícia exemplo',
+          },
+        },
+      },
+      PostPreviewMessage: {
+        type: 'object',
+        properties: {
+          role: { type: 'string', example: 'user' },
+          content: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/PostPreviewMessageContent' },
+          },
+        },
+      },
+      PostPreviewPayload: {
+        type: 'object',
+        properties: {
+          article: { $ref: '#/components/schemas/PostPreviewArticle' },
+          message: { $ref: '#/components/schemas/PostPreviewMessage' },
+          context: {
+            type: 'string',
+            example:
+              'Notícia ID interno: 1\nFeed: Feed principal · URL: https://example.com/rss.xml\nTítulo: Notícia exemplo',
+          },
+        },
+      },
+      PostRequestPreview: {
+        type: 'object',
+        properties: {
+          prompt_base: {
+            type: 'string',
+            example:
+              'Titulo A\n\nConteudo A\n\nInstrução final: gerar um post para LinkedIn com base na notícia e no contexto acima.',
+          },
+          prompt_base_hash: {
+            type: ['string', 'null'],
+            example: 'e3b0c44298fc1c149afbf4c8996fb924',
+          },
+          model: { type: 'string', example: 'gpt-5-nano' },
+          news_payload: {
+            oneOf: [
+              { $ref: '#/components/schemas/PostPreviewPayload' },
+              { type: 'null' },
+            ],
+            description:
+              'Estrutura com artigo normalizado, mensagem e contexto que seriam enviados para a OpenAI. Nulo quando nenhuma notícia elegível é encontrada.',
+          },
+        },
+      },
       PostContent: {
         type: 'object',
         properties: {
@@ -588,6 +671,75 @@ const definition = {
           items: {
             type: 'array',
             items: { $ref: '#/components/schemas/PostListItem' },
+          },
+        },
+      },
+      AdminGenerationTriggerResult: {
+        type: 'object',
+        properties: {
+          ownerKey: { type: 'string', example: '1' },
+          summary: {
+            $ref: '#/components/schemas/PostGenerationSummary',
+          },
+        },
+      },
+      AdminGenerationStatusResult: {
+        type: 'object',
+        properties: {
+          ownerKey: { type: 'string', example: '1' },
+          status: {
+            oneOf: [
+              { $ref: '#/components/schemas/PostGenerationProgress' },
+              { type: 'null' },
+            ],
+            description: 'Último status conhecido da geração manual para o usuário.',
+          },
+        },
+      },
+      OpenAiDiagnosticsResult: {
+        type: 'object',
+        properties: {
+          ok: { type: 'boolean', example: true },
+          model: { type: 'string', example: 'gpt-5-nano' },
+          baseURL: {
+            type: ['string', 'null'],
+            format: 'uri',
+            example: 'https://api.openai.com/v1',
+          },
+          timeoutMs: { type: 'integer', example: 30000 },
+          latencyMs: { type: 'integer', example: 850 },
+          usage: {
+            type: ['object', 'null'],
+            description: 'Informações de uso retornadas pela Responses API.',
+            example: {
+              total_tokens: 24,
+              input_tokens: 12,
+              output_tokens: 12,
+            },
+          },
+          cachedTokens: { type: ['integer', 'null'], example: 1200 },
+          error: {
+            type: ['object', 'null'],
+            properties: {
+              status: { type: ['integer', 'null'], example: 401 },
+              type: { type: ['string', 'null'], example: 'invalid_request_error' },
+              code: { type: ['string', 'null'], example: 'invalid_api_key' },
+              message: {
+                type: ['string', 'null'],
+                example: 'Invalid API key provided',
+              },
+              request_id: {
+                type: ['string', 'null'],
+                example: 'req_abc123',
+              },
+            },
+            example: {
+              status: 401,
+              type: 'invalid_request_error',
+              code: 'invalid_api_key',
+              message: 'Invalid API key provided',
+              request_id: 'req_abc123',
+            },
           },
         },
       },
