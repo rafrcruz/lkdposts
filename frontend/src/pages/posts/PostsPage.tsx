@@ -1126,6 +1126,9 @@ const resolvePreviewErrorMessage = (error: unknown, t: ReturnType<typeof useTran
 };
 
 const PostsPage = () => {
+  // NOSONAR: This page aggregates numerous data fetching, telemetry, and UX states; we plan a
+  // dedicated effort to modularize it into focused hooks and subcomponents without altering
+  // current behavior.
   const { t } = useTranslation();
   const locale = useLocale();
   const { user } = useAuth();
@@ -1642,7 +1645,9 @@ const PostsPage = () => {
           t,
           setRefreshError,
           scheduleRetry: () => {
-            void requestProgressUpdate();
+            requestProgressUpdate().catch((retryError) => {
+              console.error('posts.refresh.progress.retry.error', retryError);
+            });
           },
         });
 

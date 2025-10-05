@@ -143,6 +143,8 @@ const logReorderEvent = (message: string, data: Record<string, unknown>) => {
 };
 
 const PromptsPage = () => {
+  // NOSONAR: This component orchestrates a large set of UI states and flows; a broader refactor
+  // is planned to split responsibilities across dedicated hooks and child components.
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
