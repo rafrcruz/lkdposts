@@ -9,7 +9,7 @@ import type { TFunction } from 'i18next';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import * as Sentry from '@sentry/react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
@@ -59,6 +59,8 @@ const REORDER_DEBOUNCE_MS = 500;
 const REORDER_ANIMATION_DURATION_MS = 180;
 const REORDER_ANIMATION_EASING = 'cubic-bezier(0.22, 0.8, 0.36, 1)';
 const DUPLICATE_SUFFIX = ' (c\u00F3pia)';
+
+type PromptsVirtualizer = Virtualizer<HTMLDivElement, Element>;
 
 const arraysShallowEqual = (first: readonly string[], second: readonly string[]) => {
   if (first.length !== second.length) {
@@ -379,7 +381,7 @@ type PendingScrollArgs = {
   itemRefs: MutableRefObject<Map<string, HTMLDivElement>>;
   orderedPrompts: Prompt[];
   shouldVirtualize: boolean;
-  virtualizer: ReturnType<typeof useVirtualizer>;
+  virtualizer: PromptsVirtualizer;
 };
 
 const usePendingScrollEffect = ({
@@ -450,7 +452,7 @@ const useAutoResizeTextarea = (
 
 const useVirtualizerMeasurements = (
   shouldVirtualize: boolean,
-  virtualizer: ReturnType<typeof useVirtualizer>,
+  virtualizer: PromptsVirtualizer,
   expandedPromptIds: Set<string>,
   orderedPrompts: Prompt[],
   normalizedSearch: string,
@@ -809,7 +811,7 @@ const PromptsPage = () => {
     [orderedPrompts],
   );
 
-  const virtualizer = useVirtualizer({
+  const virtualizer = useVirtualizer<HTMLDivElement, Element>({
     count: shouldVirtualize ? orderedPrompts.length : 0,
     getScrollElement: () => listContainerRef.current,
     estimateSize: () => ESTIMATED_ITEM_HEIGHT,
