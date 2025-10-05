@@ -350,12 +350,24 @@ const defaultFeed = (override: Partial<Feed> = {}): Feed => ({
 
     const postsMeta = config.posts.meta ?? { nextCursor: null, limit: 10 };
 
-    const resolveRequestKey = (input: RequestInfo | URL, init?: RequestInit) => {
-      const method = (init?.method ?? 'GET').toUpperCase();
-      const resource = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-      const url = new URL(resource);
-      return { key: `${method} ${url.pathname}`, url };
-    };
+      const resolveRequestResource = (input: RequestInfo | URL) => {
+        if (typeof input === 'string') {
+          return input;
+        }
+
+        if (input instanceof URL) {
+          return input.toString();
+        }
+
+        return input.url;
+      };
+
+      const resolveRequestKey = (input: RequestInfo | URL, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET').toUpperCase();
+        const resource = resolveRequestResource(input);
+        const url = new URL(resource);
+        return { key: `${method} ${url.pathname}`, url };
+      };
 
     const buildPostsHandler = () => async () => {
       if (config.postsError) {
