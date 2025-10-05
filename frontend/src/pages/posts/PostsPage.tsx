@@ -1,4 +1,4 @@
-import type { ChangeEvent, Dispatch, JSX, SetStateAction } from 'react';
+import type { ChangeEvent, Dispatch, JSX, MutableRefObject, SetStateAction } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as Sentry from '@sentry/react';
@@ -626,6 +626,439 @@ const aggregateRefreshSummary = (summary: RefreshSummary | null): RefreshAggrega
   );
 };
 
+const DEFAULT_PROGRESS_STATS = {
+  totalEligible: null,
+  processed: 0,
+  percent: null,
+  generated: 0,
+  failed: 0,
+  skipped: 0,
+} as const;
+
+const buildProgressStats = (progress: PostGenerationProgress | null) => {
+  if (!progress) {
+    return DEFAULT_PROGRESS_STATS;
+  }
+
+  const totalEligible = progress.eligibleCount ?? null;
+  const processedRaw = progress.processedCount;
+  const processed =
+    totalEligible !== null && totalEligible >= 0 ? Math.min(processedRaw, totalEligible) : processedRaw;
+  const percent =
+    totalEligible && totalEligible > 0 ? Math.min(100, Math.round((processed / totalEligible) * 100)) : null;
+
+  return {
+    totalEligible,
+    processed,
+    percent,
+    generated: progress.generatedCount,
+    failed: progress.failedCount,
+    skipped: progress.skippedCount,
+  } as const;
+};
+
+const resolveProgressPhaseLabel = (progress: PostGenerationProgress | null, t: TranslateFunction) => {
+  if (!progress) {
+    return t('posts.progress.title', 'Generating posts');
+  }
+
+  const fallback = PROGRESS_PHASE_FALLBACKS[progress.phase];
+  return t(`posts.progress.phase.${progress.phase}`, fallback);
+};
+
+const resolveProgressDetailText = ({
+  progress,
+  progressStats,
+  t,
+  locale,
+}: {
+  progress: PostGenerationProgress | null;
+  progressStats: ReturnType<typeof buildProgressStats>;
+  t: TranslateFunction;
+  locale: ReturnType<typeof useLocale>;
+}) => {
+  if (!progress) {
+    return t('posts.progress.waitingEligible', 'Waiting for eligible news...');
+  }
+
+  if (progressStats.totalEligible && progressStats.totalEligible > 0) {
+    return t('posts.progress.processed', 'Processed {{processed}} of {{total}} news.', {
+      processed: formatNumber(progressStats.processed, locale),
+      total: formatNumber(progressStats.totalEligible, locale),
+    });
+  }
+
+  if (progress.phase === 'collecting_articles') {
+    return t('posts.progress.collecting', 'Collecting eligible news...');
+  }
+
+  if (
+    progress.phase === 'resolving_params' ||
+    progress.phase === 'loading_prompts' ||
+    progress.phase === 'initializing'
+  ) {
+    return t('posts.progress.preparing', 'Preparing generation...');
+  }
+
+  return t('posts.progress.waitingEligible', 'Waiting for eligible news...');
+};
+
+const resolveProgressCurrentArticle = (progress: PostGenerationProgress | null, t: TranslateFunction) => {
+  if (!progress?.currentArticleTitle) {
+    return null;
+  }
+
+  return t('posts.progress.currentArticle', 'Current news: {{title}}', {
+    title: progress.currentArticleTitle,
+  });
+};
+
+const resolveProgressModelLabel = (progress: PostGenerationProgress | null, t: TranslateFunction) => {
+  if (!progress?.modelUsed) {
+    return null;
+  }
+
+  return t('posts.progress.model', 'Model: {{model}}', { model: progress.modelUsed });
+};
+
+type RateLimitState = {
+  attempts: number;
+  timeoutId: ReturnType<typeof setTimeout> | null;
+  active: boolean;
+};
+
+const clearRateLimitTimeout = (state: RateLimitState) => {
+  if (state.timeoutId !== null) {
+    globalThis.clearTimeout(state.timeoutId);
+    state.timeoutId = null;
+  }
+};
+
+const resetRateLimitState = (state: RateLimitState) => {
+  state.active = false;
+  state.attempts = 0;
+  clearRateLimitTimeout(state);
+};
+
+const handleRateLimitFailure = ({
+  state,
+  t,
+  setRefreshError,
+  scheduleRetry,
+}: {
+  state: RateLimitState;
+  t: TranslateFunction;
+  setRefreshError: Dispatch<SetStateAction<string | null>>;
+  scheduleRetry: () => void;
+}) => {
+  const nextAttempts = state.attempts + 1;
+  state.attempts = nextAttempts;
+
+  if (nextAttempts > RATE_LIMIT_MAX_ATTEMPTS) {
+    resetRateLimitState(state);
+    setRefreshError(
+      t('posts.errors.rateLimited', 'OpenAI is receiving too many requests. Try again in a moment.'),
+    );
+    return 'exhausted' as const;
+  }
+
+  const delay = Math.min(RATE_LIMIT_BASE_DELAY_MS * 2 ** (nextAttempts - 1), RATE_LIMIT_MAX_DELAY_MS);
+  state.active = true;
+
+  setRefreshError(
+    t('posts.errors.rateLimitedRetry', 'OpenAI is receiving too many requests. Trying again in {{seconds}}s.', {
+      seconds: Math.max(1, Math.round(delay / 1000)),
+    }),
+  );
+
+  clearRateLimitTimeout(state);
+  state.timeoutId = globalThis.setTimeout(() => {
+    state.timeoutId = null;
+    scheduleRetry();
+  }, delay);
+
+  return 'scheduled' as const;
+};
+
+const clearIntervalRef = (ref: MutableRefObject<ReturnType<typeof setInterval> | null>) => {
+  if (ref.current !== null) {
+    globalThis.clearInterval(ref.current);
+    ref.current = null;
+  }
+};
+
+const clearTimeoutRef = (ref: MutableRefObject<ReturnType<typeof setTimeout> | null>) => {
+  if (ref.current !== null) {
+    globalThis.clearTimeout(ref.current);
+    ref.current = null;
+  }
+};
+
+const abortControllerRef = (ref: MutableRefObject<AbortController | null>) => {
+  if (ref.current) {
+    ref.current.abort();
+    ref.current = null;
+  }
+};
+
+const handleListWindowReset = ({
+  hasExecutedSequence,
+  postsTimeWindowDays,
+  setListWindowDays,
+}: {
+  hasExecutedSequence: boolean;
+  postsTimeWindowDays: number;
+  setListWindowDays: Dispatch<SetStateAction<number>>;
+}) => {
+  if (!hasExecutedSequence) {
+    setListWindowDays(postsTimeWindowDays);
+  }
+};
+
+const handleLastRefreshUpdate = ({
+  refreshSummaryNow,
+  setLastRefreshAt,
+}: {
+  refreshSummaryNow: string | null | undefined;
+  setLastRefreshAt: Dispatch<SetStateAction<number | null>>;
+}) => {
+  if (!refreshSummaryNow) {
+    return;
+  }
+
+  const timestamp = new Date(refreshSummaryNow).getTime();
+  setLastRefreshAt(Number.isNaN(timestamp) ? Date.now() : timestamp);
+};
+
+const initializeCooldownTimer = ({
+  lastRefreshAt,
+  refreshCooldownSeconds,
+  cooldownIntervalRef,
+  setCooldownRemainingSeconds,
+}: {
+  lastRefreshAt: number | null;
+  refreshCooldownSeconds: number;
+  cooldownIntervalRef: MutableRefObject<ReturnType<typeof setInterval> | null>;
+  setCooldownRemainingSeconds: Dispatch<SetStateAction<number>>;
+}) => {
+  clearIntervalRef(cooldownIntervalRef);
+
+  if (!lastRefreshAt || refreshCooldownSeconds <= 0) {
+    setCooldownRemainingSeconds(0);
+    return undefined;
+  }
+
+  const computeRemaining = () => {
+    const elapsedSeconds = (Date.now() - lastRefreshAt) / 1000;
+    const remaining = Math.ceil(refreshCooldownSeconds - elapsedSeconds);
+    const next = Math.max(remaining, 0);
+    setCooldownRemainingSeconds(next);
+    return next;
+  };
+
+  const initialRemaining = computeRemaining();
+  if (initialRemaining <= 0) {
+    return undefined;
+  }
+
+  const intervalId = globalThis.setInterval(() => {
+    const next = computeRemaining();
+    if (next <= 0) {
+      clearIntervalRef(cooldownIntervalRef);
+    }
+  }, 1000);
+
+  cooldownIntervalRef.current = intervalId;
+
+  return () => {
+    clearIntervalRef(cooldownIntervalRef);
+  };
+};
+
+const handleCooldownCleanupOnUnmount = ({
+  cooldownNoticeTimeoutRef,
+  cooldownIntervalRef,
+}: {
+  cooldownNoticeTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  cooldownIntervalRef: MutableRefObject<ReturnType<typeof setInterval> | null>;
+}) => {
+  clearTimeoutRef(cooldownNoticeTimeoutRef);
+  clearIntervalRef(cooldownIntervalRef);
+};
+
+const handleCooldownNoticeEffect = ({
+  cooldownNotice,
+  cooldownNoticeTimeoutRef,
+  setCooldownNotice,
+}: {
+  cooldownNotice: string | null;
+  cooldownNoticeTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  setCooldownNotice: Dispatch<SetStateAction<string | null>>;
+}) => {
+  if (cooldownNotice === null) {
+    clearTimeoutRef(cooldownNoticeTimeoutRef);
+    return undefined;
+  }
+
+  clearTimeoutRef(cooldownNoticeTimeoutRef);
+
+  const timeoutId = globalThis.setTimeout(() => {
+    setCooldownNotice(null);
+    cooldownNoticeTimeoutRef.current = null;
+  }, 4000);
+
+  cooldownNoticeTimeoutRef.current = timeoutId;
+
+  return () => {
+    clearTimeoutRef(cooldownNoticeTimeoutRef);
+  };
+};
+
+const clearCooldownNoticeWhenInactive = ({
+  isCooldownActive,
+  setCooldownNotice,
+}: {
+  isCooldownActive: boolean;
+  setCooldownNotice: Dispatch<SetStateAction<string | null>>;
+}) => {
+  if (!isCooldownActive) {
+    setCooldownNotice(null);
+  }
+};
+
+const manageProgressPolling = ({
+  isRefreshRunning,
+  requestProgressUpdate,
+  refreshProgressIntervalRef,
+}: {
+  isRefreshRunning: boolean;
+  requestProgressUpdate: () => Promise<void>;
+  refreshProgressIntervalRef: MutableRefObject<ReturnType<typeof setInterval> | null>;
+}) => {
+  if (!isRefreshRunning) {
+    clearIntervalRef(refreshProgressIntervalRef);
+    return undefined;
+  }
+
+  let cancelled = false;
+
+  const poll = async () => {
+    if (cancelled) {
+      return;
+    }
+
+    await requestProgressUpdate();
+  };
+
+  void poll();
+
+  const intervalId = globalThis.setInterval(() => {
+    void poll();
+  }, 5000);
+
+  refreshProgressIntervalRef.current = intervalId;
+
+  return () => {
+    cancelled = true;
+    clearIntervalRef(refreshProgressIntervalRef);
+  };
+};
+
+const handlePostListFetchEffect = ({
+  postListQuery,
+  fetchStartTimeRef,
+  recordFetchSuccess,
+  listWindowDays,
+}: {
+  postListQuery: ReturnType<typeof usePostList>;
+  fetchStartTimeRef: MutableRefObject<number | null>;
+  recordFetchSuccess: (duration: number) => void;
+  listWindowDays: number;
+}) => {
+  if (postListQuery.isFetching) {
+    if (fetchStartTimeRef.current === null) {
+      const now = typeof globalThis.performance?.now === 'function'
+        ? globalThis.performance.now()
+        : Date.now();
+      fetchStartTimeRef.current = now;
+    }
+    return;
+  }
+
+  if (fetchStartTimeRef.current === null) {
+    return;
+  }
+
+  const endTime =
+    typeof globalThis.performance?.now === 'function'
+      ? globalThis.performance.now()
+      : Date.now();
+  const duration = Math.max(0, Math.round(endTime - fetchStartTimeRef.current));
+  fetchStartTimeRef.current = null;
+
+  if (postListQuery.isSuccess && postListQuery.data) {
+    recordFetchSuccess(duration);
+    Sentry.addBreadcrumb({
+      category: 'posts',
+      level: 'info',
+      message: 'posts:fetch_success',
+      data: {
+        duration_ms: duration,
+        item_count: postListQuery.data.items.length,
+        window_days: listWindowDays,
+      },
+    });
+    return;
+  }
+
+  if (postListQuery.isError && postListQuery.error) {
+    Sentry.addBreadcrumb({
+      category: 'posts',
+      level: 'error',
+      message: 'posts:fetch_error',
+      data: {
+        status: postListQuery.error.status ?? null,
+        message: postListQuery.error.message,
+      },
+    });
+  }
+};
+
+const handleCooldownBlocked = ({
+  recordCooldownBlock,
+  cooldownRemainingSeconds,
+  locale,
+  t,
+  setCooldownNotice,
+}: {
+  recordCooldownBlock: () => void;
+  cooldownRemainingSeconds: number;
+  locale: ReturnType<typeof useLocale>;
+  t: TranslateFunction;
+  setCooldownNotice: Dispatch<SetStateAction<string | null>>;
+}) => {
+  recordCooldownBlock();
+
+  Sentry.addBreadcrumb({
+    category: 'posts',
+    level: 'info',
+    message: 'posts:cooldown_blocked',
+    data: { remaining_seconds: cooldownRemainingSeconds },
+  });
+
+  const timeLabel = formatCooldownTime({
+    secondsRemaining: cooldownRemainingSeconds,
+    locale,
+    t,
+  });
+
+  setCooldownNotice(
+    t('posts.actions.refreshCooldown', 'Wait {{time}} before refreshing again.', {
+      time: timeLabel,
+    }),
+  );
+};
+
 const resolveOperationErrorMessage = (error: unknown, t: ReturnType<typeof useTranslation>['t']) => {
   if (error instanceof HttpError) {
     if (process.env.NODE_ENV !== 'production') {
@@ -759,14 +1192,7 @@ const PostsPage = () => {
     });
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (rateLimitBackoffRef.current.timeoutId !== null) {
-        globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
-        rateLimitBackoffRef.current.timeoutId = null;
-      }
-    };
-  }, []);
+    useEffect(() => () => clearRateLimitTimeout(rateLimitBackoffRef.current), []);
 
   const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT });
   const feedListData = feedList.data;
@@ -800,92 +1226,27 @@ const PostsPage = () => {
 
   const { mutateAsync: refreshPostsAsync } = useRefreshPosts();
   const { mutateAsync: cleanupPostsAsync } = useCleanupPosts();
-  const progressStats = useMemo(() => {
-    if (!refreshProgress) {
-      return {
-        totalEligible: null,
-        processed: 0,
-        percent: null,
-        generated: 0,
-        failed: 0,
-        skipped: 0,
-      } as const;
-    }
+  const progressStats = useMemo(() => buildProgressStats(refreshProgress), [refreshProgress]);
 
-    const totalEligible = refreshProgress.eligibleCount ?? null;
-    const processedRaw = refreshProgress.processedCount;
-    const processed =
-      totalEligible !== null && totalEligible >= 0
-        ? Math.min(processedRaw, totalEligible)
-        : processedRaw;
-    const percent =
-      totalEligible && totalEligible > 0
-        ? Math.min(100, Math.round((processed / totalEligible) * 100))
-        : null;
+  const progressPhaseLabel = useMemo(
+    () => resolveProgressPhaseLabel(refreshProgress, t),
+    [refreshProgress, t],
+  );
 
-    return {
-      totalEligible,
-      processed,
-      percent,
-      generated: refreshProgress.generatedCount,
-      failed: refreshProgress.failedCount,
-      skipped: refreshProgress.skippedCount,
-    } as const;
-  }, [refreshProgress]);
+  const progressDetailText = useMemo(
+    () => resolveProgressDetailText({ progress: refreshProgress, progressStats, t, locale }),
+    [locale, progressStats, refreshProgress, t],
+  );
 
-  const progressPhaseLabel = useMemo(() => {
-    if (!refreshProgress) {
-      return t('posts.progress.title', 'Generating posts');
-    }
+  const progressCurrentArticle = useMemo(
+    () => resolveProgressCurrentArticle(refreshProgress, t),
+    [refreshProgress, t],
+  );
 
-    const fallback = PROGRESS_PHASE_FALLBACKS[refreshProgress.phase];
-    return t(`posts.progress.phase.${refreshProgress.phase}`, fallback);
-  }, [refreshProgress, t]);
-
-  const progressDetailText = useMemo(() => {
-    if (!refreshProgress) {
-      return t('posts.progress.waitingEligible', 'Waiting for eligible news...');
-    }
-
-    if (progressStats.totalEligible && progressStats.totalEligible > 0) {
-      return t('posts.progress.processed', 'Processed {{processed}} of {{total}} news.', {
-        processed: formatNumber(progressStats.processed, locale),
-        total: formatNumber(progressStats.totalEligible, locale),
-      });
-    }
-
-    if (refreshProgress.phase === 'collecting_articles') {
-      return t('posts.progress.collecting', 'Collecting eligible news...');
-    }
-
-    if (
-      refreshProgress.phase === 'resolving_params' ||
-      refreshProgress.phase === 'loading_prompts' ||
-      refreshProgress.phase === 'initializing'
-    ) {
-      return t('posts.progress.preparing', 'Preparing generation...');
-    }
-
-    return t('posts.progress.waitingEligible', 'Waiting for eligible news...');
-  }, [locale, progressStats, refreshProgress, t]);
-
-  const progressCurrentArticle = useMemo(() => {
-    if (!refreshProgress?.currentArticleTitle) {
-      return null;
-    }
-
-    return t('posts.progress.currentArticle', 'Current news: {{title}}', {
-      title: refreshProgress.currentArticleTitle,
-    });
-  }, [refreshProgress?.currentArticleTitle, t]);
-
-  const progressModelLabel = useMemo(() => {
-    if (!refreshProgress?.modelUsed) {
-      return null;
-    }
-
-    return t('posts.progress.model', 'Model: {{model}}', { model: refreshProgress.modelUsed });
-  }, [refreshProgress?.modelUsed, t]);
+  const progressModelLabel = useMemo(
+    () => resolveProgressModelLabel(refreshProgress, t),
+    [refreshProgress, t],
+  );
 
   const progressMessage = refreshProgress?.message ?? null;
   const previewData: PostRequestPreview | null = previewMutation.data ?? null;
@@ -1259,69 +1620,37 @@ const PostsPage = () => {
       const status = await fetchRefreshProgress();
       setRefreshProgress(status);
 
-      if (rateLimitBackoffRef.current.timeoutId !== null) {
-        globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
-        rateLimitBackoffRef.current.timeoutId = null;
-      }
+      const rateLimitState = rateLimitBackoffRef.current;
+      clearRateLimitTimeout(rateLimitState);
 
-      if (rateLimitBackoffRef.current.active) {
-        rateLimitBackoffRef.current.active = false;
-        rateLimitBackoffRef.current.attempts = 0;
+      if (rateLimitState.active) {
+        rateLimitState.active = false;
+        rateLimitState.attempts = 0;
         setRefreshError(null);
       } else {
-        rateLimitBackoffRef.current.attempts = 0;
+        rateLimitState.attempts = 0;
       }
     } catch (error) {
       console.error('posts.refresh.progress.error', error);
 
       if (error instanceof HttpError && isRateLimitHttpError(error)) {
-        const nextAttempts = rateLimitBackoffRef.current.attempts + 1;
-        rateLimitBackoffRef.current.attempts = nextAttempts;
+        const rateLimitState = rateLimitBackoffRef.current;
+        const outcome = handleRateLimitFailure({
+          state: rateLimitState,
+          t,
+          setRefreshError,
+          scheduleRetry: () => {
+            void requestProgressUpdate();
+          },
+        });
 
-        if (nextAttempts > RATE_LIMIT_MAX_ATTEMPTS) {
-          rateLimitBackoffRef.current.active = false;
-          if (rateLimitBackoffRef.current.timeoutId !== null) {
-            globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
-            rateLimitBackoffRef.current.timeoutId = null;
-          }
-          setRefreshError(
-            t('posts.errors.rateLimited', 'OpenAI is receiving too many requests. Try again in a moment.'),
-          );
+        if (outcome === 'scheduled') {
           return;
         }
-
-        const delay = Math.min(
-          RATE_LIMIT_BASE_DELAY_MS * 2 ** (nextAttempts - 1),
-          RATE_LIMIT_MAX_DELAY_MS,
-        );
-        rateLimitBackoffRef.current.active = true;
-
-        setRefreshError(
-          t(
-            'posts.errors.rateLimitedRetry',
-            'OpenAI is receiving too many requests. Trying again in {{seconds}}s.',
-            { seconds: Math.max(1, Math.round(delay / 1000)) },
-          ),
-        );
-
-        if (rateLimitBackoffRef.current.timeoutId !== null) {
-          globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
-        }
-
-        rateLimitBackoffRef.current.timeoutId = globalThis.setTimeout(() => {
-          rateLimitBackoffRef.current.timeoutId = null;
-          requestProgressUpdate();
-        }, delay);
-
-        return;
       }
 
-      rateLimitBackoffRef.current.active = false;
-      rateLimitBackoffRef.current.attempts = 0;
-      if (rateLimitBackoffRef.current.timeoutId !== null) {
-        globalThis.clearTimeout(rateLimitBackoffRef.current.timeoutId);
-        rateLimitBackoffRef.current.timeoutId = null;
-      }
+      const rateLimitState = rateLimitBackoffRef.current;
+      resetRateLimitState(rateLimitState);
     } finally {
       isProgressRequestInFlightRef.current = false;
     }
@@ -1393,202 +1722,90 @@ const PostsPage = () => {
   );
 
   useInitialSync(hasExecutedSequence, syncPosts);
-  useEffect(() => {
-    return () => {
-      if (openAiPreviewControllerRef.current) {
-        openAiPreviewControllerRef.current.abort();
-        openAiPreviewControllerRef.current = null;
-      }
-      if (refreshProgressIntervalRef.current !== null) {
-        globalThis.clearInterval(refreshProgressIntervalRef.current);
-        refreshProgressIntervalRef.current = null;
-      }
-    };
-  }, []);
+    useEffect(
+      () =>
+        () => {
+          abortControllerRef(openAiPreviewControllerRef);
+          clearIntervalRef(refreshProgressIntervalRef);
+        },
+      [],
+    );
 
   useRefreshSummaryReset(refreshSummary, setIsSummaryDismissed);
 
-  useEffect(() => {
-    if (hasExecutedSequence) {
-      return;
-    }
+    useEffect(() => {
+      handleListWindowReset({ hasExecutedSequence, postsTimeWindowDays, setListWindowDays });
+    }, [hasExecutedSequence, postsTimeWindowDays]);
 
-    setListWindowDays(postsTimeWindowDays);
-  }, [hasExecutedSequence, postsTimeWindowDays]);
+    useEffect(
+      () =>
+        manageProgressPolling({
+          isRefreshRunning,
+          requestProgressUpdate,
+          refreshProgressIntervalRef,
+        }),
+      [isRefreshRunning, requestProgressUpdate],
+    );
 
-  useEffect(() => {
-    if (!isRefreshRunning) {
-      if (refreshProgressIntervalRef.current !== null) {
-        globalThis.clearInterval(refreshProgressIntervalRef.current);
-        refreshProgressIntervalRef.current = null;
-      }
-      return;
-    }
+    useEffect(() => {
+      handleLastRefreshUpdate({ refreshSummaryNow: refreshSummary?.now, setLastRefreshAt });
+    }, [refreshSummary?.now]);
 
-    let cancelled = false;
+    useEffect(
+      () =>
+        initializeCooldownTimer({
+          lastRefreshAt,
+          refreshCooldownSeconds,
+          cooldownIntervalRef,
+          setCooldownRemainingSeconds,
+        }),
+      [lastRefreshAt, refreshCooldownSeconds],
+    );
 
-    const poll = async () => {
-      if (cancelled) {
+    useEffect(
+      () =>
+        () =>
+          handleCooldownCleanupOnUnmount({
+            cooldownNoticeTimeoutRef,
+            cooldownIntervalRef,
+          }),
+      [],
+    );
+
+    useEffect(
+      () =>
+        handleCooldownNoticeEffect({
+          cooldownNotice,
+          cooldownNoticeTimeoutRef,
+          setCooldownNotice,
+        }),
+      [cooldownNotice],
+    );
+
+    const isCooldownActive = cooldownRemainingSeconds > 0;
+
+    useEffect(() => {
+      clearCooldownNoticeWhenInactive({ isCooldownActive, setCooldownNotice });
+    }, [isCooldownActive]);
+
+    const runSequence = ({ resetPagination = false }: RefreshOptions = {}) => {
+      if (isSyncing) {
         return;
       }
 
-      await requestProgressUpdate();
-    };
+      const shouldForceReset = resetPagination || isWindowPending;
+      const canBypassCooldown = hasExecutedSequence === false;
 
-    void poll();
-
-    const intervalId = globalThis.setInterval(() => {
-      void poll();
-    }, 5000);
-
-    refreshProgressIntervalRef.current = intervalId;
-
-    return () => {
-      cancelled = true;
-      if (refreshProgressIntervalRef.current !== null) {
-        globalThis.clearInterval(refreshProgressIntervalRef.current);
-        refreshProgressIntervalRef.current = null;
+      if (isCooldownActive && !canBypassCooldown) {
+        handleCooldownBlocked({
+          recordCooldownBlock,
+          cooldownRemainingSeconds,
+          locale,
+          t,
+          setCooldownNotice,
+        });
+        return;
       }
-    };
-  }, [isRefreshRunning, requestProgressUpdate]);
-
-  useEffect(() => {
-    if (!refreshSummary?.now) {
-      return;
-    }
-
-    const timestamp = new Date(refreshSummary.now).getTime();
-    if (Number.isNaN(timestamp)) {
-      setLastRefreshAt(Date.now());
-      return;
-    }
-
-    setLastRefreshAt(timestamp);
-  }, [refreshSummary?.now]);
-
-  useEffect(() => {
-    if (cooldownIntervalRef.current !== null) {
-      globalThis.clearInterval(cooldownIntervalRef.current);
-      cooldownIntervalRef.current = null;
-    }
-
-    if (!lastRefreshAt || refreshCooldownSeconds <= 0) {
-      setCooldownRemainingSeconds(0);
-      return;
-    }
-
-      const computeRemaining = () => {
-        const elapsedSeconds = (Date.now() - lastRefreshAt) / 1000;
-        const remaining = Math.ceil(refreshCooldownSeconds - elapsedSeconds);
-        const next = Math.max(remaining, 0);
-        setCooldownRemainingSeconds(next);
-        return next;
-      };
-
-    const initialRemaining = computeRemaining();
-
-    if (initialRemaining <= 0) {
-      return;
-    }
-
-    const intervalId = globalThis.setInterval(() => {
-      const next = computeRemaining();
-      if (next <= 0 && cooldownIntervalRef.current !== null) {
-        globalThis.clearInterval(cooldownIntervalRef.current);
-        cooldownIntervalRef.current = null;
-      }
-    }, 1000);
-
-    cooldownIntervalRef.current = intervalId;
-
-    return () => {
-      if (cooldownIntervalRef.current !== null) {
-        globalThis.clearInterval(cooldownIntervalRef.current);
-        cooldownIntervalRef.current = null;
-      }
-    };
-  }, [lastRefreshAt, refreshCooldownSeconds]);
-
-  useEffect(() => {
-    return () => {
-      if (cooldownNoticeTimeoutRef.current !== null) {
-        globalThis.clearTimeout(cooldownNoticeTimeoutRef.current);
-      }
-
-      if (cooldownIntervalRef.current !== null) {
-        globalThis.clearInterval(cooldownIntervalRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (cooldownNotice === null) {
-      if (cooldownNoticeTimeoutRef.current !== null) {
-        globalThis.clearTimeout(cooldownNoticeTimeoutRef.current);
-        cooldownNoticeTimeoutRef.current = null;
-      }
-      return;
-    }
-
-    if (cooldownNoticeTimeoutRef.current !== null) {
-      globalThis.clearTimeout(cooldownNoticeTimeoutRef.current);
-    }
-
-    const timeoutId = globalThis.setTimeout(() => {
-      setCooldownNotice(null);
-      cooldownNoticeTimeoutRef.current = null;
-    }, 4000);
-
-    cooldownNoticeTimeoutRef.current = timeoutId;
-
-    return () => {
-      globalThis.clearTimeout(timeoutId);
-      cooldownNoticeTimeoutRef.current = null;
-    };
-  }, [cooldownNotice]);
-
-  const isCooldownActive = cooldownRemainingSeconds > 0;
-
-  useEffect(() => {
-    if (isCooldownActive) {
-      return;
-    }
-
-    setCooldownNotice(null);
-  }, [isCooldownActive]);
-
-  const runSequence = ({ resetPagination = false }: RefreshOptions = {}) => {
-    if (isSyncing) {
-      return;
-    }
-
-    const shouldForceReset = resetPagination || isWindowPending;
-    const canBypassCooldown = hasExecutedSequence === false;
-
-    if (isCooldownActive && !canBypassCooldown) {
-      recordCooldownBlock();
-
-      Sentry.addBreadcrumb({
-        category: 'posts',
-        level: 'info',
-        message: 'posts:cooldown_blocked',
-        data: { remaining_seconds: cooldownRemainingSeconds },
-      });
-
-      const timeLabel = formatCooldownTime({
-        secondsRemaining: cooldownRemainingSeconds,
-        locale,
-        t,
-      });
-
-      setCooldownNotice(
-        t('posts.actions.refreshCooldown', 'Wait {{time}} before refreshing again.', {
-          time: timeLabel,
-        }),
-      );
-
-      return;
-    }
 
     Sentry.addBreadcrumb({
       category: 'posts',
@@ -1622,64 +1839,22 @@ const PostsPage = () => {
       });
   };
 
-    useEffect(() => {
-      if (postListQuery.isFetching) {
-        if (fetchStartTimeRef.current === null) {
-          const now =
-            typeof globalThis.performance?.now === 'function'
-              ? globalThis.performance.now()
-              : Date.now();
-          fetchStartTimeRef.current = now;
-        }
-        return;
-      }
-
-      if (fetchStartTimeRef.current === null) {
-        return;
-      }
-
-      const endTime =
-        typeof globalThis.performance?.now === 'function'
-          ? globalThis.performance.now()
-          : Date.now();
-    const duration = Math.max(0, Math.round(endTime - fetchStartTimeRef.current));
-    fetchStartTimeRef.current = null;
-
-    if (postListQuery.isSuccess && postListQuery.data) {
-      recordFetchSuccess(duration);
-      Sentry.addBreadcrumb({
-        category: 'posts',
-        level: 'info',
-        message: 'posts:fetch_success',
-        data: {
-          duration_ms: duration,
-          item_count: postListQuery.data.items.length,
-          window_days: listWindowDays,
-        },
-      });
-      return;
-    }
-
-    if (postListQuery.isError && postListQuery.error) {
-      Sentry.addBreadcrumb({
-        category: 'posts',
-        level: 'error',
-        message: 'posts:fetch_error',
-        data: {
-          status: postListQuery.error.status ?? null,
-          message: postListQuery.error.message,
-        },
-      });
-    }
-  }, [
-    listWindowDays,
-    postListQuery.data,
-    postListQuery.error,
-    postListQuery.isError,
-    postListQuery.isFetching,
-    postListQuery.isSuccess,
-    recordFetchSuccess,
-  ]);
+      useEffect(() => {
+        handlePostListFetchEffect({
+          postListQuery,
+          fetchStartTimeRef,
+          recordFetchSuccess,
+          listWindowDays,
+        });
+      }, [
+        listWindowDays,
+        postListQuery.data,
+        postListQuery.error,
+        postListQuery.isError,
+        postListQuery.isFetching,
+        postListQuery.isSuccess,
+        recordFetchSuccess,
+      ]);
 
   useEffect(() => {
     setExpandedSections((current) => mergeExpandedSections(posts, current));
@@ -2576,80 +2751,135 @@ const renderListFallbackContent = ({
   selectedFeedId: number | null;
   formattedTimeWindowDays: string;
 }) => {
+  const state = resolveListFallbackState({
+    hasExecutedSequence,
+    feedListIsSuccess,
+    hasFeeds,
+    isLoading,
+    isError,
+    postsLength,
+  });
+
+  switch (state) {
+    case 'initial':
+    case 'loading':
+      return renderSkeletonCard();
+    case 'no-feeds':
+      return (
+        <EmptyState
+          title={t('posts.filters.empty.title', 'No feed available yet.')}
+          description={t(
+            'posts.filters.empty.description',
+            'Add feeds on the Feeds page to start generating posts.',
+          )}
+          action={
+            <a
+              href="/feeds"
+              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+            >
+              {t('posts.filters.empty.cta', 'Manage feeds')}
+            </a>
+          }
+        />
+      );
+    case 'error':
+      return (
+        <ErrorState
+          title={t('posts.errors.list', 'Could not load posts. Try again later.')}
+          description={listErrorMessage}
+          action={
+            <button
+              type="button"
+              className={clsx(
+                'mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60',
+                isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
+              )}
+              onClick={onTryAgain}
+              disabled={isSyncing}
+              aria-disabled={isSyncing || isCooldownActive}
+            >
+              {t('actions.tryAgain', 'Try again')}
+            </button>
+          }
+        />
+      );
+    case 'empty':
+      return renderEmptyListState({
+        t,
+        selectedFeedId,
+        formattedTimeWindowDays,
+      });
+    default:
+      return null;
+  }
+};
+
+const resolveListFallbackState = ({
+  hasExecutedSequence,
+  feedListIsSuccess,
+  hasFeeds,
+  isLoading,
+  isError,
+  postsLength,
+}: {
+  hasExecutedSequence: boolean;
+  feedListIsSuccess: boolean;
+  hasFeeds: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  postsLength: number;
+}) => {
   if (!hasExecutedSequence) {
-    return renderSkeletonCard();
+    return 'initial' as const;
   }
 
   if (feedListIsSuccess && !hasFeeds) {
-    return (
-      <EmptyState
-        title={t('posts.filters.empty.title', 'No feed available yet.')}
-        description={t(
-          'posts.filters.empty.description',
-          'Add feeds on the Feeds page to start generating posts.',
-        )}
-        action={
-          <a
-            href="/feeds"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-          >
-            {t('posts.filters.empty.cta', 'Manage feeds')}
-          </a>
-        }
-      />
-    );
+    return 'no-feeds' as const;
   }
 
   if (isLoading) {
-    return renderSkeletonCard();
+    return 'loading' as const;
   }
 
   if (isError) {
-    return (
-      <ErrorState
-        title={t('posts.errors.list', 'Could not load posts. Try again later.')}
-        description={listErrorMessage}
-        action={
-          <button
-            type="button"
-            className={clsx(
-              'mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60',
-              isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
-            )}
-            onClick={onTryAgain}
-            disabled={isSyncing}
-            aria-disabled={isSyncing || isCooldownActive}
-          >
-            {t('actions.tryAgain', 'Try again')}
-          </button>
-        }
-      />
-    );
+    return 'error' as const;
   }
 
   if (postsLength === 0) {
-    const emptyTitleKey = selectedFeedId
-      ? 'posts.list.empty.filtered.title'
-      : 'posts.list.empty.default.title';
-    const emptyDescriptionKey = selectedFeedId
-      ? 'posts.list.empty.filtered.description'
-      : 'posts.list.empty.default.description';
-
-    return (
-      <EmptyState
-        title={t(emptyTitleKey, selectedFeedId ? 'No posts for this feed.' : 'No recent posts.')}
-        description={t(
-          emptyDescriptionKey,
-          selectedFeedId
-            ? 'Select another feed or refresh to get new posts.'
-            : 'Posts from the last {{days}} days will appear here after a refresh.',
-          selectedFeedId ? undefined : { days: formattedTimeWindowDays },
-        )}
-      />
-    );
+    return 'empty' as const;
   }
 
-  return null;
+  return 'none' as const;
+};
+
+const renderEmptyListState = ({
+  t,
+  selectedFeedId,
+  formattedTimeWindowDays,
+}: {
+  t: TranslateFunction;
+  selectedFeedId: number | null;
+  formattedTimeWindowDays: string;
+}) => {
+  const emptyTitleKey = selectedFeedId
+    ? 'posts.list.empty.filtered.title'
+    : 'posts.list.empty.default.title';
+  const emptyDescriptionKey = selectedFeedId
+    ? 'posts.list.empty.filtered.description'
+    : 'posts.list.empty.default.description';
+
+  return (
+    <EmptyState
+      title={t(emptyTitleKey, selectedFeedId ? 'No posts for this feed.' : 'No recent posts.')}
+      description={t(
+        emptyDescriptionKey,
+        selectedFeedId
+          ? 'Select another feed or refresh to get new posts.'
+          : 'Posts from the last {{days}} days will appear here after a refresh.',
+        selectedFeedId ? undefined : { days: formattedTimeWindowDays },
+      )}
+    />
+  );
 };
 
 type PostListItemCardProps = {

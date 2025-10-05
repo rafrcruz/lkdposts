@@ -10,13 +10,22 @@ const fetchWithTimeout = async (url, options, timeoutMs, apiKey) => {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const extraHeaders = options?.headers;
+    const headers =
+      extraHeaders && typeof extraHeaders === 'object'
+        ? {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            ...extraHeaders,
+          }
+        : {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          };
+
     return await fetch(url, {
       ...options,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        ...(options?.headers ?? {}),
-      },
+      headers,
       signal: controller.signal,
     });
   } finally {

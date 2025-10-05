@@ -1091,9 +1091,8 @@ const generatePostsForOwner = async ({
     const startedAt = ensureDate(now);
     initializeStatus({ ownerKey, startedAt });
 
-    const errors = [];
-    let operationalParams;
-    let promptBaseHash = null;
+      const errors = [];
+      let promptBaseHash = null;
     let basePrompt = '';
     let eligible = [];
     let skippedCount = 0;
@@ -1110,13 +1109,7 @@ const generatePostsForOwner = async ({
         maxAttempts,
       });
 
-      ({
-        operationalParams,
-        basePrompt,
-        promptBaseHash,
-        eligible,
-        skippedCount,
-      } = preparation);
+        ({ basePrompt, promptBaseHash, eligible, skippedCount } = preparation);
 
       if (eligible.length === 0) {
         return recordEmptySummary({

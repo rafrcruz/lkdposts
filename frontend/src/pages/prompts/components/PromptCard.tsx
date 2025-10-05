@@ -66,6 +66,8 @@ type PromptReorderConfig = {
   isGrabbed: boolean;
 };
 
+const EMPTY_SYNTHETIC_LISTENERS = Object.freeze({}) satisfies SyntheticListenerMap;
+
 const resolvePromptContentInfo = (
   prompt: Prompt,
   t: TFunction,
@@ -100,6 +102,9 @@ const resolveReorderConfig = (
   const isSorting = options?.isSorting ?? false;
   const isKeyboardActive = options?.isKeyboardActive ?? false;
 
+  const handleListeners =
+    canReorder && options?.handleListeners ? options.handleListeners : EMPTY_SYNTHETIC_LISTENERS;
+
   return {
     containerAttributes: restContainerAttributes,
     handleAttributes: {
@@ -108,7 +113,7 @@ const resolveReorderConfig = (
         : {}),
       ...(options?.handleAttributes ?? {}),
     },
-    handleListeners: (canReorder ? options?.handleListeners ?? {} : {}) as SyntheticListenerMap,
+    handleListeners,
     showPlaceholder: Boolean(options?.showPlaceholder && !isOverlay),
     isDragging,
     isSorting,
