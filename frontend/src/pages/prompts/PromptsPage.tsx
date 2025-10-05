@@ -498,6 +498,11 @@ const PromptsPage = () => {
 
   const promptList = usePromptList();
   const refetchPromptList = usePromptListRefetch(promptList);
+  const refetchPromptListSafely = (context: string) => {
+    refetchPromptList().catch((error) => {
+      console.error(`[PROMPTS] Failed to refetch prompt list (${context})`, error);
+    });
+  };
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
@@ -1007,7 +1012,12 @@ const PromptsPage = () => {
 
     setPromptOverrides((current) => {
       const next = new Map(current);
-      next.set(prompt.id, { ...(next.get(prompt.id) ?? {}), enabled: nextEnabled });
+      const existingOverride = next.get(prompt.id);
+      const updatedOverride = existingOverride
+        ? { ...existingOverride, enabled: nextEnabled }
+        : { enabled: nextEnabled };
+
+      next.set(prompt.id, updatedOverride);
       return next;
     });
 
@@ -1042,7 +1052,12 @@ const PromptsPage = () => {
             if (previousEnabled === prompt.enabled) {
               next.delete(prompt.id);
             } else {
-              next.set(prompt.id, { ...(next.get(prompt.id) ?? {}), enabled: previousEnabled });
+              const existingOverride = next.get(prompt.id);
+              const revertedOverride = existingOverride
+                ? { ...existingOverride, enabled: previousEnabled }
+                : { enabled: previousEnabled };
+
+              next.set(prompt.id, revertedOverride);
             }
 
             return next;
@@ -1336,7 +1351,7 @@ const PromptsPage = () => {
     }
     lastReorderOutcomeRef.current = null;
 
-    void refetchPromptList();
+    refetchPromptListSafely('undo');
   };
 
   const persistReorder = async (previousIds: string[], nextIds: string[]) => {
@@ -1430,7 +1445,7 @@ const PromptsPage = () => {
           action: {
             label: t('prompts.reorder.reload', 'Reload'),
             onClick: () => {
-              void refetchPromptList();
+              refetchPromptListSafely('conflict-reload');
             },
           },
         });
@@ -2476,7 +2491,7 @@ const PromptsPage = () => {
               type="button"
               onClick={() => {
                 setFeedback(null);
-                void refetchPromptList();
+                refetchPromptListSafely('error-retry');
               }}
               className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 sm:w-auto"
             >

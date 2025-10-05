@@ -13,7 +13,7 @@ describe('createTtlCache', () => {
   });
 
   it('stores and retrieves values while entries are valid', () => {
-    const cache = createTtlCache({ ttlMs: 1_000 });
+    const cache = createTtlCache({ ttlMs: 1000 });
 
     cache.set('key', 'value');
 
@@ -21,7 +21,7 @@ describe('createTtlCache', () => {
   });
 
   it('expires entries based on the provided ttl', () => {
-    const cache = createTtlCache({ ttlMs: 1_000 });
+    const cache = createTtlCache({ ttlMs: 1000 });
 
     cache.set('expiring', 'value');
 
@@ -33,10 +33,10 @@ describe('createTtlCache', () => {
   });
 
   it('supports custom ttl per entry', () => {
-    const cache = createTtlCache({ ttlMs: 10_000 });
+    const cache = createTtlCache({ ttlMs: 10000 });
 
     cache.set('short', 'value', 500);
-    cache.set('long', 'value', 2_000);
+    cache.set('long', 'value', 2000);
 
     jest.advanceTimersByTime(600);
 
@@ -56,14 +56,14 @@ describe('createTtlCache', () => {
   });
 
   it('enforces maximum capacity by removing the oldest entries first', () => {
-    const cache = createTtlCache({ ttlMs: 5_000, maxEntries: 2 });
+    const cache = createTtlCache({ ttlMs: 5000, maxEntries: 2 });
 
-    cache.set('first', 'one', 1_000);
-    cache.set('second', 'two', 2_000);
+    cache.set('first', 'one', 1000);
+    cache.set('second', 'two', 2000);
 
     jest.advanceTimersByTime(100);
 
-    cache.set('third', 'three', 3_000);
+    cache.set('third', 'three', 3000);
 
     expect(cache.get('first')).toBeUndefined();
     expect(cache.get('second')).toBe('two');
