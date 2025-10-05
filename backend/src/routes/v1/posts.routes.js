@@ -12,8 +12,8 @@ const router = express.Router();
  * @openapi
  * /api/v1/posts/refresh:
  *   post:
- *     summary: Refresh articles and generate posts from configured feeds
- *     description: Consulta todos os feeds do usuário autenticado, aplica a janela de retenção configurada e aciona a geração de posts para notícias recentes utilizando os prompts habilitados.
+ *     summary: Refresh articles from configured feeds
+ *     description: Consulta todos os feeds do usuário autenticado, aplica a janela de retenção configurada e atualiza as notícias recentes disponíveis para geração manual de posts.
  *     tags:
  *       - Posts
  *     security:
@@ -61,23 +61,85 @@ const router = express.Router();
  *                         invalidItems: 0
  *                         error:
  *                           message: Feed request timed out
- *                     generation:
- *                       ownerKey: '1'
- *                       startedAt: '2025-01-20T12:34:56.000Z'
- *                       finishedAt: '2025-01-20T12:34:57.000Z'
- *                       eligibleCount: 2
- *                       generatedCount: 2
- *                       failedCount: 0
- *                       skippedCount: 1
- *                       promptBaseHash: 'e3b0c44298fc1c149afbf4c8996fb924'
- *                       modelUsed: gpt-5-nano
- *                       errors: null
+ *                     generation: null
  *                   meta:
  *                     requestId: 77777777-8888-4999-8aaa-bbbbbbbbbbbb
  *       '401':
  *         $ref: '#/components/responses/Unauthorized'
  */
 router.post('/posts/refresh', postsController.refresh);
+
+/**
+ * @openapi
+ * /api/v1/posts/{articleId}/generate:
+ *   post:
+ *     summary: Generate a LinkedIn post for a specific article
+ *     description: Gera manualmente um post do LinkedIn para a notícia informada utilizando os prompts configurados.
+ *     tags:
+ *       - Posts
+ *     security:
+ *       - SessionCookie: []
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: articleId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *     responses:
+ *       '200':
+ *         description: Post gerado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Envelope'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         item:
+ *                           $ref: '#/components/schemas/PostListItem'
+ *                         cacheInfo:
+ *                           type: object
+ *                           nullable: true
+ *                           properties:
+ *                             cachedTokens:
+ *                               type: integer
+ *                               nullable: true
+ *                         reused:
+ *                           type: boolean
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     item:
+ *                       id: 1
+ *                       title: 'Example article'
+ *                       contentSnippet: 'Resumo da notícia'
+ *                       publishedAt: '2025-01-20T12:34:56.000Z'
+ *                       feed:
+ *                         id: 2
+ *                         title: 'Feed'
+ *                         url: 'https://example.com/rss'
+ *                       post:
+ *                         content: 'Post gerado manualmente.'
+ *                         status: SUCCESS
+ *                         generatedAt: '2025-01-20T12:35:10.000Z'
+ *                         attemptCount: 1
+ *                     cacheInfo: null
+ *                     reused: false
+ *       '400':
+ *         $ref: '#/components/responses/BadRequest'
+ *       '401':
+ *         $ref: '#/components/responses/Unauthorized'
+ *       '404':
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.post('/posts/:articleId/generate', postsController.generateForArticle);
 
 /**
  * @openapi

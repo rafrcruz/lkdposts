@@ -1,6 +1,7 @@
 import {
   cleanupResultSchema,
   postGenerationProgressSchema,
+  postListItemSchema,
   postListMetaSchema,
   postListSchema,
   refreshSummarySchema,
@@ -73,6 +74,26 @@ const refreshProgressResponseSchema = z.object({
 export const fetchRefreshProgress = async (): Promise<PostGenerationProgress | null> => {
   const response = await getJson('/api/v1/posts/refresh-status', refreshProgressResponseSchema);
   return response.status ?? null;
+};
+
+const generatePostResponseSchema = z.object({
+  item: postListItemSchema,
+  cacheInfo: z
+    .object({
+      cachedTokens: z.number().int().nonnegative().nullable(),
+    })
+    .nullable(),
+  reused: z.boolean().optional(),
+});
+
+export type GeneratePostResponse = z.infer<typeof generatePostResponseSchema>;
+
+export const generatePost = ({ articleId }: { articleId: number }): Promise<GeneratePostResponse> => {
+  return postJson<GeneratePostResponse, Record<string, never>>(
+    `/api/v1/posts/${articleId}/generate`,
+    {},
+    generatePostResponseSchema,
+  );
 };
 
 type FetchPostRequestPreviewParams = {

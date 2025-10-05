@@ -86,19 +86,10 @@ const refresh = asyncHandler(async (req, res) => {
   const ownerKey = getOwnerKey(req);
   const result = await postsService.refreshUserFeeds({ ownerKey });
 
-  let generationSummary = null;
-  try {
-    generationSummary = await postGenerationService.generatePostsForOwner({ ownerKey });
-  } catch (error) {
-    console.error('Failed to generate posts for LinkedIn', { ownerKey, error });
-    const latestStatus = postGenerationService.getLatestStatus(ownerKey);
-    generationSummary = latestStatus?.summary ?? null;
-  }
-
   return res.success({
     now: result.now.toISOString(),
     feeds: result.results.map(mapFeedSummary),
-    generation: generationSummary,
+    generation: null,
   });
 });
 
@@ -109,6 +100,38 @@ const refreshStatus = asyncHandler(async (req, res) => {
   return res.success({
     status: status ?? null,
   });
+});
+
+const generateForArticle = asyncHandler(async (req, res) => {
+  const ownerKey = getOwnerKey(req);
+  const articleIdParam = req.params?.articleId;
+
+  const articleId = Number.parseInt(articleIdParam, 10);
+  if (!Number.isInteger(articleId) || articleId <= 0) {
+    throw new ApiError({
+      statusCode: 400,
+      code: 'INVALID_ARTICLE_ID',
+      message: 'Invalid article id',
+    });
+  }
+
+  try {
+    const result = await postGenerationService.generatePostForArticleId({ ownerKey, articleId });
+    const includeDiagnostics = !config.isProduction || req.user?.role === ROLES.ADMIN;
+    const item = mapPostListItem(result.article, { includeDiagnostics });
+
+    return res.success({
+      item,
+      cacheInfo: result.cacheInfo ?? null,
+      reused: result.reused ?? false,
+    });
+  } catch (error) {
+    if (error instanceof postGenerationService.ArticleNotFoundError) {
+      throw new ApiError({ statusCode: 404, code: 'ARTICLE_NOT_FOUND', message: 'Article not found' });
+    }
+
+    throw error;
+  }
 });
 
 const cleanup = asyncHandler(async (req, res) => {
@@ -151,6 +174,7 @@ const list = asyncHandler(async (req, res) => {
 module.exports = {
   refresh,
   refreshStatus,
+  generateForArticle,
   cleanup,
   list,
 };

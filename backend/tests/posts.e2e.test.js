@@ -12,6 +12,7 @@ const app = require('../src/app');
 const authService = require('../src/services/auth.service');
 const { prisma } = require('../src/lib/prisma');
 const postsService = require('../src/services/posts.service');
+const postGenerationService = require('../src/services/post-generation.service');
 const ingestionDiagnostics = require('../src/services/ingestion-diagnostics');
 const { __mockClient } = require('../src/lib/openai-client');
 
@@ -113,7 +114,7 @@ describe('Posts API', () => {
   });
 
   describe('POST /api/v1/posts/refresh', () => {
-    it('refreshes feeds, creates new articles and posts, and returns a summary', async () => {
+    it('refreshes feeds, creates new articles and placeholders, and returns a summary', async () => {
       const feed = await prisma.feed.create({
         data: {
           ownerKey: '1',
@@ -136,6 +137,7 @@ describe('Posts API', () => {
 
       expect(globalThis.fetch).toHaveBeenCalledWith(feed.url, expect.any(Object));
       expect(response.body.data.feeds).toHaveLength(1);
+      expect(response.body.data.generation).toBeNull();
       expect(response.body.data.feeds[0]).toEqual(
         expect.objectContaining({
           feedId: feed.id,
@@ -149,21 +151,20 @@ describe('Posts API', () => {
       const posts = await prisma.post.findMany();
       expect(articles).toHaveLength(1);
       expect(posts).toHaveLength(1);
-      expect(posts[0].status).toBe('SUCCESS');
-      expect(posts[0].content).toBe('Post gerado automaticamente (mock).');
-      expect(posts[0].attemptCount).toBe(1);
-      expect(posts[0].modelUsed).toBe('gpt-mock');
-      expect(posts[0].generatedAt).toBeInstanceOf(Date);
-      expect(posts[0].tokensInput).toBe(120);
-      expect(posts[0].tokensOutput).toBe(80);
-      expect(typeof posts[0].promptBaseHash).toBe('string');
-      expect(posts[0].promptBaseHash.length).toBeGreaterThan(0);
+      expect(posts[0].status).toBe('PENDING');
+      expect(posts[0].content).toBeNull();
+      expect(posts[0].attemptCount).toBe(0);
+      expect(posts[0].modelUsed).toBeNull();
+      expect(posts[0].generatedAt).toBeNull();
+      expect(posts[0].tokensInput).toBeNull();
+      expect(posts[0].tokensOutput).toBeNull();
+      expect(posts[0].promptBaseHash).toBeNull();
 
       const updatedFeed = await prisma.feed.findUnique({ where: { id: feed.id } });
       expect(updatedFeed.lastFetchedAt).not.toBeNull();
     });
 
-    it('stores generated text from structured responses and exposes it in the list endpoint', async () => {
+    it('stores generated text from structured responses after manual generation and exposes it in the list endpoint', async () => {
       await prisma.feed.create({
         data: {
           ownerKey: '1',
@@ -191,7 +192,20 @@ describe('Posts API', () => {
         usage: { input_tokens: 160, output_tokens: 120 },
       }));
 
-      await withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh'))
+      const refreshResponse = await withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh'))
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      const articleRecord = await prisma.article.findFirst({ where: { feed: { ownerKey: '1' } } });
+      expect(articleRecord).not.toBeNull();
+      if (!articleRecord) {
+        throw new Error('Article was not created during refresh');
+      }
+
+      await withAuth(
+        TOKENS.user1,
+        request(app).post(`/api/v1/posts/${articleRecord.id}/generate`),
+      )
         .expect('Content-Type', /json/)
         .expect(200);
 
@@ -234,6 +248,101 @@ describe('Posts API', () => {
       expect(responseA.body.data.feeds[0].articlesCreated).toBe(1);
       const articles = await prisma.article.findMany();
       expect(articles).toHaveLength(1);
+    });
+  });
+
+  describe('POST /api/v1/posts/:articleId/generate', () => {
+    it('generates a post on demand and returns the updated article', async () => {
+      const feed = await prisma.feed.create({
+        data: {
+          ownerKey: '1',
+          url: 'https://example.com/manual-generate.xml',
+        },
+      });
+
+      const article = await prisma.article.create({
+        data: {
+          feedId: feed.id,
+          title: 'Manual story',
+          contentSnippet: 'Snippet manual',
+          publishedAt: new Date(),
+          guid: 'manual-guid',
+          link: 'https://example.com/manual',
+          dedupeKey: 'guid:manual-guid',
+        },
+      });
+
+      await prisma.post.create({ data: { articleId: article.id } });
+
+      __mockClient.responses.create.mockImplementationOnce(async () => ({
+        id: 'resp-manual-e2e',
+        model: 'gpt-5-nano',
+        output: [
+          {
+            content: [
+              { type: 'text', text: 'Primeiro parágrafo.' },
+              { type: 'output_text', text: 'Segundo parágrafo.' },
+            ],
+          },
+        ],
+        usage: { input_tokens: 90, output_tokens: 60 },
+      }));
+
+      const response = await withAuth(
+        TOKENS.user1,
+        request(app).post(`/api/v1/posts/${article.id}/generate`),
+      )
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data.item.post).toEqual(
+        expect.objectContaining({
+          content: 'Primeiro parágrafo.\n\nSegundo parágrafo.',
+          status: 'SUCCESS',
+        }),
+      );
+
+      const storedPost = await prisma.post.findUnique({ where: { articleId: article.id } });
+      expect(storedPost.status).toBe('SUCCESS');
+      expect(storedPost.content).toBe('Primeiro parágrafo.\n\nSegundo parágrafo.');
+      expect(storedPost.attemptCount).toBe(1);
+      expect(storedPost.modelUsed).toBe('gpt-5-nano');
+    });
+
+    it('returns an error when the article reached the generation attempt limit', async () => {
+      const feed = await prisma.feed.create({
+        data: {
+          ownerKey: '1',
+          url: 'https://example.com/manual-limit.xml',
+        },
+      });
+
+      const article = await prisma.article.create({
+        data: {
+          feedId: feed.id,
+          title: 'Manual limit story',
+          contentSnippet: 'Snippet limit',
+          publishedAt: new Date(),
+          guid: 'manual-limit-guid',
+          link: null,
+          dedupeKey: 'guid:manual-limit',
+        },
+      });
+
+      await prisma.post.create({
+        data: {
+          articleId: article.id,
+          status: 'FAILED',
+          attemptCount: postGenerationService.MAX_GENERATION_ATTEMPTS,
+        },
+      });
+
+      await withAuth(
+        TOKENS.user1,
+        request(app).post(`/api/v1/posts/${article.id}/generate`),
+      )
+        .expect('Content-Type', /json/)
+        .expect(409);
     });
   });
 

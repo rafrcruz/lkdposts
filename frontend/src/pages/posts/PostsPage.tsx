@@ -1,13 +1,13 @@
 import type { ChangeEvent, Dispatch, JSX, MutableRefObject, SetStateAction } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { UseQueryResult } from '@tanstack/react-query';
+import { useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import * as Sentry from '@sentry/react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 
-import { useCleanupPosts, usePostList, useRefreshPosts } from '@/features/posts/hooks/usePosts';
-import type { PostListResponse } from '@/features/posts/api/posts';
+import { useCleanupPosts, useGeneratePost, usePostList, useRefreshPosts } from '@/features/posts/hooks/usePosts';
+import { POSTS_QUERY_KEY, type PostListResponse } from '@/features/posts/api/posts';
 import type {
   CleanupResult,
   PostGenerationProgress,
@@ -60,6 +60,12 @@ type PreviewRequestSummary = {
   durationMs: number;
 };
 
+type PostGenerationUiState = {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  message?: string | null;
+  reused?: boolean;
+};
+
 const PROGRESS_PHASE_FALLBACKS: Record<PostGenerationProgress['phase'], string> = {
   initializing: 'Preparing generation...',
   resolving_params: 'Loading configuration...',
@@ -75,6 +81,7 @@ const RATE_LIMIT_ERROR_CODES = new Set(['rate_limit', 'rate_limit_exceeded']);
 const RATE_LIMIT_BASE_DELAY_MS = 1500;
 const RATE_LIMIT_MAX_DELAY_MS = 12000;
 const RATE_LIMIT_MAX_ATTEMPTS = 5;
+const GENERATION_SUCCESS_CLEAR_DELAY_MS = 4000;
 
 const extractRateLimitCode = (value: unknown): string | null => {
   if (typeof value === 'string') {
@@ -1162,6 +1169,7 @@ const PostsPage = () => {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewCopyFeedback, setPreviewCopyFeedback] = useState<CopyFeedback>(null);
   const [postCopyFeedbacks, setPostCopyFeedbacks] = useState<Record<number, CopyFeedback>>({});
+  const [postGenerationStates, setPostGenerationStates] = useState<Record<number, PostGenerationUiState>>({});
   const [lastPreviewRequest, setLastPreviewRequest] = useState<number | null>(null);
   const [openAiPreviewRaw, setOpenAiPreviewRaw] = useState<string | null>(null);
   const [openAiPreviewError, setOpenAiPreviewError] = useState<string | null>(null);
@@ -1229,8 +1237,10 @@ const PostsPage = () => {
   const currentPage = previousCursors.length + 1;
   const isWindowPending = listWindowDays !== postsTimeWindowDays;
 
+  const queryClient = useQueryClient();
   const { mutateAsync: refreshPostsAsync } = useRefreshPosts();
   const { mutateAsync: cleanupPostsAsync } = useCleanupPosts();
+  const generatePostMutation = useGeneratePost();
   const progressStats = useMemo(() => buildProgressStats(refreshProgress), [refreshProgress]);
 
   const progressPhaseLabel = useMemo(
@@ -1487,6 +1497,62 @@ const PostsPage = () => {
       }
     },
     [schedulePostCopyFeedbackClear, t],
+  );
+
+  const handleGeneratePost = useCallback(
+    async (articleId: number) => {
+      setPostGenerationStates((previous) => ({
+        ...previous,
+        [articleId]: { status: 'loading' },
+      }));
+
+      try {
+        const result = await generatePostMutation.mutateAsync({ articleId });
+
+        queryClient.setQueriesData<PostListResponse | undefined>(
+          { queryKey: POSTS_QUERY_KEY },
+          (current) => {
+            if (!current) {
+              return current;
+            }
+
+            const items = current.items.map((item) => (item.id === result.item.id ? result.item : item));
+            return { ...current, items };
+          },
+        );
+
+        const messageKey = result.reused
+          ? 'posts.list.generateReused'
+          : 'posts.list.generateSuccess';
+        const message = t(
+          messageKey,
+          result.reused ? 'Post já estava disponível.' : 'Post gerado com sucesso.',
+        );
+
+        setPostGenerationStates((previous) => ({
+          ...previous,
+          [articleId]: { status: 'success', message, reused: Boolean(result.reused) },
+        }));
+
+        setTimeout(() => {
+          setPostGenerationStates((previous) => {
+            if (!(articleId in previous)) {
+              return previous;
+            }
+
+            const { [articleId]: _removed, ...rest } = previous;
+            return rest;
+          });
+        }, GENERATION_SUCCESS_CLEAR_DELAY_MS);
+      } catch (error) {
+        const message = resolveOperationErrorMessage(error, t);
+        setPostGenerationStates((previous) => ({
+          ...previous,
+          [articleId]: { status: 'error', message },
+        }));
+      }
+    },
+    [generatePostMutation, queryClient, t],
   );
 
   const handleCopyPreviewContent = useCallback(
@@ -2568,6 +2634,8 @@ const PostsPage = () => {
         isPreviewLoading={previewIsLoading}
         onCopyPostContent={handleCopyPostContent}
         copyFeedbacks={postCopyFeedbacks}
+        generationStates={postGenerationStates}
+        onGeneratePost={handleGeneratePost}
         posts={posts}
         selectedFeedId={selectedFeedId}
         t={t}
@@ -2713,6 +2781,8 @@ type PostListContentProps = {
   isPreviewLoading: boolean;
   onCopyPostContent: (postId: number, value: string | null | undefined) => void;
   copyFeedbacks: Record<number, CopyFeedback>;
+  generationStates: Record<number, PostGenerationUiState | undefined>;
+  onGeneratePost: (articleId: number) => void;
   posts: PostListItem[];
   selectedFeedId: number | null;
   t: TranslateFunction;
@@ -2902,6 +2972,8 @@ type PostListItemCardProps = {
   onToggleSection: (id: number, section: 'post' | 'article') => void;
   onCopyPostContent: (postId: number, value: string | null | undefined) => void;
   copyFeedback: CopyFeedback | null;
+  onGeneratePost?: (articleId: number) => void;
+  generationState?: PostGenerationUiState | null;
 };
 
 const PostListItemCard = ({
@@ -2917,8 +2989,16 @@ const PostListItemCard = ({
   onToggleSection,
   onCopyPostContent,
   copyFeedback,
+  onGeneratePost,
+  generationState,
 }: PostListItemCardProps) => {
   const feedLabel = resolveArticleFeedLabel(item.feed, t);
+  const generationStatus = generationState?.status ?? 'idle';
+  const generationMessage = generationState?.message ?? null;
+  const isGenerating = generationStatus === 'loading';
+  const showGenerateAction = Boolean(onGeneratePost) && !item.post?.content;
+  const showGenerationError = generationStatus === 'error' && generationMessage;
+  const showGenerationSuccess = generationStatus === 'success' && generationMessage && !item.post?.content;
 
   return (
     <article key={item.id} className="card space-y-4 px-6 py-6">
@@ -2997,7 +3077,36 @@ const PostListItemCard = ({
             {item.post?.content ? (
               <p className="whitespace-pre-wrap leading-relaxed">{item.post.content}</p>
             ) : (
-              <p className="text-muted-foreground">{t('posts.list.postUnavailable', 'Post not available yet.')}</p>
+              <div className="space-y-3">
+                <p className="text-muted-foreground">{t('posts.list.postNotGenerated', 'Post not generated.')}</p>
+                {showGenerateAction ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => onGeneratePost?.(item.id)}
+                    disabled={isGenerating}
+                    aria-busy={isGenerating}
+                  >
+                    {isGenerating ? (
+                      <span className="flex items-center gap-2">
+                        <span
+                          aria-hidden="true"
+                          className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
+                        />
+                        {t('posts.list.generatingPost', 'Generating post...')}
+                      </span>
+                    ) : (
+                      t('posts.list.generatePost', 'Generate post')
+                    )}
+                  </button>
+                ) : null}
+                {showGenerationError ? (
+                  <p className="text-xs text-danger">{generationMessage}</p>
+                ) : null}
+                {showGenerationSuccess ? (
+                  <p className="text-xs text-primary">{generationMessage}</p>
+                ) : null}
+              </div>
             )}
           </div>
         ) : null}
@@ -3108,6 +3217,8 @@ const PostListContent = ({
   isPreviewLoading,
   onCopyPostContent,
   copyFeedbacks,
+  generationStates,
+  onGeneratePost,
   posts,
   selectedFeedId,
   t,
@@ -3157,6 +3268,8 @@ const PostListContent = ({
               onToggleSection={onToggleSection}
               onCopyPostContent={onCopyPostContent}
               copyFeedback={copyFeedbacks[item.id] ?? null}
+              onGeneratePost={onGeneratePost}
+              generationState={generationStates[item.id] ?? null}
             />
           );
         })}
