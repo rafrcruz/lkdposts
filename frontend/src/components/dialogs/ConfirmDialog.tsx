@@ -39,8 +39,8 @@ export const ConfirmDialog = ({
   }
 
   const confirmButtonClassName = destructive
-    ? 'inline-flex w-full items-center justify-center rounded-md border border-destructive px-4 py-2 text-sm font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto'
-    : 'inline-flex w-full items-center justify-center rounded-md border border-primary px-4 py-2 text-sm font-medium text-primary transition hover:bg-primary hover:text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto';
+    ? 'inline-flex w-full items-center justify-center rounded-md border border-destructive bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground transition hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto'
+    : 'inline-flex w-full items-center justify-center rounded-md border border-primary bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto';
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">

@@ -61,7 +61,6 @@ const router = express.Router();
  *                         invalidItems: 0
  *                         error:
  *                           message: Feed request timed out
- *                     generation: null
  *                   meta:
  *                     requestId: 77777777-8888-4999-8aaa-bbbbbbbbbbbb
  *       '401':
@@ -140,62 +139,6 @@ router.post('/posts/refresh', postsController.refresh);
  *         $ref: '#/components/responses/NotFound'
  */
 router.post('/posts/:articleId/generate', postsController.generateForArticle);
-
-/**
- * @openapi
- * /api/v1/posts/refresh-status:
- *   get:
- *     summary: Get the latest refresh progress for the authenticated user
- *     description: Retorna o progresso mais recente da geração de posts para o usuário autenticado.
- *     tags:
- *       - Posts
- *     security:
- *       - SessionCookie: []
- *       - BearerAuth: []
- *     responses:
- *       '200':
- *         description: Último status conhecido da geração de posts
- *         content:
- *           application/json:
- *             schema:
- *               allOf:
- *                 - $ref: '#/components/schemas/Envelope'
- *                 - type: object
- *                   properties:
- *                     data:
- *                       type: object
- *                       properties:
- *                         status:
- *                           $ref: '#/components/schemas/PostGenerationProgress'
- *             examples:
- *               progress:
- *                 value:
- *                   success: true
- *                   data:
- *                     status:
- *                       ownerKey: '1'
- *                       startedAt: '2025-01-20T12:34:56.000Z'
- *                       updatedAt: '2025-01-20T12:35:10.000Z'
- *                       finishedAt: null
- *                       status: in_progress
- *                       phase: generating_posts
- *                       message: 'Gerando post 2 de 5...'
- *                       eligibleCount: 5
- *                       processedCount: 1
- *                       generatedCount: 1
- *                       failedCount: 0
- *                       skippedCount: 0
- *                       currentArticleId: 42
- *                       currentArticleTitle: 'Exemplo de notícia'
- *                       promptBaseHash: 'e3b0c44298fc1c149afbf4c8996fb924'
- *                       modelUsed: gpt-5-nano
- *                       errors: []
- *                   meta:
- *                     requestId: 11111111-2222-4333-8444-555555555555
- *       '401':
- *         $ref: '#/components/responses/Unauthorized'
- */
-router.get('/posts/refresh-status', postsController.refreshStatus);
 
 /**
  * @openapi

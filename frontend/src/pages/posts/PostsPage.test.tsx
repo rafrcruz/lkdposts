@@ -333,14 +333,6 @@ describe('PostsPage', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const { url, method } = resolveRequestDetails(input, init);
-
-      if (method === 'GET' && url.pathname === '/api/v1/posts/refresh-status') {
-        return new Response(JSON.stringify({ success: true, data: { status: null } }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-
       throw new Error(`Unhandled request in PostsPage test fetch mock: ${method} ${url.pathname}`);
     });
 

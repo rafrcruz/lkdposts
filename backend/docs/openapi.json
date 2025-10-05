@@ -2679,55 +2679,6 @@
         }
       }
     },
-    "/api/v1/posts/refresh-status": {
-      "get": {
-        "summary": "Get the latest refresh progress for the authenticated user",
-        "description": "Retorna o progresso mais recente da geração de posts para o usuário autenticado.",
-        "tags": [
-          "Posts"
-        ],
-        "security": [
-          {
-            "SessionCookie": []
-          },
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Último status conhecido da geração de posts",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/Envelope"
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "status": {
-                              "$ref": "#/components/schemas/PostGenerationProgress"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          }
-        }
-      }
-    },
     "/api/v1/posts/cleanup": {
       "post": {
         "summary": "Delete old articles and posts outside the retention window",

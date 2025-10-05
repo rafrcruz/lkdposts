@@ -89,16 +89,6 @@ const refresh = asyncHandler(async (req, res) => {
   return res.success({
     now: result.now.toISOString(),
     feeds: result.results.map(mapFeedSummary),
-    generation: null,
-  });
-});
-
-const refreshStatus = asyncHandler(async (req, res) => {
-  const ownerKey = getOwnerKey(req);
-  const status = postGenerationService.getLatestStatus(ownerKey);
-
-  return res.success({
-    status: status ?? null,
   });
 });
 
@@ -173,7 +163,6 @@ const list = asyncHandler(async (req, res) => {
 
 module.exports = {
   refresh,
-  refreshStatus,
   generateForArticle,
   cleanup,
   list,
