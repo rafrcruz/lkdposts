@@ -408,7 +408,8 @@ const PromptSideControls = ({
   <div className="flex flex-col items-stretch gap-3 sm:items-end">
     <button
       type="button"
-      aria-pressed={isEnabled}
+      role="switch"
+      aria-checked={isEnabled}
       aria-label={toggleAriaLabel}
       onClick={onToggleEnabled}
       disabled={isTogglePending}
