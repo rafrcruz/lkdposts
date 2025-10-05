@@ -32,6 +32,41 @@ const TRUNCATION_NOTICE = '\n\n[Conteúdo truncado para atender limites]';
 
 const generationLocks = new Map();
 const latestGenerationStatus = new Map();
+const latestStatusMetadata = new Map();
+
+const MAX_TRACKED_STATUSES = 50;
+const STATUS_MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+const removeStatusForOwner = (ownerKey) => {
+  latestGenerationStatus.delete(ownerKey);
+  latestStatusMetadata.delete(ownerKey);
+};
+
+const pruneStatuses = (now = Date.now()) => {
+  if (STATUS_MAX_AGE_MS > 0) {
+    for (const [ownerKey, storedAt] of latestStatusMetadata.entries()) {
+      if (now - storedAt > STATUS_MAX_AGE_MS) {
+        removeStatusForOwner(ownerKey);
+      }
+    }
+  }
+
+  if (MAX_TRACKED_STATUSES > 0 && latestGenerationStatus.size > MAX_TRACKED_STATUSES) {
+    const ordered = Array.from(latestStatusMetadata.entries()).sort((a, b) => a[1] - b[1]);
+
+    while (latestGenerationStatus.size > MAX_TRACKED_STATUSES && ordered.length > 0) {
+      const [ownerKey] = ordered.shift();
+      removeStatusForOwner(ownerKey);
+    }
+  }
+};
+
+const setLatestStatus = (ownerKey, status) => {
+  latestGenerationStatus.set(ownerKey, status);
+  latestStatusMetadata.set(ownerKey, Date.now());
+  pruneStatuses();
+  return status;
+};
 
 const GENERATION_STATES = Object.freeze({
   IDLE: 'idle',
@@ -90,8 +125,7 @@ const buildInitialStatus = ({ ownerKey, startedAt }) => ({
 
 const initializeStatus = ({ ownerKey, startedAt }) => {
   const status = buildInitialStatus({ ownerKey, startedAt });
-  latestGenerationStatus.set(ownerKey, status);
-  return status;
+  return setLatestStatus(ownerKey, status);
 };
 
 const mergeStatus = (current, updates) => {
@@ -122,13 +156,11 @@ const updateStatus = (ownerKey, updates) => {
   if (!current) {
     const initialized = initializeStatus({ ownerKey, startedAt: new Date() });
     const next = mergeStatus(initialized, updates);
-    latestGenerationStatus.set(ownerKey, next);
-    return next;
+    return setLatestStatus(ownerKey, next);
   }
 
   const next = mergeStatus(current, updates);
-  latestGenerationStatus.set(ownerKey, next);
-  return next;
+  return setLatestStatus(ownerKey, next);
 };
 
 const finalizeStatus = ({ ownerKey, summary, message }) => {
@@ -958,7 +990,10 @@ const computeSummary = ({
   return summary;
 };
 
-const getLatestStatus = (ownerKey) => latestGenerationStatus.get(ownerKey) ?? null;
+const getLatestStatus = (ownerKey) => {
+  pruneStatuses();
+  return latestGenerationStatus.get(ownerKey) ?? null;
+};
 
 const prepareGenerationContext = async ({ ownerKey, startedAt, overrides, maxAttempts }) => {
   updateStatus(ownerKey, {
@@ -1147,6 +1182,7 @@ const generatePostsForOwner = async ({
   client,
   operationalParams: overrides,
   maxAttempts = MAX_GENERATION_ATTEMPTS,
+  waitForCompletion = true,
 } = {}) => {
   if (!ownerKey) {
     throw new TypeError('ownerKey is required');
@@ -1154,15 +1190,22 @@ const generatePostsForOwner = async ({
 
   const activeLock = generationLocks.get(ownerKey);
   if (activeLock) {
-    return activeLock;
+    if (waitForCompletion) {
+      return activeLock;
+    }
+
+    return {
+      status: getLatestStatus(ownerKey),
+      alreadyRunning: true,
+    };
   }
 
   const promise = (async () => {
     const startedAt = ensureDate(now);
     initializeStatus({ ownerKey, startedAt });
 
-      const errors = [];
-      let promptBaseHash = null;
+    const errors = [];
+    let promptBaseHash = null;
     let basePrompt = '';
     let eligible = [];
     let skippedCount = 0;
@@ -1178,8 +1221,7 @@ const generatePostsForOwner = async ({
         overrides,
         maxAttempts,
       });
-
-        ({ basePrompt, promptBaseHash, eligible, skippedCount } = preparation);
+      ({ basePrompt, promptBaseHash, eligible, skippedCount } = preparation);
 
       if (eligible.length === 0) {
         return recordEmptySummary({
@@ -1287,13 +1329,23 @@ const generatePostsForOwner = async ({
   });
 
   generationLocks.set(ownerKey, promise);
-  return promise;
+  if (waitForCompletion) {
+    return promise;
+  }
+
+  return {
+    status: getLatestStatus(ownerKey),
+    alreadyRunning: false,
+  };
 };
+
+const isGenerationInProgress = (ownerKey) => generationLocks.has(ownerKey);
 
 module.exports = {
   generatePostsForOwner,
   generatePostForArticleId,
   getLatestStatus,
+  isGenerationInProgress,
   buildPromptBase,
   buildArticleContext,
   buildPostRequestPreview,

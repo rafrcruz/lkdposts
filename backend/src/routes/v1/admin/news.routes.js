@@ -10,7 +10,7 @@ const router = express.Router();
  * /api/v1/admin/news/generate-posts:
  *   post:
  *     summary: Trigger manual post generation for the authenticated owner
- *     description: Inicia imediatamente a geração de posts para as notícias elegíveis do usuário autenticado.
+ *     description: Inicia imediatamente a geração manual de posts e retorna o status mais recente sem aguardar a conclusão.
  *     tags:
  *       - Admin - News Generation
  *     security:
@@ -27,26 +27,40 @@ const router = express.Router();
  *                 - type: object
  *                   properties:
  *                     data:
- *                       $ref: '#/components/schemas/AdminGenerationTriggerResult'
+ *                       type: object
+ *                       properties:
+ *                         ownerKey:
+ *                           type: string
+ *                         alreadyRunning:
+ *                           type: boolean
+ *                         status:
+ *                           $ref: '#/components/schemas/AdminGenerationStatus'
  *             examples:
  *               success:
  *                 value:
  *                   success: true
  *                   data:
  *                     ownerKey: '1'
- *                     summary:
+ *                     alreadyRunning: false
+ *                     status:
  *                       ownerKey: '1'
  *                       startedAt: '2025-01-20T12:34:56.000Z'
- *                       finishedAt: '2025-01-20T12:35:45.000Z'
- *                       eligibleCount: 3
- *                       generatedCount: 2
- *                       failedCount: 1
+ *                       updatedAt: '2025-01-20T12:34:56.500Z'
+ *                       finishedAt: null
+ *                       status: in_progress
+ *                       phase: collecting_articles
+ *                       message: 'Buscando notícias elegíveis...'
+ *                       eligibleCount: null
+ *                       processedCount: 0
+ *                       generatedCount: 0
+ *                       failedCount: 0
  *                       skippedCount: 0
+ *                       currentArticleId: null
+ *                       currentArticleTitle: null
  *                       promptBaseHash: e3b0c44298fc1c149afbf4c8996fb924
- *                       modelUsed: gpt-5-nano
- *                       errors:
- *                         - articleId: 42
- *                           reason: OpenAI request timed out
+ *                       modelUsed: null
+ *                       errors: []
+ *                       cacheInfo: null
  *                   meta:
  *                     requestId: 00000000-0000-4000-8000-000000000000
  *       '401':
@@ -78,13 +92,21 @@ router.post('/generate-posts', newsGenerationController.triggerGeneration);
  *                 - type: object
  *                   properties:
  *                     data:
- *                       $ref: '#/components/schemas/AdminGenerationStatusResult'
+ *                       type: object
+ *                       properties:
+ *                         ownerKey:
+ *                           type: string
+ *                         status:
+ *                           $ref: '#/components/schemas/AdminGenerationStatus'
+ *                         running:
+ *                           type: boolean
  *             examples:
  *               running:
  *                 value:
  *                   success: true
  *                   data:
  *                     ownerKey: '1'
+ *                     running: true
  *                     status:
  *                       ownerKey: '1'
  *                       startedAt: '2025-01-20T12:34:56.000Z'
