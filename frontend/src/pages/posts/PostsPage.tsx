@@ -1,11 +1,13 @@
 import type { ChangeEvent, Dispatch, JSX, MutableRefObject, SetStateAction } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import * as Sentry from '@sentry/react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 
 import { useCleanupPosts, usePostList, useRefreshPosts } from '@/features/posts/hooks/usePosts';
+import type { PostListResponse } from '@/features/posts/api/posts';
 import type {
   CleanupResult,
   PostGenerationProgress,
@@ -970,7 +972,7 @@ const handlePostListFetchEffect = ({
   recordFetchSuccess,
   listWindowDays,
 }: {
-  postListQuery: ReturnType<typeof usePostList>;
+  postListQuery: UseQueryResult<PostListResponse, HttpError>;
   fetchStartTimeRef: MutableRefObject<number | null>;
   recordFetchSuccess: (duration: number) => void;
   listWindowDays: number;
