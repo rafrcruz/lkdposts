@@ -1,5 +1,11 @@
-import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type {
+  CSSProperties,
+  FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  MutableRefObject,
+} from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { TFunction } from 'i18next';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import * as Sentry from '@sentry/react';
@@ -47,7 +53,6 @@ import { PromptCard, type PromptCardRenderOptions } from './components/PromptCar
 
 const TITLE_LIMIT = 120;
 const CONTENT_PREVIEW_LIMIT = 240;
-const VIRTUALIZATION_THRESHOLD = 50;
 const ESTIMATED_ITEM_HEIGHT = 196;
 const DROP_ZONE_ID = 'prompts-reorder-dropzone';
 const REORDER_DEBOUNCE_MS = 500;
@@ -142,12 +147,7 @@ const logReorderEvent = (message: string, data: Record<string, unknown>) => {
   });
 };
 
-const PromptsPage = () => {
-  // NOSONAR: This component orchestrates a large set of UI states and flows; a broader refactor
-  // is planned to split responsibilities across dedicated hooks and child components.
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-
+const usePromptsPageMetadata = (t: TFunction) => {
   useEffect(() => {
     document.title = t('prompts.meta.title', 'lkdposts - Prompts');
     Sentry.addBreadcrumb({
@@ -156,9 +156,10 @@ const PromptsPage = () => {
       level: 'info',
     });
   }, [t]);
+};
 
-  const promptList = usePromptList();
-  const refetchPromptList = useCallback(() => {
+const usePromptListRefetch = (promptList: ReturnType<typeof usePromptList>) => {
+  return useCallback(() => {
     try {
       const result = promptList.refetch();
       return Promise.resolve(result).catch((error: unknown) => {
@@ -170,6 +171,331 @@ const PromptsPage = () => {
       return Promise.resolve(undefined);
     }
   }, [promptList]);
+};
+
+const usePromptFilters = (prompts: Prompt[], statusFilter: StatusFilter, searchTerm: string) => {
+  return useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const filteredPrompts = prompts.filter((prompt) => {
+      const matchesStatus =
+        statusFilter === 'all' || (statusFilter === 'enabled' ? prompt.enabled : !prompt.enabled);
+      if (!matchesStatus) {
+        return false;
+      }
+
+      if (normalizedSearch.length === 0) {
+        return true;
+      }
+
+      const titleMatch = prompt.title.toLowerCase().includes(normalizedSearch);
+      const contentMatch = prompt.content.toLowerCase().includes(normalizedSearch);
+
+      return titleMatch || contentMatch;
+    });
+
+    const promptIdList = filteredPrompts.map((prompt) => prompt.id);
+    const allPromptIds = prompts.map((prompt) => prompt.id);
+
+    return { normalizedSearch, filteredPrompts, promptIdList, allPromptIds } as const;
+  }, [prompts, searchTerm, statusFilter]);
+};
+
+const useDisableBodySelection = (isSorting: boolean) => {
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    if (!isSorting) {
+      return;
+    }
+
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [isSorting]);
+};
+
+type ReorderAutoScrollArgs = {
+  isSorting: boolean;
+  listContainerRef: MutableRefObject<HTMLDivElement | null>;
+  listContainerBoundsRef: MutableRefObject<{ top: number; bottom: number } | null>;
+};
+
+const useReorderAutoScroll = ({
+  isSorting,
+  listContainerRef,
+  listContainerBoundsRef,
+}: ReorderAutoScrollArgs) => {
+  useEffect(() => {
+    if (!isSorting) {
+      return;
+    }
+
+    const container = listContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const SCROLL_MARGIN = 72;
+    const SCROLL_STEP = 18;
+
+    const updateBounds = () => {
+      const rect = container.getBoundingClientRect();
+      listContainerBoundsRef.current = { top: rect.top, bottom: rect.bottom };
+    };
+
+    updateBounds();
+
+    const handleContainerScroll = () => {
+      updateBounds();
+    };
+
+    const handleWindowResize = () => {
+      updateBounds();
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const bounds = listContainerBoundsRef.current;
+
+      if (!bounds) {
+        updateBounds();
+        return;
+      }
+
+      if (event.clientY < bounds.top + SCROLL_MARGIN) {
+        container.scrollBy({ top: -SCROLL_STEP, behavior: 'auto' });
+        return;
+      }
+
+      if (event.clientY > bounds.bottom - SCROLL_MARGIN) {
+        container.scrollBy({ top: SCROLL_STEP, behavior: 'auto' });
+      }
+    };
+
+    const browserWindow = globalThis as Window & typeof globalThis;
+
+    browserWindow.addEventListener('pointermove', handlePointerMove);
+    browserWindow.addEventListener('resize', handleWindowResize);
+    container.addEventListener('scroll', handleContainerScroll, { passive: true });
+
+    return () => {
+      browserWindow.removeEventListener('pointermove', handlePointerMove);
+      browserWindow.removeEventListener('resize', handleWindowResize);
+      container.removeEventListener('scroll', handleContainerScroll);
+      listContainerBoundsRef.current = null;
+    };
+  }, [isSorting, listContainerBoundsRef, listContainerRef]);
+};
+
+type SyncVisibleOrderArgs = {
+  isSorting: boolean;
+  isPending: boolean;
+  dirty: boolean;
+  promptIdList: string[];
+  setVisibleOrder: (next: string[]) => void;
+  setBaselineOrder: (next: string[]) => void;
+  visibleOrderRef: MutableRefObject<string[]>;
+  baselineOrderRef: MutableRefObject<string[]>;
+  setDirty: (next: boolean) => void;
+  setActiveId: (next: string | null) => void;
+};
+
+const useSyncVisibleOrder = ({
+  isSorting,
+  isPending,
+  dirty,
+  promptIdList,
+  setVisibleOrder,
+  setBaselineOrder,
+  visibleOrderRef,
+  baselineOrderRef,
+  setDirty,
+  setActiveId,
+}: SyncVisibleOrderArgs) => {
+  useEffect(() => {
+    if (isSorting || isPending || dirty) {
+      return;
+    }
+
+    const nextIds = promptIdList;
+    if (
+      arraysShallowEqual(baselineOrderRef.current, nextIds) &&
+      arraysShallowEqual(visibleOrderRef.current, nextIds)
+    ) {
+      return;
+    }
+
+    const nextVisible = [...nextIds];
+    const nextBaseline = [...nextIds];
+    setVisibleOrder(nextVisible);
+    setBaselineOrder(nextBaseline);
+    visibleOrderRef.current = [...nextVisible];
+    baselineOrderRef.current = [...nextBaseline];
+    setDirty(false);
+    setActiveId(null);
+  }, [
+    baselineOrderRef,
+    dirty,
+    isPending,
+    isSorting,
+    promptIdList,
+    setActiveId,
+    setBaselineOrder,
+    setDirty,
+    setVisibleOrder,
+    visibleOrderRef,
+  ]);
+};
+
+const usePromptListErrorReporting = (
+  error: unknown,
+  shouldReport: (error: unknown) => boolean,
+  lastFetchErrorRef: MutableRefObject<unknown>,
+) => {
+  useEffect(() => {
+    if (!error || !shouldReport(error)) {
+      lastFetchErrorRef.current = error ?? null;
+      return;
+    }
+
+    if (lastFetchErrorRef.current === error) {
+      return;
+    }
+
+    lastFetchErrorRef.current = error;
+    Sentry.captureException(error, {
+      tags: { feature: 'prompts', action: 'fetch' },
+    });
+  }, [error, lastFetchErrorRef, shouldReport]);
+};
+
+type PendingScrollArgs = {
+  pendingScrollId: string | null;
+  setPendingScrollId: (next: string | null) => void;
+  itemRefs: MutableRefObject<Map<string, HTMLDivElement>>;
+  orderedPrompts: Prompt[];
+  shouldVirtualize: boolean;
+  virtualizer: ReturnType<typeof useVirtualizer>;
+};
+
+const usePendingScrollEffect = ({
+  pendingScrollId,
+  setPendingScrollId,
+  itemRefs,
+  orderedPrompts,
+  shouldVirtualize,
+  virtualizer,
+}: PendingScrollArgs) => {
+  useEffect(() => {
+    if (pendingScrollId === null) {
+      return;
+    }
+
+    const element = itemRefs.current.get(pendingScrollId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.focus({ preventScroll: true });
+      setPendingScrollId(null);
+      return;
+    }
+
+    const isVisible = orderedPrompts.some((item) => item.id === pendingScrollId);
+    if (!isVisible) {
+      setPendingScrollId(null);
+      return;
+    }
+
+    if (!shouldVirtualize) {
+      return;
+    }
+
+    const index = orderedPrompts.findIndex((item) => item.id === pendingScrollId);
+    if (index >= 0) {
+      virtualizer.scrollToIndex(index, { align: 'center' });
+      return;
+    }
+
+    setPendingScrollId(null);
+  }, [
+    itemRefs,
+    orderedPrompts,
+    orderedPrompts.length,
+    pendingScrollId,
+    setPendingScrollId,
+    shouldVirtualize,
+    virtualizer,
+  ]);
+};
+
+const useAutoResizeTextarea = (
+  contentInputRef: MutableRefObject<HTMLTextAreaElement | null>,
+  contentInput: string,
+  formMode: FormMode | null,
+  isContentExpanded: boolean,
+) => {
+  useEffect(() => {
+    if (!contentInputRef.current) {
+      return;
+    }
+
+    const textarea = contentInputRef.current;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [contentInput, contentInputRef, formMode, isContentExpanded]);
+};
+
+const useVirtualizerMeasurements = (
+  shouldVirtualize: boolean,
+  virtualizer: ReturnType<typeof useVirtualizer>,
+  expandedPromptIds: Set<string>,
+  orderedPrompts: Prompt[],
+  normalizedSearch: string,
+  statusFilter: StatusFilter,
+  isSorting: boolean,
+) => {
+  useEffect(() => {
+    if (!shouldVirtualize) {
+      return;
+    }
+
+    virtualizer.measure();
+  }, [
+    expandedPromptIds,
+    isSorting,
+    normalizedSearch,
+    orderedPrompts.length,
+    shouldVirtualize,
+    statusFilter,
+    virtualizer,
+  ]);
+};
+
+const useCleanupReorderPersistTimeout = (
+  reorderPersistTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>,
+) => {
+  useEffect(() => {
+    return () => {
+      if (reorderPersistTimeoutRef.current !== null) {
+        clearTimeout(reorderPersistTimeoutRef.current);
+      }
+    };
+  }, [reorderPersistTimeoutRef]);
+};
+
+const PromptsPage = () => {
+  // NOSONAR: This component orchestrates a large set of UI states and flows; a broader refactor
+  // is planned to split responsibilities across dedicated hooks and child components.
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+
+  usePromptsPageMetadata(t);
+
+  const promptList = usePromptList();
+  const refetchPromptList = usePromptListRefetch(promptList);
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
@@ -221,26 +547,11 @@ const PromptsPage = () => {
     setLiveAnnouncement((previous) => (previous === message ? `${message} ` : message));
   }, []);
 
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const filteredPrompts = prompts.filter((prompt) => {
-    const matchesStatus =
-      statusFilter === 'all' || (statusFilter === 'enabled' ? prompt.enabled : !prompt.enabled);
-    if (!matchesStatus) {
-      return false;
-    }
-
-    if (normalizedSearch.length === 0) {
-      return true;
-    }
-
-    const titleMatch = prompt.title.toLowerCase().includes(normalizedSearch);
-    const contentMatch = prompt.content.toLowerCase().includes(normalizedSearch);
-
-    return titleMatch || contentMatch;
-  });
-
-  const promptIdList = useMemo(() => filteredPrompts.map((prompt) => prompt.id), [filteredPrompts]);
-  const allPromptIds = useMemo(() => prompts.map((prompt) => prompt.id), [prompts]);
+  const { normalizedSearch, filteredPrompts, promptIdList, allPromptIds } = usePromptFilters(
+    prompts,
+    statusFilter,
+    searchTerm,
+  );
   const [visibleOrder, setVisibleOrder] = useState<string[]>(promptIdList);
   const [baselineOrder, setBaselineOrder] = useState<string[]>(promptIdList);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -264,22 +575,7 @@ const PromptsPage = () => {
     baselineOrderRef.current = baselineOrder;
   }, [baselineOrder]);
 
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return;
-    }
-
-    if (!isSorting) {
-      return;
-    }
-
-    const previousUserSelect = document.body.style.userSelect;
-    document.body.style.userSelect = 'none';
-
-    return () => {
-      document.body.style.userSelect = previousUserSelect;
-    };
-  }, [isSorting]);
+  useDisableBodySelection(isSorting);
 
   const resolveCommitTelemetry = (): ReorderCommitTelemetry | null => {
     if (pendingCommitTelemetryRef.current) {
@@ -472,175 +768,49 @@ const PromptsPage = () => {
     getItemKey: getVirtualItemKey,
   });
 
-  useEffect(() => {
-    if (!isSorting) {
-      return;
-    }
+  useReorderAutoScroll({
+    isSorting,
+    listContainerRef,
+    listContainerBoundsRef,
+  });
 
-    const container = listContainerRef.current;
-    if (!container) {
-      return;
-    }
+  useSyncVisibleOrder({
+    isSorting,
+    isPending: reorderPrompts.isPending,
+    dirty,
+    promptIdList,
+    setVisibleOrder,
+    setBaselineOrder,
+    visibleOrderRef,
+    baselineOrderRef,
+    setDirty,
+    setActiveId,
+  });
 
-    const SCROLL_MARGIN = 72;
-    const SCROLL_STEP = 18;
+  usePromptListErrorReporting(promptList.error, shouldReportError, lastFetchErrorRef);
 
-    const updateBounds = () => {
-      const rect = container.getBoundingClientRect();
-      listContainerBoundsRef.current = { top: rect.top, bottom: rect.bottom };
-    };
-
-    updateBounds();
-
-    const handleContainerScroll = () => {
-      updateBounds();
-    };
-
-    const handleWindowResize = () => {
-      updateBounds();
-    };
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const bounds = listContainerBoundsRef.current;
-
-      if (!bounds) {
-        updateBounds();
-        return;
-      }
-
-      if (event.clientY < bounds.top + SCROLL_MARGIN) {
-        container.scrollBy({ top: -SCROLL_STEP, behavior: 'auto' });
-        return;
-      }
-
-      if (event.clientY > bounds.bottom - SCROLL_MARGIN) {
-        container.scrollBy({ top: SCROLL_STEP, behavior: 'auto' });
-      }
-    };
-
-    const browserWindow = globalThis as Window & typeof globalThis;
-
-    browserWindow.addEventListener('pointermove', handlePointerMove);
-    browserWindow.addEventListener('resize', handleWindowResize);
-    container.addEventListener('scroll', handleContainerScroll, { passive: true });
-
-    return () => {
-      browserWindow.removeEventListener('pointermove', handlePointerMove);
-      browserWindow.removeEventListener('resize', handleWindowResize);
-      container.removeEventListener('scroll', handleContainerScroll);
-      listContainerBoundsRef.current = null;
-    };
-  }, [isSorting]);
-
-  useEffect(() => {
-    if (isSorting || reorderPrompts.isPending || dirty) {
-      return;
-    }
-
-    const nextIds = promptIdList;
-    if (arraysShallowEqual(baselineOrderRef.current, nextIds) && arraysShallowEqual(visibleOrderRef.current, nextIds)) {
-      return;
-    }
-
-    const nextVisible = [...nextIds];
-    const nextBaseline = [...nextIds];
-    setVisibleOrder(nextVisible);
-    setBaselineOrder(nextBaseline);
-    visibleOrderRef.current = [...nextVisible];
-    baselineOrderRef.current = [...nextBaseline];
-    setDirty(false);
-    setActiveId(null);
-  }, [dirty, isSorting, reorderPrompts.isPending, promptIdList]);
-
-  useEffect(() => {
-    if (!promptList.error || !shouldReportError(promptList.error)) {
-      lastFetchErrorRef.current = promptList.error ?? null;
-      return;
-    }
-
-    if (lastFetchErrorRef.current === promptList.error) {
-      return;
-    }
-
-    lastFetchErrorRef.current = promptList.error;
-    Sentry.captureException(promptList.error, {
-      tags: { feature: 'prompts', action: 'fetch' },
-    });
-  }, [promptList.error]);
-
-  useEffect(() => {
-    if (pendingScrollId === null) {
-      return;
-    }
-
-    const element = itemRefs.current.get(pendingScrollId);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      element.focus({ preventScroll: true });
-      setPendingScrollId(null);
-      return;
-    }
-
-    const isVisible = orderedPrompts.some((item) => item.id === pendingScrollId);
-    if (!isVisible) {
-      setPendingScrollId(null);
-      return;
-    }
-
-    if (!shouldVirtualize) {
-      return;
-    }
-
-    const index = orderedPrompts.findIndex((item) => item.id === pendingScrollId);
-    if (index >= 0) {
-      virtualizer.scrollToIndex(index, { align: 'center' });
-      return;
-    }
-
-    setPendingScrollId(null);
-  }, [
+  usePendingScrollEffect({
     pendingScrollId,
-    normalizedSearch,
+    setPendingScrollId,
+    itemRefs,
     orderedPrompts,
-    orderedPrompts.length,
     shouldVirtualize,
-    statusFilter,
     virtualizer,
-  ]);
+  });
 
-  useEffect(() => {
-    if (!contentInputRef.current) {
-      return;
-    }
+  useAutoResizeTextarea(contentInputRef, contentInput, formMode, isContentExpanded);
 
-    const textarea = contentInputRef.current;
-    textarea.style.height = 'auto';
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [contentInput, formMode, isContentExpanded]);
-
-  useEffect(() => {
-    if (!shouldVirtualize) {
-      return;
-    }
-
-    virtualizer.measure();
-  }, [
+  useVirtualizerMeasurements(
     shouldVirtualize,
     virtualizer,
     expandedPromptIds,
-    orderedPrompts.length,
+    orderedPrompts,
     normalizedSearch,
     statusFilter,
     isSorting,
-  ]);
+  );
 
-  useEffect(() => {
-    return () => {
-      if (reorderPersistTimeoutRef.current !== null) {
-        clearTimeout(reorderPersistTimeoutRef.current);
-      }
-    };
-  }, []);
+  useCleanupReorderPersistTimeout(reorderPersistTimeoutRef);
 
   useEffect(() => {
     setSelectedPromptIds((current) => {
@@ -1093,7 +1263,7 @@ const PromptsPage = () => {
     }
     lastReorderOutcomeRef.current = null;
 
-    refetchPromptList();
+    void refetchPromptList();
   };
 
   const persistReorder = async (previousIds: string[], nextIds: string[]) => {
@@ -1187,7 +1357,7 @@ const PromptsPage = () => {
           action: {
             label: t('prompts.reorder.reload', 'Reload'),
             onClick: () => {
-              refetchPromptList();
+              void refetchPromptList();
             },
           },
         });
@@ -2233,7 +2403,7 @@ const PromptsPage = () => {
               type="button"
               onClick={() => {
                 setFeedback(null);
-                refetchPromptList();
+                void refetchPromptList();
               }}
               className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 sm:w-auto"
             >
