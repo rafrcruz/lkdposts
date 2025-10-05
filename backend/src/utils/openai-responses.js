@@ -42,6 +42,17 @@ const extractFromEntry = (entry) => {
   return null;
 };
 
+const gatherOutputContent = (output) => {
+  if (!Array.isArray(output)) {
+    return [];
+  }
+
+  return output
+    .flatMap((chunk) => (chunk && Array.isArray(chunk.content) ? chunk.content : []))
+    .map((entry) => extractFromEntry(entry))
+    .filter(Boolean);
+};
+
 const extractTextFromResponses = (response) => {
   if (!response || typeof response !== 'object') {
     return null;
@@ -52,28 +63,12 @@ const extractTextFromResponses = (response) => {
     return directOutput;
   }
 
-  if (Array.isArray(response.output)) {
-    const parts = [];
-
-    for (const chunk of response.output) {
-      if (!chunk || !Array.isArray(chunk.content)) {
-        continue;
-      }
-
-      for (const entry of chunk.content) {
-        const extracted = extractFromEntry(entry);
-        if (extracted) {
-          parts.push(extracted);
-        }
-      }
-    }
-
-    if (parts.length > 0) {
-      return parts.join('\n\n').trim();
-    }
+  const parts = gatherOutputContent(response.output);
+  if (parts.length === 0) {
+    return null;
   }
 
-  return null;
+  return parts.join('\n\n').trim();
 };
 
 module.exports = {

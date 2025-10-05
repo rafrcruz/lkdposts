@@ -10,6 +10,7 @@ export type PromptCardRenderOptions = {
   setNodeRef?: (element: HTMLDivElement | null) => void;
   containerAttributes?: DraggableAttributes;
   handleListeners?: SyntheticListenerMap;
+  handleAttributes?: DraggableAttributes;
   style?: CSSProperties;
   isDragging?: boolean;
   isSorting?: boolean;
@@ -53,17 +54,9 @@ type PromptContentInfo = {
   toggleAriaLabel: string;
 };
 
-type PromptContainerAttributes = DraggableAttributes & {
-  role?: string;
-  tabIndex?: number;
-  onKeyDown?: PromptCardRenderOptions['onKeyDown'];
-};
-
 type PromptReorderConfig = {
-  containerAttributes: Partial<PromptContainerAttributes>;
-  role: string;
-  tabIndex?: number;
-  onKeyDown?: PromptCardRenderOptions['onKeyDown'];
+  containerAttributes: Partial<DraggableAttributes>;
+  handleAttributes: DraggableAttributes;
   handleListeners: SyntheticListenerMap;
   showPlaceholder: boolean;
   isDragging: boolean;
@@ -96,8 +89,12 @@ const resolveReorderConfig = (
   options: PromptCardRenderOptions | undefined,
   canReorder: boolean,
 ): PromptReorderConfig => {
-  const containerAttributes: Partial<PromptContainerAttributes> = options?.containerAttributes ?? {};
-  const { role, tabIndex, onKeyDown, ...restContainerAttributes } = containerAttributes;
+  const containerAttributes: Partial<DraggableAttributes> = options?.containerAttributes ?? {};
+  const { role, tabIndex, onKeyDown, ...restContainerAttributes } = containerAttributes as {
+    role?: string;
+    tabIndex?: number;
+    onKeyDown?: PromptCardRenderOptions['onKeyDown'];
+  };
   const isOverlay = options?.isOverlay ?? false;
   const isDragging = options?.isDragging ?? false;
   const isSorting = options?.isSorting ?? false;
@@ -105,9 +102,12 @@ const resolveReorderConfig = (
 
   return {
     containerAttributes: restContainerAttributes,
-    role: role ?? 'group',
-    tabIndex: tabIndex ?? undefined,
-    onKeyDown: canReorder ? options?.onKeyDown ?? onKeyDown : undefined,
+    handleAttributes: (options?.handleAttributes ??
+      ({
+        role,
+        tabIndex,
+        onKeyDown,
+      } as DraggableAttributes)) as DraggableAttributes,
     handleListeners: (canReorder ? options?.handleListeners ?? {} : {}) as SyntheticListenerMap,
     showPlaceholder: Boolean(options?.showPlaceholder && !isOverlay),
     isDragging,
@@ -174,13 +174,12 @@ export const PromptCard = ({
   };
 
   return (
-    <div
-      ref={assignRef}
-      {...reorderConfig.containerAttributes}
-      role={reorderConfig.role}
-      tabIndex={reorderConfig.tabIndex}
-      className={clsx(
-        'relative card flex flex-col gap-4 p-4 outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary',
+      <div
+        ref={assignRef}
+        {...reorderConfig.containerAttributes}
+        role="group"
+        className={clsx(
+          'relative card flex flex-col gap-4 p-4 outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary',
         'hover:shadow-sm',
         reorderConfig.isOverlay ? 'pointer-events-none' : '',
         reorderConfig.showPlaceholder ? 'border-2 border-dashed border-primary/60 bg-primary/5 shadow-none' : '',
@@ -193,10 +192,9 @@ export const PromptCard = ({
       data-dragging={reorderConfig.isDragging}
       data-keyboard-grabbed={reorderConfig.isKeyboardActive ? 'true' : undefined}
       aria-grabbed={reorderConfig.isGrabbed}
-      onKeyDown={reorderConfig.onKeyDown}
-    >
-      <PromptPlaceholderOverlay show={reorderConfig.showPlaceholder} label={dropPlaceholderLabel} />
-      <div className={clsx('flex flex-col gap-4', reorderConfig.showPlaceholder ? 'invisible' : '')}>
+      >
+        <PromptPlaceholderOverlay show={reorderConfig.showPlaceholder} label={dropPlaceholderLabel} />
+        <div className={clsx('flex flex-col gap-4', reorderConfig.showPlaceholder ? 'invisible' : '')}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-1 gap-3">
             <div className="flex items-start gap-3">
@@ -205,11 +203,12 @@ export const PromptCard = ({
                 onChange={handleSelectionChange}
                 label={t('prompts.selection.toggle', 'Select prompt')}
               />
-              <PromptReorderHandle
-                canReorder={canReorder}
-                handleListeners={reorderConfig.handleListeners}
-                isDragging={reorderConfig.isDragging}
-                isActive={options?.isActive ?? false}
+                <PromptReorderHandle
+                  canReorder={canReorder}
+                  handleListeners={reorderConfig.handleListeners}
+                  handleAttributes={reorderConfig.handleAttributes}
+                  isDragging={reorderConfig.isDragging}
+                  isActive={options?.isActive ?? false}
                 reorderHandleLabel={reorderHandleLabel}
                 canMoveUp={canMoveUp}
                 canMoveDown={canMoveDown}
@@ -272,6 +271,7 @@ const PromptSelectionCheckbox = ({ isSelected, onChange, label }: PromptSelectio
 type PromptReorderHandleProps = {
   canReorder: boolean;
   handleListeners: SyntheticListenerMap;
+  handleAttributes: DraggableAttributes;
   isDragging: boolean;
   isActive: boolean;
   reorderHandleLabel: string;
@@ -285,6 +285,7 @@ type PromptReorderHandleProps = {
 const PromptReorderHandle = ({
   canReorder,
   handleListeners,
+  handleAttributes,
   isDragging,
   isActive,
   reorderHandleLabel,
@@ -305,6 +306,7 @@ const PromptReorderHandle = ({
         isDragging ? 'cursor-grabbing border-primary bg-background text-foreground shadow-sm' : '',
       )}
       {...handleListeners}
+      {...handleAttributes}
       disabled={!canReorder}
       aria-label={reorderHandleLabel}
       data-active={isActive ? 'true' : undefined}

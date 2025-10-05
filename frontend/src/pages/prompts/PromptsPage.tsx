@@ -1793,6 +1793,7 @@ const PromptsPage = () => {
     return renderPromptCard(prompt, {
       setNodeRef,
       containerAttributes: attributes,
+      handleAttributes: attributes,
       handleListeners: listeners,
       style,
       isDragging,
