@@ -501,7 +501,56 @@ const PromptsPage = () => {
   const deletePrompt = useDeletePrompt();
   const reorderPrompts = useReorderPrompts();
 
-  const prompts = useMemo(() => promptList.data ?? [], [promptList.data]);
+  // Track optimistic prompt overrides so UI state updates immediately while
+  // awaiting React Query cache updates from mutations.
+  const [promptOverrides, setPromptOverrides] = useState<Map<string, Partial<Prompt>>>(new Map());
+
+  const prompts = useMemo(() => {
+    const data = promptList.data;
+
+    if (!data) {
+      return [];
+    }
+
+    if (promptOverrides.size === 0) {
+      return [...data];
+    }
+
+    return data.map((prompt) => {
+      const override = promptOverrides.get(prompt.id);
+
+      if (!override) {
+        return prompt;
+      }
+
+      return { ...prompt, ...override };
+    });
+  }, [promptList.data, promptList.dataUpdatedAt, promptOverrides]);
+
+  useEffect(() => {
+    if (!promptList.data) {
+      return;
+    }
+
+    setPromptOverrides((current) => {
+      if (current.size === 0) {
+        return current;
+      }
+
+      let hasChanges = false;
+      const next = new Map(current);
+
+      for (const prompt of promptList.data ?? []) {
+        const override = next.get(prompt.id);
+        if (override && override.enabled === prompt.enabled) {
+          next.delete(prompt.id);
+          hasChanges = true;
+        }
+      }
+
+      return hasChanges ? next : current;
+    });
+  }, [promptList.data, promptList.dataUpdatedAt]);
   const isLoading = promptList.isLoading && !promptList.isFetched;
   const isError = promptList.isError;
 
@@ -952,6 +1001,13 @@ const PromptsPage = () => {
 
   const handleToggleEnabled = (prompt: Prompt, nextEnabled: boolean) => {
     setFeedback(null);
+    const previousEnabled = prompt.enabled;
+
+    setPromptOverrides((current) => {
+      const next = new Map(current);
+      next.set(prompt.id, { ...(next.get(prompt.id) ?? {}), enabled: nextEnabled });
+      return next;
+    });
 
     updatePrompt.mutate(
       { id: prompt.id, enabled: nextEnabled },
@@ -974,6 +1030,21 @@ const PromptsPage = () => {
             ),
           });
           reportError('toggle', error, { promptId: prompt.id, enabled: nextEnabled });
+          setPromptOverrides((current) => {
+            if (!current.has(prompt.id)) {
+              return current;
+            }
+
+            const next = new Map(current);
+
+            if (previousEnabled === prompt.enabled) {
+              next.delete(prompt.id);
+            } else {
+              next.set(prompt.id, { ...(next.get(prompt.id) ?? {}), enabled: previousEnabled });
+            }
+
+            return next;
+          });
         },
       },
     );
