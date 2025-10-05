@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { vi } from 'vitest';
@@ -9,6 +10,7 @@ import i18n from '@/config/i18n';
 import PostsPage from './PostsPage';
 import {
   useCleanupPosts,
+  useGeneratePost,
   usePostList,
   useRefreshPosts,
   type PostListParams,
@@ -35,6 +37,7 @@ vi.mock('@/features/posts/hooks/usePostRequestPreview');
 const mockedUsePostList = vi.mocked(usePostList);
 const mockedUseRefreshPosts = vi.mocked(useRefreshPosts);
 const mockedUseCleanupPosts = vi.mocked(useCleanupPosts);
+const mockedUseGeneratePost = vi.mocked(useGeneratePost);
 const mockedUseFeedList = vi.mocked(useFeedList);
 const mockedUseAuth = vi.mocked(useAuth);
 const mockedUseAppParams = vi.mocked(useAppParams);
@@ -303,16 +306,22 @@ const readMetricValue = (label: string) => {
   return valueElement.textContent?.trim() ?? '';
 };
 
-const renderPage = () =>
-  render(
+const renderPage = (client?: QueryClient) => {
+  const queryClient = client ?? new QueryClient();
+
+  return render(
     <I18nextProvider i18n={i18n}>
-      <PostsPage />
+      <QueryClientProvider client={queryClient}>
+        <PostsPage />
+      </QueryClientProvider>
     </I18nextProvider>,
   );
+};
 
 describe('PostsPage', () => {
   let refreshMutateAsync: Mock;
   let cleanupMutateAsync: Mock;
+  let generateMutateAsync: Mock;
   let previewMutateAsync: Mock;
   let previewMutationResult: UseMutationResult<PostRequestPreview, HttpError, { newsId?: number }>;
 
@@ -363,6 +372,14 @@ describe('PostsPage', () => {
 
     mockedUseRefreshPosts.mockReturnValue(createMutationResult(refreshMutateAsync));
     mockedUseCleanupPosts.mockReturnValue(createMutationResult(cleanupMutateAsync));
+    generateMutateAsync = vi.fn(() =>
+      Promise.resolve({ item: buildPost(), cacheInfo: null, reused: false }),
+    );
+    mockedUseGeneratePost.mockReturnValue(
+      createMutationResult<{ item: PostListItem; cacheInfo: null; reused?: boolean }, { articleId: number }>(
+        generateMutateAsync,
+      ),
+    );
     previewMutateAsync = vi.fn(() => Promise.resolve());
     previewMutationResult = createMutationResult<PostRequestPreview, { newsId?: number }>(previewMutateAsync, {
       data: undefined,
@@ -522,6 +539,71 @@ describe('PostsPage', () => {
 
     const successMessage = i18n.t('posts.preview.copySuccess');
     expect(await screen.findByText(new RegExp(successMessage, 'i'))).toBeInTheDocument();
+  });
+
+  it('allows generating a post manually when content is missing', async () => {
+    const user = userEvent.setup();
+
+    const placeholderPost = buildPost({
+      id: 42,
+      title: 'Post pendente',
+      post: {
+        content: null,
+        status: 'PENDING',
+        attemptCount: 0,
+        createdAt: null,
+        generatedAt: null,
+        modelUsed: null,
+        promptBaseHash: null,
+        tokensInput: null,
+        tokensOutput: null,
+      },
+    });
+
+    generateMutateAsync.mockResolvedValueOnce({
+      item: buildPost({
+        id: 42,
+        title: 'Post pendente',
+        post: {
+          content: 'Conteudo gerado manualmente',
+          status: 'SUCCESS',
+          generatedAt: '2024-01-01T12:00:00.000Z',
+          createdAt: '2024-01-01T12:00:00.000Z',
+        },
+      }),
+      cacheInfo: null,
+      reused: false,
+    });
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (params.enabled) {
+        return createPostQueryResult({
+          data: {
+            items: [placeholderPost],
+            meta: { nextCursor: null, limit: 10 },
+          },
+          isSuccess: true,
+          isFetched: true,
+          status: 'success',
+        });
+      }
+
+      return createPostQueryResult();
+    });
+
+    renderPage();
+
+    const generateLabel = i18n.t('posts.list.generatePost');
+    const generateButton = await screen.findByRole('button', { name: new RegExp(generateLabel, 'i') });
+    expect(screen.getByText(i18n.t('posts.list.postNotGenerated'))).toBeVisible();
+
+    await user.click(generateButton);
+
+    await waitFor(() => {
+      expect(generateMutateAsync).toHaveBeenCalledWith({ articleId: 42 });
+    });
+
+    await screen.findByText(i18n.t('posts.list.generateSuccess'));
   });
 
   it('renders the refresh summary and allows dismissing it', async () => {
@@ -1177,7 +1259,8 @@ describe('PostsPage', () => {
       });
     });
 
-    const view = renderPage();
+    const queryClient = new QueryClient();
+    const view = renderPage(queryClient);
 
     await waitFor(() => {
       expect(refreshMutateAsync).toHaveBeenCalledTimes(1);
@@ -1192,7 +1275,9 @@ describe('PostsPage', () => {
       appParamsState.fetchedAt = Date.now();
       view.rerender(
         <I18nextProvider i18n={i18n}>
-          <PostsPage />
+          <QueryClientProvider client={queryClient}>
+            <PostsPage />
+          </QueryClientProvider>
         </I18nextProvider>,
       );
     });

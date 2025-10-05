@@ -1071,6 +1071,76 @@ const processEligibleArticles = async ({
   return { generatedCount, failedCount, cacheInfo };
 };
 
+const generatePostForArticleId = async ({
+  ownerKey,
+  articleId,
+  now = new Date(),
+  client,
+  operationalParams: overrides,
+  maxAttempts = MAX_GENERATION_ATTEMPTS,
+} = {}) => {
+  if (!ownerKey) {
+    throw new TypeError('ownerKey is required');
+  }
+
+  const normalizedId = Number.parseInt(articleId, 10);
+  if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+    throw new TypeError('articleId must be a positive integer');
+  }
+
+  const startedAt = ensureDate(now);
+  const article = await articleRepository.findByIdForOwner({ id: normalizedId, ownerKey });
+  if (!article) {
+    throw new ArticleNotFoundError(normalizedId);
+  }
+
+  const attempts = article.post?.attemptCount ?? 0;
+  if (attempts >= maxAttempts) {
+    throw new ApiError({
+      statusCode: 409,
+      code: 'POST_GENERATION_MAX_ATTEMPTS',
+      message: 'Limite de tentativas atingido para esta notícia.',
+    });
+  }
+
+  if (article.post?.status === 'SUCCESS' && article.post?.content) {
+    return { article, reused: true, cacheInfo: null };
+  }
+
+  await resolveOperationalParams(overrides);
+  const promptBase = await buildPromptBase({ ownerKey });
+  const { model, openAiClient, timeoutMs } = await resolveModelAndClient(client);
+
+  const generationResult = await generatePostForArticle({
+    article,
+    basePrompt: promptBase.basePrompt,
+    model,
+    client: openAiClient,
+    timeoutMs,
+    promptBaseHash: promptBase.promptBaseHash,
+  });
+
+  if (!generationResult.success) {
+    throw new ApiError({
+      statusCode: 502,
+      code: 'POST_GENERATION_FAILED',
+      message: generationResult.reason ?? 'Falha ao gerar o post.',
+    });
+  }
+
+  const updatedArticle = await articleRepository.findByIdForOwner({ id: normalizedId, ownerKey });
+  if (!updatedArticle) {
+    throw new ArticleNotFoundError(normalizedId);
+  }
+
+  return {
+    article: updatedArticle,
+    cacheInfo: generationResult.cacheInfo ?? null,
+    reused: false,
+    postText: generationResult.postText ?? null,
+  };
+};
+
 const generatePostsForOwner = async ({
   ownerKey,
   now = new Date(),
@@ -1222,6 +1292,7 @@ const generatePostsForOwner = async ({
 
 module.exports = {
   generatePostsForOwner,
+  generatePostForArticleId,
   getLatestStatus,
   buildPromptBase,
   buildArticleContext,

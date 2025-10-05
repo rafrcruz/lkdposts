@@ -357,6 +357,11 @@ const resources = {
             article: 'NEWS',
           },
           copyPost: 'Copy post',
+          postNotGenerated: 'Post not generated yet.',
+          generatePost: 'Generate post',
+          generatingPost: 'Generating post...',
+          generateSuccess: 'Post generated successfully.',
+          generateReused: 'Post was already generated.',
           postUnavailable: 'Post not available yet.',
           article: {
             readMore: 'See more',
@@ -885,6 +890,11 @@ const resources = {
             article: 'NOTICIA',
           },
           copyPost: 'Copiar post',
+          postNotGenerated: 'POST nao gerado.',
+          generatePost: 'Gerar POST',
+          generatingPost: 'Gerando post...',
+          generateSuccess: 'Post gerado com sucesso.',
+          generateReused: 'Post ja gerado anteriormente.',
           postUnavailable: 'Post ainda nao disponivel.',
           article: {
             readMore: 'Ver mais',

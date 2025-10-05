@@ -1,6 +1,14 @@
 import { keepPreviousData, useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query';
 
-import { cleanupPosts, fetchPosts, refreshPosts, POSTS_QUERY_KEY, type PostListResponse } from '../api/posts';
+import {
+  cleanupPosts,
+  fetchPosts,
+  generatePost,
+  refreshPosts,
+  POSTS_QUERY_KEY,
+  type GeneratePostResponse,
+  type PostListResponse,
+} from '../api/posts';
 import type { CleanupResult, RefreshSummary } from '../types/post';
 import { HttpError } from '@/lib/api/http';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -41,5 +49,11 @@ export const useRefreshPosts = () => {
 export const useCleanupPosts = () => {
   return useMutation<CleanupResult, HttpError>({
     mutationFn: () => cleanupPosts(),
+  });
+};
+
+export const useGeneratePost = () => {
+  return useMutation<GeneratePostResponse, HttpError, { articleId: number }>({
+    mutationFn: ({ articleId }) => generatePost({ articleId }),
   });
 };
