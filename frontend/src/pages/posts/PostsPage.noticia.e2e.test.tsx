@@ -322,64 +322,42 @@ const defaultFeed = (override: Partial<Feed> = {}): Feed => ({
   updatedAt: override.updatedAt ?? '2024-12-21T09:30:00.000Z',
 });
 
-const mockApi = (config: PostsApiMockConfig): MockApiRestore => {
-  const feedsPayload = config.feeds ?? {
-    items:
-      config.posts.items.length > 0
-        ? config.posts.items.map((item) =>
-            defaultFeed({
-              id: item.feed?.id ?? 101,
-              title: item.feed?.title ?? 'Feed 1',
-              url: item.feed?.url ?? 'https://example.com/feed.xml',
-            }),
-          )
-        : [defaultFeed()],
-    meta: {
-      nextCursor: null,
-      total: config.posts.items.length > 0 ? config.posts.items.length : 1,
-      limit: 50,
-    },
-  };
+  const mockApi = (config: PostsApiMockConfig): MockApiRestore => {
+    const feedsPayload = config.feeds ?? {
+      items:
+        config.posts.items.length > 0
+          ? config.posts.items.map((item) =>
+              defaultFeed({
+                id: item.feed?.id ?? 101,
+                title: item.feed?.title ?? 'Feed 1',
+                url: item.feed?.url ?? 'https://example.com/feed.xml',
+              }),
+            )
+          : [defaultFeed()],
+      meta: {
+        nextCursor: null,
+        total: config.posts.items.length > 0 ? config.posts.items.length : 1,
+        limit: 50,
+      },
+    };
 
-  const refreshPayload: RefreshSummary =
-    config.refresh ?? ({ now: '2025-01-10T08:05:00.000Z', feeds: [] } as RefreshSummary);
-  const refreshProgressPayload: PostGenerationProgress | null =
-    'refreshProgress' in config ? config.refreshProgress ?? null : null;
-  const cleanupPayload: CleanupResult =
-    config.cleanup ?? ({ removedArticles: 0, removedPosts: 0 } as CleanupResult);
+    const refreshPayload: RefreshSummary =
+      config.refresh ?? ({ now: '2025-01-10T08:05:00.000Z', feeds: [] } as RefreshSummary);
+    const refreshProgressPayload: PostGenerationProgress | null =
+      'refreshProgress' in config ? config.refreshProgress ?? null : null;
+    const cleanupPayload: CleanupResult =
+      config.cleanup ?? ({ removedArticles: 0, removedPosts: 0 } as CleanupResult);
 
-  const postsMeta = config.posts.meta ?? { nextCursor: null, limit: 10 };
+    const postsMeta = config.posts.meta ?? { nextCursor: null, limit: 10 };
 
-  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const method = (init?.method ?? 'GET').toUpperCase();
-    let resource: string;
-    if (typeof input === 'string') {
-      resource = input;
-    } else if (input instanceof URL) {
-      resource = input.toString();
-    } else {
-      resource = input.url;
-    }
-    const url = new URL(resource);
-    const path = url.pathname;
+    const resolveRequestKey = (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      const resource = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = new URL(resource);
+      return { key: `${method} ${url.pathname}`, url };
+    };
 
-    if (method === 'GET' && path === '/api/v1/feeds') {
-      return buildJsonResponse({ success: true, data: { items: feedsPayload.items }, meta: feedsPayload.meta });
-    }
-
-    if (method === 'POST' && path === '/api/v1/posts/refresh') {
-      return buildJsonResponse({ success: true, data: refreshPayload });
-    }
-
-    if (method === 'POST' && path === '/api/v1/posts/cleanup') {
-      return buildJsonResponse({ success: true, data: cleanupPayload });
-    }
-
-    if (method === 'GET' && path === '/api/v1/posts/refresh-status') {
-      return buildJsonResponse({ success: true, data: { status: refreshProgressPayload } });
-    }
-
-    if (method === 'GET' && path === '/api/v1/posts') {
+    const buildPostsHandler = () => async () => {
       if (config.postsError) {
         return buildJsonResponse(
           { success: false, error: { message: config.postsError.message } },
@@ -392,14 +370,34 @@ const mockApi = (config: PostsApiMockConfig): MockApiRestore => {
       }
 
       return buildJsonResponse({ success: true, data: { items: config.posts.items }, meta: postsMeta });
-    }
+    };
 
-    throw new Error(`Unhandled request: ${method} ${path}`);
-  });
+    const handlers: Record<string, (url: URL) => Promise<Response>> = {
+      'GET /api/v1/feeds': async () =>
+        buildJsonResponse({ success: true, data: { items: feedsPayload.items }, meta: feedsPayload.meta }),
+      'POST /api/v1/posts/refresh': async () => buildJsonResponse({ success: true, data: refreshPayload }),
+      'POST /api/v1/posts/cleanup': async () => buildJsonResponse({ success: true, data: cleanupPayload }),
+      'GET /api/v1/posts/refresh-status': async () =>
+        buildJsonResponse({ success: true, data: { status: refreshProgressPayload } }),
+      'GET /api/v1/posts': buildPostsHandler(),
+    };
 
-  const restore = () => {
-    fetchSpy.mockRestore();
-  };
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const { key, url } = resolveRequestKey(input, init);
+        const handler = handlers[key];
+
+        if (!handler) {
+          throw new Error(`Unhandled request: ${key}`);
+        }
+
+        return handler(url);
+      });
+
+    const restore = () => {
+      fetchSpy.mockRestore();
+    };
 
   return Object.assign(restore, { fetchSpy });
 };

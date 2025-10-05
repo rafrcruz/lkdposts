@@ -270,6 +270,24 @@ const resolveRequestDetails = (input: RequestInfo | URL, init?: RequestInit) => 
   return { url, method };
 };
 
+const createAbortError = () => {
+  const abortError = new Error('Aborted');
+  abortError.name = 'AbortError';
+  return abortError;
+};
+
+const rejectOnAbort = (signal: AbortSignal | undefined | null, reject: (reason?: unknown) => void) => {
+  if (!signal) {
+    return;
+  }
+
+  const abortHandler = () => {
+    reject(createAbortError());
+  };
+
+  signal.addEventListener('abort', abortHandler, { once: true });
+};
+
 const readMetricValue = (label: string) => {
   const labelElement = screen.getByText(label);
   const container = labelElement.closest('div');
@@ -1051,15 +1069,7 @@ describe('PostsPage', () => {
     const fetchMock = vi.fn().mockImplementation((_, init?: RequestInit) => {
       fetchSignal = init?.signal ?? null;
       return new Promise<Response>((_, reject) => {
-        const signal = init?.signal;
-        if (signal) {
-          const abortHandler = () => {
-            const abortError = new Error('Aborted');
-            abortError.name = 'AbortError';
-            reject(abortError);
-          };
-          signal.addEventListener('abort', abortHandler, { once: true });
-        }
+        rejectOnAbort(init?.signal ?? null, reject);
       });
     });
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;

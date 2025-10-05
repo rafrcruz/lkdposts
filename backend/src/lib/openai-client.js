@@ -5,6 +5,74 @@ const DEFAULT_TIMEOUT_MS = 30000;
 
 let cachedClient = null;
 
+const fetchWithTimeout = async (url, options, timeoutMs, apiKey) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...(options?.headers ?? {}),
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const parseErrorPayload = async (response) => {
+  try {
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      return await response.json();
+    }
+
+    return await response.text();
+  } catch (parseError) {
+    console.warn('Failed to parse OpenAI error response payload', parseError);
+    return null;
+  }
+};
+
+const normalizeOpenAiError = (payload) => {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const candidate =
+    Object.hasOwn(payload, 'error') && typeof payload.error === 'object'
+      ? payload.error
+      : payload;
+
+  return {
+    type: typeof candidate.type === 'string' ? candidate.type : null,
+    code: typeof candidate.code === 'string' ? candidate.code : null,
+    message: typeof candidate.message === 'string' ? candidate.message : null,
+  };
+};
+
+const raiseResponseError = async (response) => {
+  const parsedPayload = await parseErrorPayload(response);
+  const error = new Error(`OpenAI request failed with status ${response.status}`);
+  error.status = response.status;
+  error.response = response;
+
+  const openAiError = normalizeOpenAiError(parsedPayload);
+  if (openAiError) {
+    error.openai = openAiError;
+  }
+
+  if (parsedPayload && typeof parsedPayload !== 'string') {
+    error.payload = parsedPayload;
+  }
+
+  throw error;
+};
+
 const normalizeTimeout = (value) => {
   const numeric = Number(value);
   if (Number.isFinite(numeric) && numeric > 0) {
@@ -36,61 +104,19 @@ const createClient = ({ timeoutMs }) => {
 
   const responses = {
     create: async (payload) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => {
-        controller.abort();
-      }, effectiveTimeout);
-
       try {
-        const response = await fetch(`${baseUrl}/responses`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
+        const response = await fetchWithTimeout(
+          `${baseUrl}/responses`,
+          {
+            method: 'POST',
+            body: JSON.stringify(payload),
           },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
+          effectiveTimeout,
+          apiKey,
+        );
 
         if (!response.ok) {
-          let parsedPayload = null;
-          let openAiError = null;
-
-          try {
-            const contentType = response.headers.get('content-type') ?? '';
-            if (contentType.includes('application/json')) {
-              parsedPayload = await response.json();
-            } else {
-              parsedPayload = await response.text();
-            }
-          } catch (parseError) {
-            console.warn('Failed to parse OpenAI error response payload', parseError);
-            parsedPayload = null;
-          }
-
-          if (parsedPayload && typeof parsedPayload === 'object') {
-            const candidate =
-              Object.hasOwn(parsedPayload, 'error') && typeof parsedPayload.error === 'object'
-                ? parsedPayload.error
-                : parsedPayload;
-
-            openAiError = {
-              type: typeof candidate.type === 'string' ? candidate.type : null,
-              code: typeof candidate.code === 'string' ? candidate.code : null,
-              message: typeof candidate.message === 'string' ? candidate.message : null,
-            };
-          }
-
-          const error = new Error(`OpenAI request failed with status ${response.status}`);
-          error.status = response.status;
-          error.response = response;
-          if (openAiError) {
-            error.openai = openAiError;
-          }
-          if (parsedPayload && typeof parsedPayload !== 'string') {
-            error.payload = parsedPayload;
-          }
-          throw error;
+          await raiseResponseError(response);
         }
 
         return response.json();
@@ -101,8 +127,6 @@ const createClient = ({ timeoutMs }) => {
           throw timeoutError;
         }
         throw error;
-      } finally {
-        clearTimeout(timer);
       }
     },
   };

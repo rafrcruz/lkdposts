@@ -74,6 +74,35 @@ const RATE_LIMIT_BASE_DELAY_MS = 1500;
 const RATE_LIMIT_MAX_DELAY_MS = 12000;
 const RATE_LIMIT_MAX_ATTEMPTS = 5;
 
+const extractRateLimitCode = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    return RATE_LIMIT_ERROR_CODES.has(value) ? value : null;
+  }
+
+  if (value && typeof value === 'object') {
+    const nested = value as Record<string, unknown>;
+    for (const key of ['code', 'type', 'error']) {
+      const match = extractRateLimitCode(nested[key]);
+      if (match) {
+        return match;
+      }
+    }
+  }
+
+  return null;
+};
+
+const hasRateLimitError = (record: Record<string, unknown>) => {
+  for (const key of ['error', 'code', 'type']) {
+    const match = extractRateLimitCode(record[key]);
+    if (match) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const parseRateLimitPayload = (payload: unknown): boolean => {
   if (!payload) {
     return false;
@@ -81,8 +110,7 @@ const parseRateLimitPayload = (payload: unknown): boolean => {
 
   if (typeof payload === 'string') {
     try {
-      const parsed = JSON.parse(payload);
-      return parseRateLimitPayload(parsed);
+      return parseRateLimitPayload(JSON.parse(payload));
     } catch {
       return false;
     }
@@ -92,35 +120,7 @@ const parseRateLimitPayload = (payload: unknown): boolean => {
     return false;
   }
 
-  const record = payload as Record<string, unknown>;
-  if (typeof record.error === 'string') {
-    return RATE_LIMIT_ERROR_CODES.has(record.error);
-  }
-
-  if (record.error && typeof record.error === 'object') {
-    const errorDetails = record.error as Record<string, unknown>;
-    const code = errorDetails.code;
-    if (typeof code === 'string' && RATE_LIMIT_ERROR_CODES.has(code)) {
-      return true;
-    }
-
-    const type = errorDetails.type;
-    if (typeof type === 'string' && RATE_LIMIT_ERROR_CODES.has(type)) {
-      return true;
-    }
-  }
-
-  const code = record.code;
-  if (typeof code === 'string' && RATE_LIMIT_ERROR_CODES.has(code)) {
-    return true;
-  }
-
-  const type = record.type;
-  if (typeof type === 'string' && RATE_LIMIT_ERROR_CODES.has(type)) {
-    return true;
-  }
-
-  return false;
+  return hasRateLimitError(payload as Record<string, unknown>);
 };
 
 const isRateLimitHttpError = (error: HttpError) => {
@@ -2539,6 +2539,317 @@ type PostListContentProps = {
   formattedTimeWindowDays: string;
 };
 
+const renderSkeletonCard = () => (
+  <div className="card space-y-3 px-6 py-6">
+    <LoadingSkeleton className="h-5" />
+    <LoadingSkeleton className="h-5" />
+    <LoadingSkeleton className="h-5" />
+  </div>
+);
+
+const renderListFallbackContent = ({
+  hasExecutedSequence,
+  feedListIsSuccess,
+  hasFeeds,
+  isLoading,
+  isError,
+  postsLength,
+  t,
+  listErrorMessage,
+  isCooldownActive,
+  isSyncing,
+  onTryAgain,
+  selectedFeedId,
+  formattedTimeWindowDays,
+}: {
+  hasExecutedSequence: boolean;
+  feedListIsSuccess: boolean;
+  hasFeeds: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  postsLength: number;
+  t: TranslateFunction;
+  listErrorMessage?: string;
+  isCooldownActive: boolean;
+  isSyncing: boolean;
+  onTryAgain: () => void;
+  selectedFeedId: number | null;
+  formattedTimeWindowDays: string;
+}) => {
+  if (!hasExecutedSequence) {
+    return renderSkeletonCard();
+  }
+
+  if (feedListIsSuccess && !hasFeeds) {
+    return (
+      <EmptyState
+        title={t('posts.filters.empty.title', 'No feed available yet.')}
+        description={t(
+          'posts.filters.empty.description',
+          'Add feeds on the Feeds page to start generating posts.',
+        )}
+        action={
+          <a
+            href="/feeds"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
+          >
+            {t('posts.filters.empty.cta', 'Manage feeds')}
+          </a>
+        }
+      />
+    );
+  }
+
+  if (isLoading) {
+    return renderSkeletonCard();
+  }
+
+  if (isError) {
+    return (
+      <ErrorState
+        title={t('posts.errors.list', 'Could not load posts. Try again later.')}
+        description={listErrorMessage}
+        action={
+          <button
+            type="button"
+            className={clsx(
+              'mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60',
+              isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
+            )}
+            onClick={onTryAgain}
+            disabled={isSyncing}
+            aria-disabled={isSyncing || isCooldownActive}
+          >
+            {t('actions.tryAgain', 'Try again')}
+          </button>
+        }
+      />
+    );
+  }
+
+  if (postsLength === 0) {
+    const emptyTitleKey = selectedFeedId
+      ? 'posts.list.empty.filtered.title'
+      : 'posts.list.empty.default.title';
+    const emptyDescriptionKey = selectedFeedId
+      ? 'posts.list.empty.filtered.description'
+      : 'posts.list.empty.default.description';
+
+    return (
+      <EmptyState
+        title={t(emptyTitleKey, selectedFeedId ? 'No posts for this feed.' : 'No recent posts.')}
+        description={t(
+          emptyDescriptionKey,
+          selectedFeedId
+            ? 'Select another feed or refresh to get new posts.'
+            : 'Posts from the last {{days}} days will appear here after a refresh.',
+          selectedFeedId ? undefined : { days: formattedTimeWindowDays },
+        )}
+      />
+    );
+  }
+
+  return null;
+};
+
+type PostListItemCardProps = {
+  item: PostListItem;
+  sectionState: SectionState;
+  postContentId: string;
+  articleContentId: string;
+  t: TranslateFunction;
+  locale: ReturnType<typeof useLocale>;
+  isAdmin: boolean;
+  onPreviewRequest?: (newsId?: number) => void;
+  isPreviewLoading: boolean;
+  onToggleSection: (id: number, section: 'post' | 'article') => void;
+  onCopyPostContent: (postId: number, value: string | null | undefined) => void;
+  copyFeedback: CopyFeedback | null;
+};
+
+const PostListItemCard = ({
+  item,
+  sectionState,
+  postContentId,
+  articleContentId,
+  t,
+  locale,
+  isAdmin,
+  onPreviewRequest,
+  isPreviewLoading,
+  onToggleSection,
+  onCopyPostContent,
+  copyFeedback,
+}: PostListItemCardProps) => {
+  const feedLabel = resolveArticleFeedLabel(item.feed, t);
+
+  return (
+    <article key={item.id} className="card space-y-4 px-6 py-6">
+      <header className="space-y-2 sm:flex sm:items-start sm:justify-between sm:gap-4">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold text-foreground">{item.title}</h2>
+          <p className="text-xs text-muted-foreground">
+            {t('posts.list.metadata.publishedAt', 'Published {{date}}', {
+              date: formatDate(item.publishedAt, locale),
+            })}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t('posts.list.metadata.feed', 'Feed: {{feed}}', { feed: feedLabel })}
+          </p>
+          {item.post?.createdAt ? (
+            <p className="text-xs text-muted-foreground">
+              {t('posts.list.metadata.createdAt', 'Generated {{date}}', {
+                date: formatDate(item.post.createdAt, locale),
+              })}
+            </p>
+          ) : null}
+        </div>
+        {isAdmin && onPreviewRequest ? (
+          <button
+            type="button"
+            className="mt-2 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:mt-0"
+            onClick={() => onPreviewRequest(item.id)}
+            disabled={isPreviewLoading}
+            aria-disabled={isPreviewLoading}
+          >
+            {t('posts.preview.rowAction', 'Preview')}
+          </button>
+        ) : null}
+      </header>
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            aria-expanded={sectionState.post}
+            aria-controls={postContentId}
+            className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
+            onClick={() => onToggleSection(item.id, 'post')}
+          >
+            {t('posts.list.sections.post', 'Post')}
+            <span aria-hidden="true">{sectionState.post ? '−' : '+'}</span>
+          </button>
+          {item.post?.content ? (
+            <button
+              type="button"
+              onClick={() => onCopyPostContent(item.id, item.post?.content)}
+              className="inline-flex items-center justify-center rounded-md border border-border bg-background p-2 text-muted-foreground transition hover:border-primary hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              aria-label={t('posts.list.copyPost', 'Copy post')}
+              title={t('posts.list.copyPost', 'Copy post')}
+            >
+              <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M9 9.75V6.75C9 5.64543 9.89543 4.75 11 4.75H17C18.1046 4.75 19 5.64543 19 6.75V16C19 17.1046 18.1046 18 17 18H14.25"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M7 8.25H13C14.1046 8.25 15 9.14543 15 10.25V18.25C15 19.3546 14.1046 20.25 13 20.25H7C5.89543 20.25 5 19.3546 5 18.25V10.25C5 9.14543 5.89543 8.25 7 8.25Z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ) : null}
+        </div>
+        {sectionState.post ? (
+          <div id={postContentId} className="rounded-md border border-border bg-background px-4 py-4 text-sm text-foreground">
+            {item.post?.content ? (
+              <p className="whitespace-pre-wrap leading-relaxed">{item.post.content}</p>
+            ) : (
+              <p className="text-muted-foreground">{t('posts.list.postUnavailable', 'Post not available yet.')}</p>
+            )}
+          </div>
+        ) : null}
+        {copyFeedback ? (
+          <output
+            aria-live="polite"
+            aria-atomic="true"
+            className={clsx('text-xs', copyFeedback.type === 'success' ? 'text-primary' : 'text-danger')}
+          >
+            {copyFeedback.message}
+          </output>
+        ) : null}
+      </section>
+      <section className="space-y-2">
+        <button
+          type="button"
+          aria-expanded={sectionState.article}
+          aria-controls={articleContentId}
+          className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
+          onClick={() => onToggleSection(item.id, 'article')}
+        >
+          {t('posts.list.sections.article', 'Article')}
+          <span aria-hidden="true">{sectionState.article ? '−' : '+'}</span>
+        </button>
+        {sectionState.article ? (
+          <ArticleContent
+            id={articleContentId}
+            postId={item.id}
+            html={item.noticia}
+            fallbackSnippet={item.contentSnippet}
+            isAdmin={isAdmin}
+            readMoreLabel={t('posts.list.article.readMore', 'See more')}
+            readLessLabel={t('posts.list.article.readLess', 'See less')}
+            partialAdminNotice={t(
+              'posts.list.article.partialAdminNotice',
+              'This article looks partial. Review the feed extraction.',
+            )}
+            unavailableLabel={t('posts.list.article.unavailable', 'News content not available yet.')}
+          />
+        ) : null}
+      </section>
+    </article>
+  );
+};
+
+type PostListPaginationProps = {
+  currentPage: number;
+  hasPreviousPage: boolean;
+  nextCursor: string | null;
+  isLoading: boolean;
+  isSyncing: boolean;
+  onPreviousPage: () => void;
+  onNextPage: () => void;
+  t: TranslateFunction;
+};
+
+const PostListPagination = ({
+  currentPage,
+  hasPreviousPage,
+  nextCursor,
+  isLoading,
+  isSyncing,
+  onPreviousPage,
+  onNextPage,
+  t,
+}: PostListPaginationProps) => (
+  <div className="flex items-center justify-between rounded-md border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
+    <div>{t('posts.pagination.page', 'Page {{page}}', { page: currentPage })}</div>
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={onPreviousPage}
+        disabled={!hasPreviousPage || isLoading || isSyncing}
+      >
+        {t('posts.pagination.previous', 'Previous')}
+      </button>
+      <button
+        type="button"
+        className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={onNextPage}
+        disabled={!nextCursor || isLoading || isSyncing}
+      >
+        {t('posts.pagination.next', 'Next')}
+      </button>
+    </div>
+  </div>
+);
+
 const PostListContent = ({
   expandedSections,
   hasExecutedSequence,
@@ -2567,257 +2878,64 @@ const PostListContent = ({
   feedListIsSuccess,
   formattedTimeWindowDays,
 }: PostListContentProps): JSX.Element => {
-  if (hasExecutedSequence === false) {
+    const fallback = renderListFallbackContent({
+      hasExecutedSequence,
+      feedListIsSuccess,
+      hasFeeds,
+      isLoading,
+      isError,
+      postsLength: posts.length,
+      t,
+      listErrorMessage,
+      isCooldownActive,
+      isSyncing,
+      onTryAgain,
+      selectedFeedId,
+      formattedTimeWindowDays,
+    });
+
+    if (fallback) {
+      return fallback;
+    }
+
     return (
-      <div className="card space-y-3 px-6 py-6">
-        <LoadingSkeleton className="h-5" />
-        <LoadingSkeleton className="h-5" />
-        <LoadingSkeleton className="h-5" />
+      <div className="space-y-4">
+        {posts.map((item) => {
+          const sectionState = expandedSections[item.id] ?? createDefaultSectionState();
+          const postContentId = `post-content-${item.id}`;
+          const articleContentId = `article-content-${item.id}`;
+
+          return (
+            <PostListItemCard
+              key={item.id}
+              item={item}
+              sectionState={sectionState}
+              postContentId={postContentId}
+              articleContentId={articleContentId}
+              t={t}
+              locale={locale}
+              isAdmin={isAdmin}
+              onPreviewRequest={onPreviewRequest}
+              isPreviewLoading={isPreviewLoading}
+              onToggleSection={onToggleSection}
+              onCopyPostContent={onCopyPostContent}
+              copyFeedback={copyFeedbacks[item.id] ?? null}
+            />
+          );
+        })}
+
+        <PostListPagination
+          currentPage={currentPage}
+          hasPreviousPage={hasPreviousPage}
+          nextCursor={nextCursor}
+          isLoading={isLoading}
+          isSyncing={isSyncing}
+          onPreviousPage={onPreviousPage}
+          onNextPage={onNextPage}
+          t={t}
+        />
       </div>
     );
-  }
-
-  if (feedListIsSuccess && hasFeeds === false) {
-    return (
-      <EmptyState
-        title={t('posts.filters.empty.title', 'No feed available yet.')}
-        description={t(
-          'posts.filters.empty.description',
-          'Add feeds on the Feeds page to start generating posts.',
-        )}
-        action={
-          <a
-            href="/feeds"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-          >
-            {t('posts.filters.empty.cta', 'Manage feeds')}
-          </a>
-        }
-      />
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="card space-y-3 px-6 py-6">
-        <LoadingSkeleton className="h-5" />
-        <LoadingSkeleton className="h-5" />
-        <LoadingSkeleton className="h-5" />
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <ErrorState
-        title={t('posts.errors.list', 'Could not load posts. Try again later.')}
-        description={listErrorMessage}
-        action={
-          <button
-            type="button"
-            className={clsx(
-              'mt-4 inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60',
-              isCooldownActive ? 'cursor-not-allowed opacity-60' : null,
-            )}
-            onClick={onTryAgain}
-            disabled={isSyncing}
-            aria-disabled={isSyncing || isCooldownActive}
-          >
-            {t('actions.tryAgain', 'Try again')}
-          </button>
-        }
-      />
-    );
-  }
-
-  if (posts.length === 0) {
-    const emptyTitleKey = selectedFeedId
-      ? 'posts.list.empty.filtered.title'
-      : 'posts.list.empty.default.title';
-    const emptyDescriptionKey = selectedFeedId
-      ? 'posts.list.empty.filtered.description'
-      : 'posts.list.empty.default.description';
-
-    return (
-      <EmptyState
-        title={t(emptyTitleKey, selectedFeedId ? 'No posts for this feed.' : 'No recent posts.')}
-        description={t(
-          emptyDescriptionKey,
-          selectedFeedId
-            ? 'Select another feed or refresh to get new posts.'
-            : 'Posts from the last {{days}} days will appear here after a refresh.',
-          selectedFeedId ? undefined : { days: formattedTimeWindowDays },
-        )}
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {posts.map((item) => {
-        const sectionState = expandedSections[item.id] ?? createDefaultSectionState();
-        const postContentId = `post-content-${item.id}`;
-        const articleContentId = `article-content-${item.id}`;
-        const feedLabel = resolveArticleFeedLabel(item.feed, t);
-
-        return (
-          <article key={item.id} className="card space-y-4 px-6 py-6">
-            <header className="space-y-2 sm:flex sm:items-start sm:justify-between sm:gap-4">
-              <div className="space-y-1">
-                <h2 className="text-lg font-semibold text-foreground">{item.title}</h2>
-                <p className="text-xs text-muted-foreground">
-                  {t('posts.list.metadata.publishedAt', 'Published {{date}}', {
-                    date: formatDate(item.publishedAt, locale),
-                  })}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {t('posts.list.metadata.feed', 'Feed: {{feed}}', { feed: feedLabel })}
-                </p>
-                {item.post?.createdAt ? (
-                  <p className="text-xs text-muted-foreground">
-                    {t('posts.list.metadata.createdAt', 'Generated {{date}}', {
-                      date: formatDate(item.post.createdAt, locale),
-                    })}
-                  </p>
-                ) : null}
-              </div>
-              {isAdmin && onPreviewRequest ? (
-                <button
-                  type="button"
-                  className="mt-2 inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:mt-0"
-                  onClick={() => onPreviewRequest(item.id)}
-                  disabled={isPreviewLoading}
-                  aria-disabled={isPreviewLoading}
-                >
-                  {t('posts.preview.rowAction', 'Preview')}
-                </button>
-              ) : null}
-            </header>
-            <section className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  aria-expanded={sectionState.post}
-                  aria-controls={postContentId}
-                  className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
-                  onClick={() => onToggleSection(item.id, 'post')}
-                >
-                  {t('posts.list.sections.post', 'Post')}
-                  <span aria-hidden="true">{sectionState.post ? '−' : '+'}</span>
-                </button>
-                {item.post?.content ? (
-                  <button
-                    type="button"
-                    onClick={() => onCopyPostContent(item.id, item.post?.content)}
-                    className="inline-flex items-center justify-center rounded-md border border-border bg-background p-2 text-muted-foreground transition hover:border-primary hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
-                    aria-label={t('posts.list.copyPost', 'Copy post')}
-                    title={t('posts.list.copyPost', 'Copy post')}
-                  >
-                    <svg
-                      aria-hidden="true"
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M9 9.75V6.75C9 5.64543 9.89543 4.75 11 4.75H17C18.1046 4.75 19 5.64543 19 6.75V16C19 17.1046 18.1046 18 17 18H14.25"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M7 8.25H13C14.1046 8.25 15 9.14543 15 10.25V18.25C15 19.3546 14.1046 20.25 13 20.25H7C5.89543 20.25 5 19.3546 5 18.25V10.25C5 9.14543 5.89543 8.25 7 8.25Z"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                ) : null}
-              </div>
-              {sectionState.post ? (
-                <div id={postContentId} className="rounded-md border border-border bg-background px-4 py-4 text-sm text-foreground">
-                  {item.post?.content ? (
-                    <p className="whitespace-pre-wrap leading-relaxed">{item.post.content}</p>
-                  ) : (
-                    <p className="text-muted-foreground">{t('posts.list.postUnavailable', 'Post not available yet.')}</p>
-                  )}
-                </div>
-              ) : null}
-              {copyFeedbacks[item.id] ? (
-                <output
-                  aria-live="polite"
-                  aria-atomic="true"
-                  className={clsx(
-                    'text-xs',
-                    copyFeedbacks[item.id]?.type === 'success' ? 'text-primary' : 'text-danger',
-                  )}
-                >
-                  {copyFeedbacks[item.id]?.message}
-                </output>
-              ) : null}
-            </section>
-            <section className="space-y-2">
-              <button
-                type="button"
-                aria-expanded={sectionState.article}
-                aria-controls={articleContentId}
-                className="flex w-full items-center justify-between rounded-md border border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground transition hover:bg-muted"
-                onClick={() => onToggleSection(item.id, 'article')}
-              >
-                {t('posts.list.sections.article', 'Article')}
-                <span aria-hidden="true">{sectionState.article ? '−' : '+'}</span>
-              </button>
-              {sectionState.article ? (
-                <ArticleContent
-                  id={articleContentId}
-                  postId={item.id}
-                  html={item.noticia}
-                  fallbackSnippet={item.contentSnippet}
-                  isAdmin={isAdmin}
-                  readMoreLabel={t('posts.list.article.readMore', 'See more')}
-                  readLessLabel={t('posts.list.article.readLess', 'See less')}
-                  partialAdminNotice={t(
-                    'posts.list.article.partialAdminNotice',
-                    'This article looks partial. Review the feed extraction.',
-                  )}
-                  unavailableLabel={t(
-                    'posts.list.article.unavailable',
-                    'News content not available yet.',
-                  )}
-                />
-              ) : null}
-            </section>
-          </article>
-        );
-      })}
-
-      <div className="flex items-center justify-between rounded-md border border-border bg-card px-6 py-4 text-sm text-muted-foreground">
-        <div>{t('posts.pagination.page', 'Page {{page}}', { page: currentPage })}</div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={onPreviousPage}
-            disabled={!hasPreviousPage || isLoading || isSyncing}
-          >
-            {t('posts.pagination.previous', 'Previous')}
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={onNextPage}
-            disabled={!nextCursor || isLoading || isSyncing}
-          >
-            {t('posts.pagination.next', 'Next')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+  };
 
 export default PostsPage;

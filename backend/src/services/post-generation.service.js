@@ -282,52 +282,56 @@ const buildPromptBase = async ({ ownerKey }) => {
   return { basePrompt, promptBaseHash };
 };
 
+const formatFeedInfo = (feed) => {
+  if (!feed) {
+    return null;
+  }
+
+  const segments = [];
+  if (feed.title) {
+    segments.push(feed.title);
+  }
+  if (feed.url) {
+    segments.push(`URL: ${feed.url}`);
+  }
+
+  if (segments.length === 0) {
+    return null;
+  }
+
+  return `Feed: ${segments.join(' · ')}`;
+};
+
+const formatPublicationDate = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.valueOf())) {
+    return null;
+  }
+
+  return `Publicado em: ${date.toISOString()}`;
+};
+
+const formatArticleHtml = (html) => {
+  if (!html) {
+    return null;
+  }
+
+  const { text: newsContent } = truncateNewsContent(html);
+  return newsContent ? `Conteúdo HTML:\n${newsContent}` : null;
+};
+
 const buildArticleContext = (article) => {
-  const parts = [];
+  const sections = [
+    `Notícia ID interno: ${article.id}`,
+    formatFeedInfo(article.feed),
+    article.title ? `Título: ${article.title}` : null,
+    formatPublicationDate(article.publishedAt),
+    article.contentSnippet ? `Resumo: ${article.contentSnippet}` : null,
+    formatArticleHtml(article.articleHtml),
+    article.link ? `Link: ${article.link}` : null,
+    article.guid ? `GUID: ${article.guid}` : null,
+  ].filter(Boolean);
 
-  parts.push(`Notícia ID interno: ${article.id}`);
-
-  if (article.feed) {
-    const feedNameParts = [];
-    if (article.feed.title) {
-      feedNameParts.push(article.feed.title);
-    }
-    if (article.feed.url) {
-      feedNameParts.push(`URL: ${article.feed.url}`);
-    }
-    if (feedNameParts.length > 0) {
-      parts.push(`Feed: ${feedNameParts.join(' · ')}`);
-    }
-  }
-
-  if (article.title) {
-    parts.push(`Título: ${article.title}`);
-  }
-
-  if (article.publishedAt instanceof Date && !Number.isNaN(article.publishedAt.valueOf())) {
-    parts.push(`Publicado em: ${article.publishedAt.toISOString()}`);
-  }
-
-  if (article.contentSnippet) {
-    parts.push(`Resumo: ${article.contentSnippet}`);
-  }
-
-  if (article.articleHtml) {
-    const { text: newsContent } = truncateNewsContent(article.articleHtml);
-    if (newsContent) {
-      parts.push(`Conteúdo HTML:\n${newsContent}`);
-    }
-  }
-
-  if (article.link) {
-    parts.push(`Link: ${article.link}`);
-  }
-
-  if (article.guid) {
-    parts.push(`GUID: ${article.guid}`);
-  }
-
-  return parts.join('\n\n');
+  return sections.join('\n\n');
 };
 
 const collectEligibleArticles = async ({ ownerKey, startedAt, operationalParams, maxAttempts }) => {
@@ -956,6 +960,117 @@ const computeSummary = ({
 
 const getLatestStatus = (ownerKey) => latestGenerationStatus.get(ownerKey) ?? null;
 
+const prepareGenerationContext = async ({ ownerKey, startedAt, overrides, maxAttempts }) => {
+  updateStatus(ownerKey, {
+    phase: GENERATION_PHASES.RESOLVING_PARAMS,
+    message: 'Carregando parâmetros de operação...',
+    status: GENERATION_STATES.IN_PROGRESS,
+  });
+  const operationalParams = await resolveOperationalParams(overrides);
+
+  updateStatus(ownerKey, {
+    phase: GENERATION_PHASES.LOADING_PROMPTS,
+    message: 'Carregando prompts personalizados...',
+  });
+  const { basePrompt, promptBaseHash } = await createPromptBaseOrRecordFailure({ ownerKey, startedAt });
+
+  updateStatus(ownerKey, {
+    phase: GENERATION_PHASES.COLLECTING_ARTICLES,
+    message: 'Buscando notícias elegíveis...',
+    promptBaseHash,
+    generatedCount: 0,
+    failedCount: 0,
+    processedCount: 0,
+    skippedCount: 0,
+    eligibleCount: null,
+  });
+
+  const { eligible, skippedCount } = await collectEligibleArticles({
+    ownerKey,
+    startedAt,
+    operationalParams,
+    maxAttempts,
+  });
+
+  return { operationalParams, basePrompt, promptBaseHash, eligible, skippedCount };
+};
+
+const resolveModelAndClient = async (client) => {
+  const configuredModel = await getOpenAIModel();
+  const model = resolveModelForRequest(configuredModel);
+  const openAiClient = ensureOpenAIClient(client);
+  const timeoutMs = config.openai?.timeoutMs ?? 30000;
+
+  return { model, openAiClient, timeoutMs };
+};
+
+const processEligibleArticles = async ({
+  ownerKey,
+  eligible,
+  basePrompt,
+  model,
+  openAiClient,
+  timeoutMs,
+  promptBaseHash,
+  skippedCount,
+  errors,
+}) => {
+  let generatedCount = 0;
+  let failedCount = 0;
+  let cacheInfo;
+
+  for (let index = 0; index < eligible.length; index += 1) {
+    const article = eligible[index];
+    const processedBefore = generatedCount + failedCount;
+
+    updateStatus(ownerKey, {
+      phase: GENERATION_PHASES.GENERATING_POSTS,
+      message: `Gerando post ${index + 1} de ${eligible.length}...`,
+      eligibleCount: eligible.length,
+      processedCount: processedBefore,
+      generatedCount,
+      failedCount,
+      skippedCount,
+      currentArticleId: typeof article.id === 'number' ? article.id : null,
+      currentArticleTitle: typeof article.title === 'string' ? article.title : null,
+    });
+
+    const result = await generatePostForArticle({
+      article,
+      basePrompt,
+      model,
+      client: openAiClient,
+      timeoutMs,
+      promptBaseHash,
+    });
+
+    if (result.cacheInfo) {
+      cacheInfo = result.cacheInfo;
+    }
+
+    if (result.success) {
+      generatedCount += 1;
+    } else {
+      failedCount += 1;
+      errors.push({ articleId: article.id, reason: result.reason });
+    }
+
+    updateStatus(ownerKey, {
+      phase: GENERATION_PHASES.GENERATING_POSTS,
+      message: `Processadas ${generatedCount + failedCount} de ${eligible.length} notícias.`,
+      eligibleCount: eligible.length,
+      processedCount: generatedCount + failedCount,
+      generatedCount,
+      failedCount,
+      skippedCount,
+      currentArticleId: null,
+      currentArticleTitle: null,
+    });
+  }
+
+  return { generatedCount, failedCount, cacheInfo };
+};
+
 const generatePostsForOwner = async ({
   ownerKey,
   now = new Date(),
@@ -988,41 +1103,20 @@ const generatePostsForOwner = async ({
     let failedCount = 0;
 
     try {
-      updateStatus(ownerKey, {
-        phase: GENERATION_PHASES.RESOLVING_PARAMS,
-        message: 'Carregando parâmetros de operação...',
-        status: GENERATION_STATES.IN_PROGRESS,
-      });
-      operationalParams = await resolveOperationalParams(overrides);
-
-      updateStatus(ownerKey, {
-        phase: GENERATION_PHASES.LOADING_PROMPTS,
-        message: 'Carregando prompts personalizados...',
-      });
-      const promptBase = await createPromptBaseOrRecordFailure({ ownerKey, startedAt });
-      promptBaseHash = promptBase.promptBaseHash;
-      basePrompt = promptBase.basePrompt;
-
-      updateStatus(ownerKey, {
-        phase: GENERATION_PHASES.COLLECTING_ARTICLES,
-        message: 'Buscando notícias elegíveis...',
-        promptBaseHash,
-        generatedCount: 0,
-        failedCount: 0,
-        processedCount: 0,
-        skippedCount: 0,
-        eligibleCount: null,
-      });
-
-      const collectionResult = await collectEligibleArticles({
+      const preparation = await prepareGenerationContext({
         ownerKey,
         startedAt,
-        operationalParams,
+        overrides,
         maxAttempts,
       });
 
-      eligible = collectionResult.eligible;
-      skippedCount = collectionResult.skippedCount;
+      ({
+        operationalParams,
+        basePrompt,
+        promptBaseHash,
+        eligible,
+        skippedCount,
+      } = preparation);
 
       if (eligible.length === 0) {
         return recordEmptySummary({
@@ -1048,65 +1142,29 @@ const generatePostsForOwner = async ({
         failedCount: 0,
       });
 
-      const configuredModel = await getOpenAIModel();
-      model = resolveModelForRequest(configuredModel);
+      const { model: resolvedModel, openAiClient, timeoutMs } = await resolveModelAndClient(client);
+      model = resolvedModel;
 
       updateStatus(ownerKey, {
         modelUsed: model,
         message: `Gerando posts com o modelo ${model}...`,
       });
 
-      const openAiClient = ensureOpenAIClient(client);
-      const timeoutMs = config.openai?.timeoutMs ?? 30000;
+      const processingResult = await processEligibleArticles({
+        ownerKey,
+        eligible,
+        basePrompt,
+        model,
+        openAiClient,
+        timeoutMs,
+        promptBaseHash,
+        skippedCount,
+        errors,
+      });
 
-      for (let index = 0; index < eligible.length; index += 1) {
-        const article = eligible[index];
-        const processedBefore = generatedCount + failedCount;
-
-        updateStatus(ownerKey, {
-          phase: GENERATION_PHASES.GENERATING_POSTS,
-          message: `Gerando post ${index + 1} de ${eligible.length}...`,
-          eligibleCount: eligible.length,
-          processedCount: processedBefore,
-          generatedCount,
-          failedCount,
-          skippedCount,
-          currentArticleId: typeof article.id === 'number' ? article.id : null,
-          currentArticleTitle: typeof article.title === 'string' ? article.title : null,
-        });
-
-        const result = await generatePostForArticle({
-          article,
-          basePrompt,
-          model,
-          client: openAiClient,
-          timeoutMs,
-          promptBaseHash,
-        });
-
-        if (result.cacheInfo) {
-          cacheInfo = result.cacheInfo;
-        }
-
-        if (result.success) {
-          generatedCount += 1;
-        } else {
-          failedCount += 1;
-          errors.push({ articleId: article.id, reason: result.reason });
-        }
-
-        updateStatus(ownerKey, {
-          phase: GENERATION_PHASES.GENERATING_POSTS,
-          message: `Processadas ${generatedCount + failedCount} de ${eligible.length} notícias.`,
-          eligibleCount: eligible.length,
-          processedCount: generatedCount + failedCount,
-          generatedCount,
-          failedCount,
-          skippedCount,
-          currentArticleId: null,
-          currentArticleTitle: null,
-        });
-      }
+      generatedCount = processingResult.generatedCount;
+      failedCount = processingResult.failedCount;
+      cacheInfo = processingResult.cacheInfo ?? cacheInfo;
 
       updateStatus(ownerKey, {
         phase: GENERATION_PHASES.FINALIZING,
