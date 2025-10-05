@@ -36,38 +36,40 @@ jest.mock('../src/lib/prisma', () => {
     }
 
     if (typeof condition === 'object' && condition !== null) {
-      if (Array.isArray(condition.in)) {
-        return condition.in.includes(actual);
-      }
-
-      if (condition.equals !== undefined) {
-        return actual === condition.equals;
-      }
-
-      if (condition.not !== undefined) {
-        return !matchesScalar(actual, condition.not);
-      }
-
-      if (condition.gt !== undefined && actual <= condition.gt) {
-        return false;
-      }
-
-      if (condition.gte !== undefined && actual < condition.gte) {
-        return false;
-      }
-
-      if (condition.lt !== undefined && actual >= condition.lt) {
-        return false;
-      }
-
-      if (condition.lte !== undefined && actual > condition.lte) {
-        return false;
-      }
-
-      return true;
+      return matchesScalarObject(actual, condition);
     }
 
     return actual === condition;
+  };
+
+  const matchesScalarObject = (actual, condition) => {
+    if (Array.isArray(condition.in)) {
+      return condition.in.includes(actual);
+    }
+
+    if (condition.equals !== undefined) {
+      return actual === condition.equals;
+    }
+
+    if (condition.not !== undefined) {
+      return !matchesScalar(actual, condition.not);
+    }
+
+    return evaluateScalarRange(actual, condition);
+  };
+
+  const evaluateScalarRange = (actual, condition) => {
+    const comparisons = [
+      ['gt', (value) => actual > value],
+      ['gte', (value) => actual >= value],
+      ['lt', (value) => actual < value],
+      ['lte', (value) => actual <= value],
+    ];
+
+    return comparisons.every(([key, predicate]) => {
+      const expected = condition[key];
+      return expected === undefined || predicate(expected);
+    });
   };
 
   const toDate = (value) => {
@@ -236,45 +238,40 @@ jest.mock('../src/lib/prisma', () => {
       return true;
     }
 
-    if (!matchesScalar(prompt.id, where.id)) {
+    const scalarFields = [
+      ['id', prompt.id],
+      ['userId', prompt.userId],
+      ['position', prompt.position],
+      ['enabled', prompt.enabled],
+    ];
+
+    if (scalarFields.some(([field, value]) => !matchesScalar(value, where[field]))) {
       return false;
     }
 
-    if (!matchesScalar(prompt.userId, where.userId)) {
-      return false;
-    }
+    const logicalGroups = [
+      ['AND', 'every'],
+      ['OR', 'some'],
+    ];
 
-    if (!matchesScalar(prompt.position, where.position)) {
-      return false;
-    }
+    for (const [key, method] of logicalGroups) {
+      const group = where[key];
+      if (!Array.isArray(group) || group.length === 0) {
+        continue;
+      }
 
-    if (!matchesScalar(prompt.enabled, where.enabled)) {
-      return false;
-    }
-
-    if (Array.isArray(where.AND) && where.AND.length > 0) {
-      if (!where.AND.every((condition) => matchPromptWhere(prompt, condition))) {
+      const matcher = (condition) => matchPromptWhere(prompt, condition);
+      if (!group[method](matcher)) {
         return false;
       }
     }
 
-    if (Array.isArray(where.OR) && where.OR.length > 0) {
-      if (!where.OR.some((condition) => matchPromptWhere(prompt, condition))) {
-        return false;
-      }
+    if (where.NOT === undefined) {
+      return true;
     }
 
-    if (Array.isArray(where.NOT) && where.NOT.length > 0) {
-      if (where.NOT.some((condition) => matchPromptWhere(prompt, condition))) {
-        return false;
-      }
-    } else if (where.NOT && typeof where.NOT === 'object') {
-      if (matchPromptWhere(prompt, where.NOT)) {
-        return false;
-      }
-    }
-
-    return true;
+    const notConditions = Array.isArray(where.NOT) ? where.NOT : [where.NOT];
+    return !notConditions.some((condition) => matchPromptWhere(prompt, condition));
   };
 
   const filterPrompts = (where = {}) => prompts.filter((prompt) => matchPromptWhere(prompt, where));

@@ -27,7 +27,7 @@ let hasLoggedSessionStorageError = false;
 const getSessionStorage = (): Storage | null => {
   try {
     const { sessionStorage } = globalThis as typeof globalThis & { sessionStorage?: Storage };
-    return sessionStorage === undefined ? null : sessionStorage;
+    return sessionStorage ?? null;
   } catch (error) {
     if (!hasLoggedSessionStorageError) {
       console.warn('Unable to access sessionStorage for posts diagnostics.', error);

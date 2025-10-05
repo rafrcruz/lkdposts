@@ -108,6 +108,8 @@ const runDiagnostics = async ({ model } = {}) => {
 
     logDiagResult({ status: 200, type: null, code: null, requestId: response?.id ?? null });
 
+    const cachedTokensPayload = cachedTokens === null ? {} : { cachedTokens };
+
     return {
       ok: true,
       model: targetModel,
@@ -115,7 +117,7 @@ const runDiagnostics = async ({ model } = {}) => {
       timeoutMs,
       latencyMs,
       usage,
-      ...(cachedTokens != null ? { cachedTokens } : {}),
+      ...cachedTokensPayload,
     };
   } catch (error) {
     const details = extractErrorDetails(error);

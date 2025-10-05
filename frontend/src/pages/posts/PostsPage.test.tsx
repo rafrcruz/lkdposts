@@ -377,14 +377,16 @@ describe('PostsPage', () => {
       delete (globalThis as { fetch?: typeof globalThis.fetch }).fetch;
     }
 
-    if (originalClipboard !== undefined) {
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: originalClipboard,
-      });
-    } else {
+    if (originalClipboard === undefined) {
       delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+
+      return;
     }
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: originalClipboard,
+    });
   });
 
   it('calls refresh and cleanup on mount and renders posts afterwards', async () => {
