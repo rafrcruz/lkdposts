@@ -484,6 +484,68 @@ describe('post-generation.service integration', () => {
       }),
     );
   });
+  it('returns the latest status immediately when waitForCompletion is false', async () => {
+    const now = new Date('2025-01-02T08:00:00Z');
+    const feed = await createFeed();
+    await createArticle({
+      feedId: feed.id,
+      title: 'Notícia assíncrona',
+      contentSnippet: 'Resumo assíncrono',
+      publishedAt: new Date('2025-01-02T07:45:00Z').toISOString(),
+      guid: 'async-1',
+      link: 'https://example.com/async-1',
+      dedupeKey: 'async-1',
+    });
+
+    let resolveResponse;
+    const pendingResponse = new Promise((resolve) => {
+      resolveResponse = resolve;
+    });
+
+    __mockClient.responses.create.mockImplementationOnce(() => pendingResponse);
+
+    const firstTrigger = await postGenerationService.generatePostsForOwner({
+      ownerKey: OWNER_KEY,
+      now,
+      waitForCompletion: false,
+    });
+
+    expect(firstTrigger.alreadyRunning).toBe(false);
+    expect(firstTrigger.status).toEqual(
+      expect.objectContaining({
+        ownerKey: OWNER_KEY,
+        status: 'in_progress',
+      }),
+    );
+
+    const secondTrigger = await postGenerationService.generatePostsForOwner({
+      ownerKey: OWNER_KEY,
+      now,
+      waitForCompletion: false,
+    });
+
+    expect(secondTrigger.alreadyRunning).toBe(true);
+    expect(secondTrigger.status).not.toBeNull();
+
+    const completionPromise = postGenerationService.generatePostsForOwner({ ownerKey: OWNER_KEY, now });
+
+    resolveResponse({
+      id: 'resp-async',
+      model: 'gpt-5-nano',
+      output_text: 'Post assíncrono gerado.',
+      usage: { input_tokens: 110, output_tokens: 85 },
+    });
+
+    const summary = await completionPromise;
+
+    expect(summary.generatedCount).toBe(1);
+    expect(postGenerationService.getLatestStatus(OWNER_KEY)).toEqual(
+      expect.objectContaining({
+        status: 'completed',
+        summary: expect.objectContaining({ generatedCount: 1 }),
+      }),
+    );
+  });
 
 
 

@@ -12,11 +12,12 @@ const getOwnerKey = (req) => {
 
 const triggerGeneration = asyncHandler(async (req, res) => {
   const ownerKey = getOwnerKey(req);
-  const summary = await postGenerationService.generatePostsForOwner({ ownerKey });
+  const result = await postGenerationService.generatePostsForOwner({ ownerKey, waitForCompletion: false });
 
   return res.success({
     ownerKey,
-    summary,
+    alreadyRunning: result.alreadyRunning,
+    status: result.status ?? null,
   });
 });
 
@@ -27,6 +28,7 @@ const getStatus = asyncHandler(async (req, res) => {
   return res.success({
     ownerKey,
     status: status ?? null,
+    running: postGenerationService.isGenerationInProgress(ownerKey),
   });
 });
 
