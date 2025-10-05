@@ -8,9 +8,9 @@ import type { Prompt } from '@/features/prompts/types/prompt';
 
 export type PromptCardRenderOptions = {
   setNodeRef?: (element: HTMLDivElement | null) => void;
-  containerAttributes?: DraggableAttributes;
+  containerAttributes?: Partial<DraggableAttributes>;
   handleListeners?: SyntheticListenerMap;
-  handleAttributes?: DraggableAttributes;
+  handleAttributes?: Partial<DraggableAttributes>;
   style?: CSSProperties;
   isDragging?: boolean;
   isSorting?: boolean;
@@ -56,7 +56,7 @@ type PromptContentInfo = {
 
 type PromptReorderConfig = {
   containerAttributes: Partial<DraggableAttributes>;
-  handleAttributes: DraggableAttributes;
+  handleAttributes: Partial<DraggableAttributes>;
   handleListeners: SyntheticListenerMap;
   showPlaceholder: boolean;
   isDragging: boolean;
@@ -102,12 +102,12 @@ const resolveReorderConfig = (
 
   return {
     containerAttributes: restContainerAttributes,
-    handleAttributes: (options?.handleAttributes ??
-      ({
-        role,
-        tabIndex,
-        onKeyDown,
-      } as DraggableAttributes)) as DraggableAttributes,
+    handleAttributes: {
+      ...(role !== undefined || tabIndex !== undefined || onKeyDown !== undefined
+        ? { role, tabIndex, onKeyDown }
+        : {}),
+      ...(options?.handleAttributes ?? {}),
+    },
     handleListeners: (canReorder ? options?.handleListeners ?? {} : {}) as SyntheticListenerMap,
     showPlaceholder: Boolean(options?.showPlaceholder && !isOverlay),
     isDragging,
@@ -271,7 +271,7 @@ const PromptSelectionCheckbox = ({ isSelected, onChange, label }: PromptSelectio
 type PromptReorderHandleProps = {
   canReorder: boolean;
   handleListeners: SyntheticListenerMap;
-  handleAttributes: DraggableAttributes;
+  handleAttributes: Partial<DraggableAttributes>;
   isDragging: boolean;
   isActive: boolean;
   reorderHandleLabel: string;
