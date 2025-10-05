@@ -91,12 +91,15 @@ const resolveReorderConfig = (
   options: PromptCardRenderOptions | undefined,
   canReorder: boolean,
 ): PromptReorderConfig => {
-  const containerAttributes: Partial<DraggableAttributes> = options?.containerAttributes ?? {};
-  const { role, tabIndex, onKeyDown, ...restContainerAttributes } = containerAttributes as {
-    role?: string;
-    tabIndex?: number;
-    onKeyDown?: PromptCardRenderOptions['onKeyDown'];
-  };
+  const containerAttributes = options?.containerAttributes as
+    | (Partial<DraggableAttributes> & {
+        role?: string;
+        tabIndex?: number;
+        onKeyDown?: PromptCardRenderOptions['onKeyDown'];
+      })
+    | undefined;
+
+  const { role, tabIndex, onKeyDown, ...restContainerAttributes } = containerAttributes ?? {};
   const isOverlay = options?.isOverlay ?? false;
   const isDragging = options?.isDragging ?? false;
   const isSorting = options?.isSorting ?? false;
@@ -105,14 +108,33 @@ const resolveReorderConfig = (
   const handleListeners =
     canReorder && options?.handleListeners ? options.handleListeners : EMPTY_SYNTHETIC_LISTENERS;
 
+  type HandleAttributes = Partial<DraggableAttributes> & {
+    role?: string;
+    tabIndex?: number;
+    onKeyDown?: PromptCardRenderOptions['onKeyDown'];
+  };
+
+  const handleAttributes: HandleAttributes = {};
+
+  if (role !== undefined) {
+    handleAttributes.role = role;
+  }
+
+  if (tabIndex !== undefined) {
+    handleAttributes.tabIndex = tabIndex;
+  }
+
+  if (onKeyDown !== undefined) {
+    handleAttributes.onKeyDown = onKeyDown;
+  }
+
+  if (options?.handleAttributes) {
+    Object.assign(handleAttributes, options.handleAttributes);
+  }
+
   return {
     containerAttributes: restContainerAttributes,
-    handleAttributes: {
-      ...(role !== undefined || tabIndex !== undefined || onKeyDown !== undefined
-        ? { role, tabIndex, onKeyDown }
-        : {}),
-      ...(options?.handleAttributes ?? {}),
-    },
+    handleAttributes,
     handleListeners,
     showPlaceholder: Boolean(options?.showPlaceholder && !isOverlay),
     isDragging,
