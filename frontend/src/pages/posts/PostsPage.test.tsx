@@ -368,9 +368,10 @@ describe('PostsPage', () => {
       Promise.resolve({ item: buildPost(), cacheInfo: null, reused: false }),
     );
     mockedUseGeneratePost.mockReturnValue(
-      createMutationResult<{ item: PostListItem; cacheInfo: null; reused?: boolean }, { articleId: number }>(
-        generateMutateAsync,
-      ),
+      createMutationResult<
+        { item: PostListItem; cacheInfo: null; reused?: boolean },
+        { articleId: number; customPrompt?: string }
+      >(generateMutateAsync),
     );
     previewMutateAsync = vi.fn(() => Promise.resolve());
     previewMutationResult = createMutationResult<PostRequestPreview, { newsId?: number }>(previewMutateAsync, {
@@ -596,6 +597,74 @@ describe('PostsPage', () => {
     });
 
     await screen.findByText(i18n.t('posts.list.generateSuccess'));
+  });
+
+  it('allows adding a custom prompt before manual post generation', async () => {
+    const user = userEvent.setup();
+
+    const placeholderPost = buildPost({
+      id: 77,
+      title: 'Post com instrução',
+      post: {
+        content: null,
+        status: 'PENDING',
+        attemptCount: 0,
+        createdAt: null,
+        generatedAt: null,
+        modelUsed: null,
+        promptBaseHash: null,
+        tokensInput: null,
+        tokensOutput: null,
+      },
+    });
+
+    generateMutateAsync.mockResolvedValueOnce({
+      item: buildPost({
+        id: 77,
+        title: 'Post com instrução',
+        post: {
+          content: 'Conteudo gerado com instrução',
+          status: 'SUCCESS',
+          generatedAt: '2024-01-01T12:00:00.000Z',
+          createdAt: '2024-01-01T12:00:00.000Z',
+        },
+      }),
+      cacheInfo: null,
+      reused: false,
+    });
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (params.enabled) {
+        return createPostQueryResult({
+          data: {
+            items: [placeholderPost],
+            meta: { nextCursor: null, limit: 10 },
+          },
+          isSuccess: true,
+          isFetched: true,
+          status: 'success',
+        });
+      }
+
+      return createPostQueryResult();
+    });
+
+    renderPage();
+
+    const promptField = await screen.findByPlaceholderText(/Add a custom instruction for this news/i);
+    await user.type(promptField, '  Foque em dados relevantes.  ');
+
+    const generateLabel = i18n.t('posts.list.generatePost');
+    const generateButton = await screen.findByRole('button', { name: new RegExp(generateLabel, 'i') });
+
+    await user.click(generateButton);
+
+    await waitFor(() => {
+      expect(generateMutateAsync).toHaveBeenCalledWith({
+        articleId: 77,
+        customPrompt: 'Foque em dados relevantes.',
+      });
+    });
   });
 
   it('renders the refresh summary and allows dismissing it', async () => {

@@ -279,6 +279,33 @@ const buildSystemPromptText = (basePrompt) => {
   return parts.join('\n\n').trim();
 };
 
+const computePromptBaseHash = (basePrompt) => {
+  const systemPrompt = buildSystemPromptText(basePrompt);
+  return createHash('sha256').update(systemPrompt).digest('hex');
+};
+
+const appendCustomPromptToBase = ({ basePrompt, promptBaseHash, customPrompt }) => {
+  const normalizedCustom = normalizeMultiline(customPrompt);
+  if (!normalizedCustom) {
+    return { basePrompt, promptBaseHash };
+  }
+
+  const sections = [];
+  const trimmedBase = typeof basePrompt === 'string' ? basePrompt.trim() : '';
+
+  if (trimmedBase) {
+    sections.push(trimmedBase);
+  }
+
+  sections.push(normalizedCustom);
+
+  const combinedPrompt = sections.join(PROMPT_SEPARATOR);
+  return {
+    basePrompt: combinedPrompt,
+    promptBaseHash: computePromptBaseHash(combinedPrompt),
+  };
+};
+
 const buildPromptBase = async ({ ownerKey }) => {
   const userId = toUserId(ownerKey);
   const prompts = await promptRepository.findManyByUser({
@@ -308,8 +335,7 @@ const buildPromptBase = async ({ ownerKey }) => {
   }
 
   const basePrompt = sections.join(PROMPT_SEPARATOR);
-  const systemPrompt = buildSystemPromptText(basePrompt);
-  const promptBaseHash = createHash('sha256').update(systemPrompt).digest('hex');
+  const promptBaseHash = computePromptBaseHash(basePrompt);
 
   return { basePrompt, promptBaseHash };
 };
@@ -1109,6 +1135,7 @@ const processEligibleArticles = async ({
 const generatePostForArticleId = async ({
   ownerKey,
   articleId,
+  customPrompt,
   now = new Date(),
   client,
   operationalParams: overrides,
@@ -1144,15 +1171,20 @@ const generatePostForArticleId = async ({
 
   await resolveOperationalParams(overrides);
   const promptBase = await buildPromptBase({ ownerKey });
+  const promptBaseWithCustom = appendCustomPromptToBase({
+    basePrompt: promptBase.basePrompt,
+    promptBaseHash: promptBase.promptBaseHash,
+    customPrompt,
+  });
   const { model, openAiClient, timeoutMs } = await resolveModelAndClient(client);
 
   const generationResult = await generatePostForArticle({
     article,
-    basePrompt: promptBase.basePrompt,
+    basePrompt: promptBaseWithCustom.basePrompt,
     model,
     client: openAiClient,
     timeoutMs,
-    promptBaseHash: promptBase.promptBaseHash,
+    promptBaseHash: promptBaseWithCustom.promptBaseHash,
   });
 
   if (!generationResult.success) {
