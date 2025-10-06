@@ -37,6 +37,11 @@ const router = express.Router();
  *           minimum: 1
  *           maximum: 50
  *         description: Quantidade máxima de feeds retornados por página (padrão 20, limite 50).
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Trecho da URL para filtrar os feeds cadastrados (busca parcial, sem diferenciar maiúsculas/minúsculas).
  *     responses:
  *       '200':
  *         description: Paginated list of feeds

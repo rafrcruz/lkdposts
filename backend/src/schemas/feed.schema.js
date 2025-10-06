@@ -20,6 +20,7 @@ const listFeedsQuerySchema = z
   .object({
     cursor: positiveInt.optional(),
     limit: positiveInt.optional(),
+    search: z.string().optional(),
   })
   .strict();
 

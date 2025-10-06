@@ -980,7 +980,7 @@ const PostsPage = () => {
     });
   }, []);
 
-  const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT });
+  const feedList = useFeedList({ cursor: null, limit: FEED_OPTIONS_LIMIT, search: null });
   const feedListData = feedList.data;
   const feeds: Feed[] = feedListData?.items ?? [];
   const totalFeeds: number = feedListData?.meta.total ?? 0;

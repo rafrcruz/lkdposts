@@ -171,6 +171,25 @@ jest.mock('../src/lib/prisma', () => {
       return feed.url === urlCondition;
     }
 
+    if (typeof urlCondition === 'object' && urlCondition !== null) {
+      if (Object.hasOwn(urlCondition, 'not')) {
+        return !matchesUrlCondition(feed, urlCondition.not);
+      }
+
+      if (Object.hasOwn(urlCondition, 'equals')) {
+        return feed.url === urlCondition.equals;
+      }
+
+      if (typeof urlCondition.contains === 'string') {
+        const haystack = urlCondition.mode === 'insensitive' ? feed.url.toLowerCase() : feed.url;
+        const needle = urlCondition.mode === 'insensitive'
+          ? urlCondition.contains.toLowerCase()
+          : urlCondition.contains;
+
+        return haystack.includes(needle);
+      }
+    }
+
     return true;
   };
 

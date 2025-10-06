@@ -1,8 +1,18 @@
 const { prisma } = require('../lib/prisma');
 
-const findPageByOwner = async ({ ownerKey, cursorId, take }) => {
+const buildOwnerWhereClause = ({ ownerKey, search }) => {
+  const where = { ownerKey };
+
+  if (search) {
+    where.url = { contains: search, mode: 'insensitive' };
+  }
+
+  return where;
+};
+
+const findPageByOwner = async ({ ownerKey, cursorId, take, search }) => {
   const query = {
-    where: { ownerKey },
+    where: buildOwnerWhereClause({ ownerKey, search }),
     orderBy: { id: 'asc' },
     take,
   };
@@ -15,7 +25,8 @@ const findPageByOwner = async ({ ownerKey, cursorId, take }) => {
   return prisma.feed.findMany(query);
 };
 
-const countByOwner = (ownerKey) => prisma.feed.count({ where: { ownerKey } });
+const countByOwner = ({ ownerKey, search }) =>
+  prisma.feed.count({ where: buildOwnerWhereClause({ ownerKey, search }) });
 
 const findById = (id) => prisma.feed.findUnique({ where: { id } });
 

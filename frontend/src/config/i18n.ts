@@ -224,6 +224,15 @@ const resources = {
             title: 'No feed registered yet.',
             description: 'Add your feeds individually or in bulk to start generating posts.',
           },
+          search: {
+            label: 'Filter by URL',
+            placeholder: 'Search feed URL',
+            submit: 'Search',
+            searching: 'Searching...',
+            clear: 'Clear',
+            noResults: 'No feeds found for this search.',
+            noResultsDescription: 'Try adjusting the filter or clear it to see all feeds.',
+          },
           headers: {
             feed: 'Feed',
             lastFetchedAt: 'Last update',
@@ -749,6 +758,15 @@ const resources = {
           empty: {
             title: 'Nenhum feed cadastrado ainda.',
             description: 'Adicione seus feeds individuais ou em lote para comecar a gerar posts.',
+          },
+          search: {
+            label: 'Filtrar por URL',
+            placeholder: 'Busque pela URL do feed',
+            submit: 'Buscar',
+            searching: 'Buscando...',
+            clear: 'Limpar',
+            noResults: 'Nenhum feed encontrado para esta busca.',
+            noResultsDescription: 'Ajuste o filtro ou limpe a busca para ver todos os feeds.',
           },
           headers: {
             feed: 'Feed',

@@ -24,6 +24,7 @@ import { POSTS_QUERY_KEY, type PostListResponse } from '@/features/posts/api/pos
 type FeedListQueryParams = {
   cursor: string | null;
   limit: number;
+  search: string | null;
 };
 
 type FeedListQueryKey = readonly [...typeof FEEDS_QUERY_KEY, FeedListQueryParams];
@@ -52,18 +53,21 @@ const isFeedListQueryKey = (queryKey: unknown): queryKey is FeedListQueryKey => 
   const candidate = paramsCandidate as Record<string, unknown>;
   const hasCursor = Object.hasOwn(candidate, 'cursor');
   const hasLimit = Object.hasOwn(candidate, 'limit');
+  const hasSearch = Object.hasOwn(candidate, 'search');
 
-  if (!hasCursor || !hasLimit) {
+  if (!hasCursor || !hasLimit || !hasSearch) {
     return false;
   }
 
   const cursor = candidate.cursor;
   const limit = candidate.limit;
+  const search = candidate.search;
 
   const isCursorValid = cursor === null || typeof cursor === 'string';
   const isLimitValid = typeof limit === 'number';
+  const isSearchValid = search === null || typeof search === 'string';
 
-  return isCursorValid && isLimitValid;
+  return isCursorValid && isLimitValid && isSearchValid;
 };
 
 const updateFeedListCache = (queryClient: QueryClient, feeds: Feed[]) => {
@@ -79,11 +83,22 @@ const updateFeedListCache = (queryClient: QueryClient, feeds: Feed[]) => {
     }
 
     const [, params] = queryKey;
-    const limit = typeof params.limit === 'number' ? params.limit : current.meta.limit;
+    const limit = params.limit;
     const isFirstPage = params.cursor === null;
+    const search = params.search;
 
     const existingIds = new Set(current.items.map((item) => item.id));
-    const newFeeds = feeds.filter((feed) => !existingIds.has(feed.id));
+    const newFeeds = feeds.filter((feed) => {
+      if (existingIds.has(feed.id)) {
+        return false;
+      }
+
+      if (search && !feed.url.toLowerCase().includes(search.toLowerCase())) {
+        return false;
+      }
+
+      return true;
+    });
 
     if (newFeeds.length === 0) {
       continue;
@@ -106,15 +121,28 @@ const updateFeedListCache = (queryClient: QueryClient, feeds: Feed[]) => {
 type FeedListParams = {
   cursor: string | null;
   limit: number;
+  search: string | null;
 };
 
-export const useFeedList = ({ cursor, limit }: FeedListParams) => {
+export const useFeedList = ({ cursor, limit, search }: FeedListParams) => {
   const { status } = useAuth();
   const isAuthenticated = status === 'authenticated';
 
   return useQuery<FeedListResponse, HttpError>({
-    queryKey: [...FEEDS_QUERY_KEY, { cursor: cursor ?? null, limit }],
-    queryFn: () => fetchFeeds({ cursor: cursor ?? undefined, limit }),
+    queryKey: [...FEEDS_QUERY_KEY, { cursor: cursor ?? null, limit, search: search ?? null }],
+    queryFn: () => {
+      const params: { cursor?: string | null; limit: number; search?: string | null } = { limit };
+
+      if (cursor) {
+        params.cursor = cursor;
+      }
+
+      if (search) {
+        params.search = search;
+      }
+
+      return fetchFeeds(params);
+    },
     enabled: isAuthenticated,
     placeholderData: keepPreviousData,
   });

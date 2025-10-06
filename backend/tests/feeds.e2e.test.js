@@ -120,6 +120,25 @@ describe('Feeds API', () => {
       expect(response.body.data.items).toHaveLength(maxLimit);
       expect(response.body.meta.limit).toBe(maxLimit);
     });
+
+    it('filters feeds by URL using a partial match when the search query is provided', async () => {
+      await feedService.createFeed({ ownerKey: '1', url: 'https://news.example.com/rss', title: 'News' });
+      await feedService.createFeed({ ownerKey: '1', url: 'https://blog.example.com/feed', title: 'Blog' });
+      await feedService.createFeed({ ownerKey: '1', url: 'https://updates.test.com/rss', title: 'Updates' });
+
+      const response = await withAuth(TOKENS.user1, request(app).get('/api/v1/feeds'))
+        .query({ search: 'example' })
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data.items).toHaveLength(2);
+      expect(response.body.data.items.map((item) => item.url)).toEqual([
+        'https://news.example.com/rss',
+        'https://blog.example.com/feed',
+      ]);
+      expect(response.body.meta.total).toBe(2);
+      expect(response.body.meta.nextCursor).toBeNull();
+    });
   });
 
   describe('POST /api/v1/feeds', () => {
