@@ -16,7 +16,7 @@ import {
   useUpdateFeed,
 } from '@/features/feeds/hooks/useFeeds';
 import type { Feed, FeedResetSummary } from '@/features/feeds/types/feed';
-import type { FeedListResponse } from '@/features/feeds/api/feeds';
+import { fetchFeeds, type FeedListResponse } from '@/features/feeds/api/feeds';
 import { HttpError } from '@/lib/api/http';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { AuthContextValue } from '@/features/auth/context/AuthContext';
@@ -54,6 +54,10 @@ vi.mock('@/features/auth/hooks/useAuth', () => ({
   useAuth: vi.fn(),
 }));
 
+vi.mock('@/features/feeds/api/feeds', () => ({
+  fetchFeeds: vi.fn(),
+}));
+
 const mockedUseFeedList = vi.mocked(useFeedList);
 const mockedUseCreateFeed = vi.mocked(useCreateFeed);
 const mockedUseBulkCreateFeeds = vi.mocked(useBulkCreateFeeds);
@@ -61,6 +65,7 @@ const mockedUseUpdateFeed = vi.mocked(useUpdateFeed);
 const mockedUseResetFeeds = vi.mocked(useResetFeeds);
 const mockedUseDeleteFeed = vi.mocked(useDeleteFeed);
 const mockedUseAuth = vi.mocked(useAuth);
+const mockedFetchFeeds = vi.mocked(fetchFeeds);
 
 type CreateVariables = { url: string; title?: string | null };
 type CreateOptions = Parameters<UseMutationResult<Feed, HttpError, CreateVariables>['mutate']>[1];
@@ -240,6 +245,11 @@ beforeEach(() => {
   );
 
   mockedUseAuth.mockReturnValue(buildAuthContext());
+  mockedFetchFeeds.mockReset();
+  mockedFetchFeeds.mockResolvedValue({
+    items: [],
+    meta: { nextCursor: null, total: 0, limit: 50 },
+  });
 
   if (typeof globalThis.confirm === 'function') {
     originalConfirm = globalThis.confirm;
@@ -416,6 +426,61 @@ describe('FeedsPage', () => {
     expect(
       within(summaryElement).getByText((content) => content.includes(feedIdLabel)),
     ).toBeInTheDocument();
+  });
+
+  it('exports all feeds as CSV', async () => {
+    const user = userEvent.setup();
+
+    const firstPage = {
+      items: [
+        buildFeed({ id: 10, title: 'Feed export 1', url: 'https://export.com/1.xml', lastFetchedAt: '2024-01-05T00:00:00.000Z' }),
+      ],
+      meta: { nextCursor: '20', total: 3, limit: 50 },
+    } satisfies FeedListResponse;
+
+    const secondPage = {
+      items: [
+        buildFeed({ id: 20, title: null, url: 'https://export.com/2.xml', lastFetchedAt: null }),
+        buildFeed({ id: 30, title: 'Feed export 3', url: 'https://export.com/3.xml', lastFetchedAt: '2024-01-07T00:00:00.000Z' }),
+      ],
+      meta: { nextCursor: null, total: 3, limit: 50 },
+    } satisfies FeedListResponse;
+
+    mockedFetchFeeds.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage);
+
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock');
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    try {
+      renderPage();
+
+      const exportButton = screen.getByRole('button', { name: /Exportar CSV/i });
+      await user.click(exportButton);
+
+      await waitFor(() => {
+        expect(mockedFetchFeeds).toHaveBeenCalledTimes(2);
+      });
+
+      expect(mockedFetchFeeds).toHaveBeenNthCalledWith(1, { cursor: undefined, limit: 50 });
+      expect(mockedFetchFeeds).toHaveBeenNthCalledWith(2, { cursor: '20', limit: 50 });
+
+      const blobArg = createObjectURLSpy.mock.calls[0]?.[0] as Blob | undefined;
+      expect(blobArg).toBeInstanceOf(Blob);
+      expect(blobArg?.type).toBe('text/csv;charset=utf-8;');
+      expect(blobArg).toBeDefined();
+      const csvContent = await blobArg!.text();
+      expect(csvContent).toContain('Feed export 1');
+      expect(csvContent).toContain('https://export.com/3.xml');
+
+      expect(clickSpy).toHaveBeenCalled();
+      expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:mock');
+      await screen.findByText('Exportação concluída. 3 feeds exportados.');
+    } finally {
+      createObjectURLSpy.mockRestore();
+      revokeObjectURLSpy.mockRestore();
+      clickSpy.mockRestore();
+    }
   });
 
   it('updates feed successfully and closes the edit form', async () => {

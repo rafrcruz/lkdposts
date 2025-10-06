@@ -9,6 +9,7 @@ import {
   useResetFeeds,
   useUpdateFeed,
 } from '@/features/feeds/hooks/useFeeds';
+import { fetchFeeds } from '@/features/feeds/api/feeds';
 import type {
   Feed,
   FeedBulkResult,
@@ -23,6 +24,7 @@ import { useAuth } from '@/features/auth/hooks/useAuth';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 
 const PAGE_SIZE = 10;
+const EXPORT_PAGE_SIZE = 50;
 
 type FeedbackMessage = {
   type: 'success' | 'error';
@@ -121,6 +123,7 @@ const FeedsPage = () => {
   const [deleteFeedback, setDeleteFeedback] = useState<FeedbackMessage | null>(null);
   const [resetFeedback, setResetFeedback] = useState<FeedbackMessage | null>(null);
   const [shouldRefreshFeeds, setShouldRefreshFeeds] = useState(false);
+  const [isExportingFeeds, setIsExportingFeeds] = useState(false);
   const [feedPendingDeletion, setFeedPendingDeletion] = useState<Feed | null>(null);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
@@ -751,6 +754,90 @@ const FeedsPage = () => {
     setCursor(nextCursor);
   };
 
+  const handleExportFeeds = async () => {
+    setListFeedback(null);
+    setIsExportingFeeds(true);
+
+    try {
+      const allFeeds: Feed[] = [];
+      let nextCursorForFetch: string | undefined;
+
+      while (true) {
+        const { items, meta } = await fetchFeeds({
+          cursor: nextCursorForFetch,
+          limit: EXPORT_PAGE_SIZE,
+        });
+
+        allFeeds.push(...items);
+
+        if (!meta.nextCursor) {
+          break;
+        }
+
+        nextCursorForFetch = meta.nextCursor;
+      }
+
+      const escapeCsvValue = (value: string) => `"${value.replace(/"/g, '""')}"`;
+      const headerRow = [
+        t('feeds.export.headers.id', 'ID'),
+        t('feeds.export.headers.title', 'Title'),
+        t('feeds.export.headers.url', 'URL'),
+        t('feeds.export.headers.lastFetchedAt', 'Last fetched at'),
+        t('feeds.export.headers.createdAt', 'Created at'),
+        t('feeds.export.headers.updatedAt', 'Updated at'),
+      ];
+
+      const csvRows = [
+        headerRow,
+        ...allFeeds.map((feed) => [
+          String(feed.id),
+          feed.title ?? '',
+          feed.url,
+          feed.lastFetchedAt ?? '',
+          feed.createdAt,
+          feed.updatedAt,
+        ]),
+      ];
+
+      const csvContent = csvRows
+        .map((row) => row.map((value) => escapeCsvValue(value)).join(','))
+        .join('\r\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const objectUrl = URL.createObjectURL(blob);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = t('feeds.export.filename', {
+        timestamp,
+        defaultValue: `feeds-${timestamp}.csv`,
+      });
+
+      const downloadLink = document.createElement('a');
+      downloadLink.href = objectUrl;
+      downloadLink.download = filename;
+      downloadLink.click();
+      URL.revokeObjectURL(objectUrl);
+
+      setListFeedback({
+        type: 'success',
+        message: t('feeds.export.success', {
+          count: allFeeds.length,
+          defaultValue: 'Exportação concluída. {{count}} feeds exportados.',
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to export feeds', error);
+      setListFeedback({
+        type: 'error',
+        message: t(
+          'feeds.export.error',
+          'Não foi possível exportar os feeds. Tente novamente.',
+        ),
+      });
+    } finally {
+      setIsExportingFeeds(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <header className="space-y-2">
@@ -855,19 +942,31 @@ const FeedsPage = () => {
               })}
             </p>
           </div>
-        <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end sm:text-right">
-          {isAdmin ? (
-            <button
-              type="button"
-              className="inline-flex w-full items-center justify-center rounded-md border border-destructive px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-              onClick={handleOpenResetDialog}
-              disabled={isResettingFeeds}
-            >
-              {isResettingFeeds
-                ? t('feeds.reset.pending', 'Resetando...')
-                : t('feeds.reset.action', 'Resetar feeds (admin)')}
+          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end sm:text-right">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+              <button
+                type="button"
+                className="inline-flex w-full items-center justify-center rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                onClick={handleExportFeeds}
+                disabled={isExportingFeeds}
+              >
+                {isExportingFeeds
+                  ? t('feeds.export.pending', 'Exportando...')
+                  : t('feeds.export.action', 'Exportar CSV')}
               </button>
-            ) : null}
+              {isAdmin ? (
+                <button
+                  type="button"
+                  className="inline-flex w-full items-center justify-center rounded-md border border-destructive px-3 py-2 text-xs font-medium text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  onClick={handleOpenResetDialog}
+                  disabled={isResettingFeeds}
+                >
+                  {isResettingFeeds
+                    ? t('feeds.reset.pending', 'Resetando...')
+                    : t('feeds.reset.action', 'Resetar feeds (admin)')}
+                </button>
+              ) : null}
+            </div>
             {isFetching ? (
               <span className="text-xs text-muted-foreground">{t('feeds.list.syncing', 'Sincronizando...')}</span>
             ) : null}

@@ -194,6 +194,21 @@ const resources = {
             invalidUrl: 'Invalid URL format.',
           },
         },
+        export: {
+          action: 'Export CSV',
+          pending: 'Exporting...',
+          success: 'Export complete. {{count}} feeds exported.',
+          error: 'Could not export feeds. Try again.',
+          filename: 'feeds-{{timestamp}}.csv',
+          headers: {
+            id: 'ID',
+            title: 'Title',
+            url: 'URL',
+            lastFetchedAt: 'Last fetched at',
+            createdAt: 'Created at',
+            updatedAt: 'Updated at',
+          },
+        },
         errors: {
           duplicate: 'This feed is already registered.',
           invalidUrl: 'Enter a valid URL starting with http:// or https://.',
@@ -703,6 +718,21 @@ const resources = {
             duplicateInPayload: 'URL duplicada no envio em lote.',
             urlRequired: 'URL obrigatoria.',
             invalidUrl: 'Formato de URL invalido.',
+          },
+        },
+        export: {
+          action: 'Exportar CSV',
+          pending: 'Exportando...',
+          success: 'Exportação concluída. {{count}} feeds exportados.',
+          error: 'Não foi possível exportar os feeds. Tente novamente.',
+          filename: 'feeds-{{timestamp}}.csv',
+          headers: {
+            id: 'ID',
+            title: 'Título',
+            url: 'URL',
+            lastFetchedAt: 'Última coleta',
+            createdAt: 'Criado em',
+            updatedAt: 'Atualizado em',
           },
         },
         errors: {
