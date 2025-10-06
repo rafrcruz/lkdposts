@@ -215,7 +215,10 @@ export const useDeleteFeed = () => {
           },
         };
       });
-      queryClient.invalidateQueries({ queryKey: FEEDS_QUERY_KEY }).catch(() => {
+      queryClient.invalidateQueries({
+        queryKey: FEEDS_QUERY_KEY,
+        refetchType: 'inactive',
+      }).catch(() => {
         // ignore cache errors
       });
     },

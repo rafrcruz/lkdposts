@@ -468,7 +468,6 @@ const FeedsPage = () => {
         if (editingFeed?.id === targetFeed.id) {
           handleCancelEdit();
         }
-        resetPagination();
       },
       onError: (error) => {
         const message = resolveErrorMessage(error);

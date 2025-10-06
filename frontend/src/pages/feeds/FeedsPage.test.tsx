@@ -588,9 +588,7 @@ describe('FeedsPage', () => {
 
     expect(deleteMutate).toHaveBeenCalledWith(1, expect.any(Object));
     expect(screen.getByText('Feed removido com sucesso.')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(feedListQueryResult.refetch).toHaveBeenCalledTimes(1);
-    });
+    expect(feedListQueryResult.refetch).not.toHaveBeenCalled();
   });
 
   it('does not render the reset button for non-admin users', () => {
