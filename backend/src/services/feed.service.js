@@ -57,19 +57,30 @@ const filterOwnerFeed = async (id, ownerKey) => {
   return feed;
 };
 
-const listFeeds = async ({ ownerKey, cursor, limit }) => {
+const normalizeSearch = (search) => {
+  if (typeof search !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = search.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const listFeeds = async ({ ownerKey, cursor, limit, search }) => {
   const safeLimit = Math.min(Math.max(limit ?? 20, 1), FEED_MAX_PAGE_SIZE);
+  const normalizedSearch = normalizeSearch(search);
 
   const feeds = await feedRepository.findPageByOwner({
     ownerKey,
     cursorId: cursor ?? undefined,
     take: safeLimit + 1,
+    search: normalizedSearch,
   });
 
   const hasMore = feeds.length > safeLimit;
   const items = hasMore ? feeds.slice(0, safeLimit) : feeds;
   const nextCursor = hasMore ? (items.at(-1)?.id ?? null) : null;
-  const total = await feedRepository.countByOwner(ownerKey);
+  const total = await feedRepository.countByOwner({ ownerKey, search: normalizedSearch });
 
   return {
     items,

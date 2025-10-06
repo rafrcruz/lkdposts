@@ -286,6 +286,45 @@ describe('FeedsPage', () => {
     expect(screen.getByRole('button', { name: /Proxima/i })).not.toBeDisabled();
   });
 
+  it('allows filtering feeds by partial URL', async () => {
+    const user = userEvent.setup();
+
+    renderPage();
+    mockedUseFeedList.mockClear();
+
+    const searchInput = screen.getByLabelText(/Filtrar por URL/i);
+    await user.clear(searchInput);
+    await user.type(searchInput, '  blog ');
+    await user.click(screen.getByRole('button', { name: /Buscar/i }));
+
+    await waitFor(() => {
+      expect(mockedUseFeedList).toHaveBeenCalledWith({ cursor: null, limit: 10, search: 'blog' });
+    });
+  });
+
+  it('shows a dedicated empty state when the search returns no feeds', async () => {
+    const user = userEvent.setup();
+
+    const emptyResult = createQueryResult({ items: [], meta: { nextCursor: null, total: 0, limit: 10 } });
+    mockedUseFeedList.mockReturnValue(emptyResult);
+
+    renderPage();
+
+    expect(
+      screen.getByText('Nenhum feed cadastrado ainda.', { exact: false }),
+    ).toBeInTheDocument();
+
+    const searchInput = screen.getByLabelText(/Filtrar por URL/i);
+    await user.clear(searchInput);
+    await user.type(searchInput, 'news');
+    await user.click(screen.getByRole('button', { name: /Buscar/i }));
+
+    await screen.findByText('Nenhum feed encontrado para esta busca.');
+    expect(
+      screen.getByText('Ajuste o filtro ou limpe a busca para ver todos os feeds.'),
+    ).toBeInTheDocument();
+  });
+
   it('creates feed individually and shows success feedback', async () => {
     const user = userEvent.setup();
 
@@ -462,7 +501,7 @@ describe('FeedsPage', () => {
         expect(mockedFetchFeeds).toHaveBeenCalledTimes(2);
       });
 
-      expect(mockedFetchFeeds).toHaveBeenNthCalledWith(1, { cursor: undefined, limit: 50 });
+      expect(mockedFetchFeeds).toHaveBeenNthCalledWith(1, { limit: 50 });
       expect(mockedFetchFeeds).toHaveBeenNthCalledWith(2, { cursor: '20', limit: 50 });
 
       const blobArg = createObjectURLSpy.mock.calls[0]?.[0] as Blob | undefined;

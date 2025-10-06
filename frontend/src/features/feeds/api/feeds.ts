@@ -23,9 +23,10 @@ export type FeedListResponse = {
 type FetchFeedsParams = {
   cursor?: string | null;
   limit?: number;
+  search?: string | null;
 };
 
-const buildFeedsPath = ({ cursor, limit }: FetchFeedsParams = {}) => {
+const buildFeedsPath = ({ cursor, limit, search }: FetchFeedsParams = {}) => {
   const searchParams = new URLSearchParams();
 
   if (cursor) {
@@ -34,6 +35,14 @@ const buildFeedsPath = ({ cursor, limit }: FetchFeedsParams = {}) => {
 
   if (typeof limit === 'number') {
     searchParams.set('limit', String(limit));
+  }
+
+  if (typeof search === 'string') {
+    const trimmed = search.trim();
+
+    if (trimmed.length > 0) {
+      searchParams.set('search', trimmed);
+    }
   }
 
   const query = searchParams.toString();

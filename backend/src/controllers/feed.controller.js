@@ -23,12 +23,13 @@ const mapFeed = (feed) => ({
 
 const list = asyncHandler(async (req, res) => {
   const ownerKey = getOwnerKey(req);
-  const { cursor, limit } = req.validated?.query ?? {};
+  const { cursor, limit, search } = req.validated?.query ?? {};
 
   const { items, nextCursor, total, limit: appliedLimit } = await feedService.listFeeds({
     ownerKey,
     cursor,
     limit,
+    search,
   });
 
   res.withCache(30, 'private');

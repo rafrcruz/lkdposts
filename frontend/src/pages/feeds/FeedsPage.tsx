@@ -106,6 +106,9 @@ const FeedsPage = () => {
   const [cursor, setCursor] = useState<string | null>(null);
   const [previousCursors, setPreviousCursors] = useState<(string | null)[]>([]);
 
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState<string | null>(null);
+
   const [singleUrl, setSingleUrl] = useState('');
   const [singleTitle, setSingleTitle] = useState('');
   const [singleFeedback, setSingleFeedback] = useState<FeedbackMessage | null>(null);
@@ -127,7 +130,7 @@ const FeedsPage = () => {
   const [feedPendingDeletion, setFeedPendingDeletion] = useState<Feed | null>(null);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
-  const feedList = useFeedList({ cursor, limit: PAGE_SIZE });
+  const feedList = useFeedList({ cursor, limit: PAGE_SIZE, search: searchTerm });
   const { refetch: refetchFeedList } = feedList;
   const createFeed = useCreateFeed();
   const bulkCreate = useBulkCreateFeeds();
@@ -146,6 +149,8 @@ const FeedsPage = () => {
   const isLoading = feedList.isLoading && !feedList.isFetched;
   const isError = feedList.isError;
   const isFetching = feedList.isFetching;
+  const hasSearchApplied = searchTerm !== null;
+  const isSearchLoading = isFetching && cursor === null;
 
   const isCreating = createFeed.isPending;
   const isBulkCreating = bulkCreate.isPending;
@@ -157,6 +162,32 @@ const FeedsPage = () => {
     setCursor(null);
     setPreviousCursors([]);
     setShouldRefreshFeeds(true);
+  };
+
+  const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmed = searchInput.trim();
+    const nextSearch = trimmed.length > 0 ? trimmed : null;
+    const isSameSearch = nextSearch === searchTerm;
+
+    setListFeedback(null);
+    setCursor(null);
+    setPreviousCursors([]);
+
+    if (isSameSearch) {
+      setShouldRefreshFeeds(true);
+    }
+
+    setSearchTerm(nextSearch);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput('');
+    setListFeedback(null);
+    setCursor(null);
+    setPreviousCursors([]);
+    setSearchTerm(null);
   };
 
   useEffect(() => {
@@ -595,6 +626,19 @@ const FeedsPage = () => {
     }
 
     if (feeds.length === 0) {
+      if (hasSearchApplied) {
+        return (
+          <EmptyState
+            title={t('feeds.list.search.noResults', 'Nenhum feed encontrado para esta busca.')}
+            description={t(
+              'feeds.list.search.noResultsDescription',
+              'Ajuste o filtro ou limpe a busca para ver todos os feeds.',
+            )}
+            className="m-6"
+          />
+        );
+      }
+
       return (
         <EmptyState
           title={t('feeds.list.empty.title', 'Nenhum feed cadastrado ainda.')}
@@ -942,7 +986,46 @@ const FeedsPage = () => {
               })}
             </p>
           </div>
-          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end sm:text-right">
+          <div className="flex w-full flex-col items-start gap-4 sm:w-auto sm:items-end sm:text-right">
+            <form className="flex w-full flex-col gap-2 sm:w-72" onSubmit={handleSearchSubmit}>
+              <label
+                htmlFor="feed-search-input"
+                className="text-xs font-medium text-muted-foreground sm:self-end"
+              >
+                {t('feeds.list.search.label', 'Filtrar por URL')}
+              </label>
+              <div className="flex w-full flex-col gap-2 sm:flex-row">
+                <input
+                  id="feed-search-input"
+                  type="search"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  placeholder={t('feeds.list.search.placeholder', 'Busque pela URL do feed')}
+                />
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                  <button
+                    type="submit"
+                    className="inline-flex w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isSearchLoading}
+                  >
+                    {isSearchLoading
+                      ? t('feeds.list.search.searching', 'Buscando...')
+                      : t('feeds.list.search.submit', 'Buscar')}
+                  </button>
+                  {hasSearchApplied ? (
+                    <button
+                      type="button"
+                      className="inline-flex w-full items-center justify-center rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={handleClearSearch}
+                      disabled={isSearchLoading}
+                    >
+                      {t('feeds.list.search.clear', 'Limpar')}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </form>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
               <button
                 type="button"
