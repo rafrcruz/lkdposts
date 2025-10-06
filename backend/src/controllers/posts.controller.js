@@ -95,6 +95,7 @@ const refresh = asyncHandler(async (req, res) => {
 const generateForArticle = asyncHandler(async (req, res) => {
   const ownerKey = getOwnerKey(req);
   const articleIdParam = req.params?.articleId;
+  const customPrompt = typeof req.body?.customPrompt === 'string' ? req.body.customPrompt : undefined;
 
   const articleId = Number.parseInt(articleIdParam, 10);
   if (!Number.isInteger(articleId) || articleId <= 0) {
@@ -106,7 +107,7 @@ const generateForArticle = asyncHandler(async (req, res) => {
   }
 
   try {
-    const result = await postGenerationService.generatePostForArticleId({ ownerKey, articleId });
+    const result = await postGenerationService.generatePostForArticleId({ ownerKey, articleId, customPrompt });
     const includeDiagnostics = !config.isProduction || req.user?.role === ROLES.ADMIN;
     const item = mapPostListItem(result.article, { includeDiagnostics });
 

@@ -53,7 +53,11 @@ export const useCleanupPosts = () => {
 };
 
 export const useGeneratePost = () => {
-  return useMutation<GeneratePostResponse, HttpError, { articleId: number }>({
-    mutationFn: ({ articleId }) => generatePost({ articleId }),
+  return useMutation<
+    GeneratePostResponse,
+    HttpError,
+    { articleId: number; customPrompt?: string }
+  >({
+    mutationFn: ({ articleId, customPrompt }) => generatePost({ articleId, customPrompt }),
   });
 };

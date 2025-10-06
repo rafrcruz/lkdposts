@@ -86,6 +86,16 @@ router.post('/posts/refresh', postsController.refresh);
  *         schema:
  *           type: integer
  *           minimum: 1
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               customPrompt:
+ *                 type: string
+ *                 description: Instrução adicional opcional concatenada antes da notícia ao gerar o post.
  *     responses:
  *       '200':
  *         description: Post gerado com sucesso

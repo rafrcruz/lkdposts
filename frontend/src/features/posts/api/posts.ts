@@ -77,10 +77,26 @@ const generatePostResponseSchema = z.object({
 
 export type GeneratePostResponse = z.infer<typeof generatePostResponseSchema>;
 
-export const generatePost = ({ articleId }: { articleId: number }): Promise<GeneratePostResponse> => {
-  return postJson<GeneratePostResponse, Record<string, never>>(
+type GeneratePostRequestPayload = {
+  customPrompt?: string;
+};
+
+export const generatePost = ({
+  articleId,
+  customPrompt,
+}: {
+  articleId: number;
+  customPrompt?: string;
+}): Promise<GeneratePostResponse> => {
+  const payload: GeneratePostRequestPayload = {};
+
+  if (typeof customPrompt === 'string' && customPrompt.trim().length > 0) {
+    payload.customPrompt = customPrompt;
+  }
+
+  return postJson<GeneratePostResponse, GeneratePostRequestPayload>(
     `/api/v1/posts/${articleId}/generate`,
-    {},
+    payload,
     generatePostResponseSchema,
   );
 };

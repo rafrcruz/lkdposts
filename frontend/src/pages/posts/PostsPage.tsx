@@ -956,6 +956,7 @@ const PostsPage = () => {
   const [previewCopyFeedback, setPreviewCopyFeedback] = useState<CopyFeedback>(null);
   const [postCopyFeedbacks, setPostCopyFeedbacks] = useState<Record<number, CopyFeedback>>({});
   const [postGenerationStates, setPostGenerationStates] = useState<Record<number, PostGenerationUiState>>({});
+  const [customPrompts, setCustomPrompts] = useState<Record<number, string>>({});
   const [lastPreviewRequest, setLastPreviewRequest] = useState<number | null>(null);
   const [openAiPreviewRaw, setOpenAiPreviewRaw] = useState<string | null>(null);
   const [openAiPreviewError, setOpenAiPreviewError] = useState<string | null>(null);
@@ -1249,6 +1250,25 @@ const PostsPage = () => {
     [schedulePostCopyFeedbackClear, t],
   );
 
+  const handleCustomPromptChange = useCallback((articleId: number, value: string) => {
+    setCustomPrompts((previous) => {
+      if (previous[articleId] === value) {
+        return previous;
+      }
+
+      if (!value) {
+        if (!(articleId in previous)) {
+          return previous;
+        }
+
+        const { [articleId]: _removed, ...rest } = previous;
+        return rest;
+      }
+
+      return { ...previous, [articleId]: value };
+    });
+  }, []);
+
   const handleGeneratePost = useCallback(
     async (articleId: number) => {
       setPostGenerationStates((previous) => ({
@@ -1257,7 +1277,14 @@ const PostsPage = () => {
       }));
 
       try {
-        const result = await generatePostMutation.mutateAsync({ articleId });
+        const customPromptValue = customPrompts[articleId];
+        const trimmedCustomPrompt =
+          typeof customPromptValue === 'string' ? customPromptValue.trim() : '';
+        const result = await generatePostMutation.mutateAsync(
+          trimmedCustomPrompt
+            ? { articleId, customPrompt: trimmedCustomPrompt }
+            : { articleId },
+        );
 
         queryClient.setQueriesData<PostListResponse | undefined>(
           { queryKey: POSTS_QUERY_KEY },
@@ -1302,7 +1329,7 @@ const PostsPage = () => {
         }));
       }
     },
-    [generatePostMutation, queryClient, t],
+    [customPrompts, generatePostMutation, queryClient, t],
   );
 
   const handleCopyPreviewContent = useCallback(
@@ -2260,6 +2287,8 @@ const PostsPage = () => {
         copyFeedbacks={postCopyFeedbacks}
         generationStates={postGenerationStates}
         onGeneratePost={handleGeneratePost}
+        customPrompts={customPrompts}
+        onCustomPromptChange={handleCustomPromptChange}
         posts={posts}
         selectedFeedId={selectedFeedId}
         t={t}
@@ -2407,6 +2436,8 @@ type PostListContentProps = {
   copyFeedbacks: Record<number, CopyFeedback>;
   generationStates: Record<number, PostGenerationUiState | undefined>;
   onGeneratePost: (articleId: number) => void;
+  customPrompts: Record<number, string>;
+  onCustomPromptChange: (articleId: number, value: string) => void;
   posts: PostListItem[];
   selectedFeedId: number | null;
   t: TranslateFunction;
@@ -2597,6 +2628,8 @@ type PostListItemCardProps = {
   onCopyPostContent: (postId: number, value: string | null | undefined) => void;
   copyFeedback: CopyFeedback | null;
   onGeneratePost?: (articleId: number) => void;
+  customPrompt: string;
+  onCustomPromptChange?: (articleId: number, value: string) => void;
   generationState?: PostGenerationUiState | null;
 };
 
@@ -2614,6 +2647,8 @@ const PostListItemCard = ({
   onCopyPostContent,
   copyFeedback,
   onGeneratePost,
+  customPrompt,
+  onCustomPromptChange,
   generationState,
 }: PostListItemCardProps) => {
   const feedLabel = resolveArticleFeedLabel(item.feed, t);
@@ -2623,6 +2658,7 @@ const PostListItemCard = ({
   const showGenerateAction = Boolean(onGeneratePost) && !item.post?.content;
   const showGenerationError = generationStatus === 'error' && generationMessage;
   const showGenerationSuccess = generationStatus === 'success' && generationMessage && !item.post?.content;
+  const customPromptFieldId = `custom-prompt-${item.id}`;
 
   return (
     <article key={item.id} className="card space-y-4 px-6 py-6">
@@ -2703,6 +2739,27 @@ const PostListItemCard = ({
             ) : (
               <div className="space-y-3">
                 <p className="text-muted-foreground">{t('posts.list.postNotGenerated', 'Post not generated.')}</p>
+                {showGenerateAction && onCustomPromptChange ? (
+                  <div className="space-y-2">
+                    <label
+                      htmlFor={customPromptFieldId}
+                      className="text-xs font-medium text-muted-foreground"
+                    >
+                      {t('posts.list.customPrompt.label', 'Custom prompt (optional)')}
+                    </label>
+                    <textarea
+                      id={customPromptFieldId}
+                      value={customPrompt}
+                      onChange={(event) => onCustomPromptChange?.(item.id, event.target.value)}
+                      placeholder={t(
+                        'posts.list.customPrompt.placeholder',
+                        'Add a custom instruction for this news.',
+                      )}
+                      className="min-h-[4.5rem] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      rows={3}
+                    />
+                  </div>
+                ) : null}
                 {showGenerateAction ? (
                   <button
                     type="button"
@@ -2843,6 +2900,8 @@ const PostListContent = ({
   copyFeedbacks,
   generationStates,
   onGeneratePost,
+  customPrompts,
+  onCustomPromptChange,
   posts,
   selectedFeedId,
   t,
@@ -2893,6 +2952,8 @@ const PostListContent = ({
               onCopyPostContent={onCopyPostContent}
               copyFeedback={copyFeedbacks[item.id] ?? null}
               onGeneratePost={onGeneratePost}
+              customPrompt={customPrompts[item.id] ?? ''}
+              onCustomPromptChange={onCustomPromptChange}
               generationState={generationStates[item.id] ?? null}
             />
           );

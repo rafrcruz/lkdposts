@@ -1,3 +1,5 @@
+const { createHash } = require('node:crypto');
+
 jest.mock('../src/services/auth.service', () => {
   const actual = jest.requireActual('../src/services/auth.service');
   return {
@@ -218,6 +220,81 @@ describe('Posts API', () => {
           content: 'Parágrafo um.\n\nParágrafo dois.',
         }),
       );
+    });
+
+    it('applies a custom prompt when manually generating a post', async () => {
+      await prisma.feed.create({
+        data: {
+          ownerKey: '1',
+          url: 'https://example.com/custom-manual.xml',
+          lastFetchedAt: null,
+        },
+      });
+
+      const publishedAt = new Date(Date.now() - 2 * 60 * 1000);
+      const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Feed</title><item><title>Custom Manual Story</title><description>Snippet manual custom</description><pubDate>${publishedAt.toUTCString()}</pubDate><guid>custom-manual-guid</guid></item></channel></rss>`;
+
+      globalThis.fetch = createFetchMock(rss);
+
+      const customPrompt = '  Direcione o post para executivos de tecnologia.\nUse bullet points.  ';
+      let capturedPayload = null;
+
+      __mockClient.responses.create.mockImplementationOnce(async (payload) => {
+        capturedPayload = payload;
+        return {
+          id: 'resp-custom-manual',
+          model: 'gpt-5-nano',
+          output: [
+            {
+              content: [{ type: 'output_text', text: 'Post gerado com instruções personalizadas.' }],
+            },
+          ],
+          usage: { input_tokens: 180, output_tokens: 90 },
+        };
+      });
+
+      await withAuth(TOKENS.user1, request(app).post('/api/v1/posts/refresh'))
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      const articleRecord = await prisma.article.findFirst({ where: { feed: { ownerKey: '1' } } });
+      expect(articleRecord).not.toBeNull();
+      if (!articleRecord) {
+        throw new Error('Article was not created during refresh');
+      }
+
+      await withAuth(
+        TOKENS.user1,
+        request(app)
+          .post(`/api/v1/posts/${articleRecord.id}/generate`)
+          .send({ customPrompt }),
+      )
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(capturedPayload).not.toBeNull();
+      const systemContent = capturedPayload?.input?.[0]?.content?.[0]?.text ?? '';
+      expect(systemContent).toContain('Direcione o post para executivos de tecnologia.');
+      expect(systemContent).toContain('Use bullet points.');
+      expect(systemContent.endsWith('Instrução final: gerar um post para LinkedIn com base na notícia e no contexto acima.')).toBe(
+        true,
+      );
+      const systemSegments = systemContent.split('\n\n');
+      expect(systemSegments[0]).toBe('Direcione o post para executivos de tecnologia.\nUse bullet points.');
+      expect(systemSegments[1]).toBe('Instrução final: gerar um post para LinkedIn com base na notícia e no contexto acima.');
+
+      const userContent = capturedPayload?.input?.[1]?.content?.[0]?.text ?? '';
+      expect(userContent).toContain('Notícia ID interno');
+
+      const postRecord = await prisma.post.findUnique({ where: { articleId: articleRecord.id } });
+      expect(postRecord).not.toBeNull();
+      if (!postRecord) {
+        throw new Error('Post was not updated after manual generation');
+      }
+
+      const expectedSystemPrompt = 'Direcione o post para executivos de tecnologia.\nUse bullet points.\n\nInstrução final: gerar um post para LinkedIn com base na notícia e no contexto acima.';
+      const expectedHash = createHash('sha256').update(expectedSystemPrompt).digest('hex');
+      expect(postRecord.promptBaseHash).toBe(expectedHash);
     });
 
     it('reuses a single refresh when the same user triggers concurrent requests', async () => {
