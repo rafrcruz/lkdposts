@@ -2655,9 +2655,9 @@ const PostListItemCard = ({
   const generationStatus = generationState?.status ?? 'idle';
   const generationMessage = generationState?.message ?? null;
   const isGenerating = generationStatus === 'loading';
-  const showGenerateAction = Boolean(onGeneratePost) && !item.post?.content;
+  const showGenerateAction = Boolean(onGeneratePost);
   const showGenerationError = generationStatus === 'error' && generationMessage;
-  const showGenerationSuccess = generationStatus === 'success' && generationMessage && !item.post?.content;
+  const showGenerationSuccess = generationStatus === 'success' && generationMessage;
   const customPromptFieldId = `custom-prompt-${item.id}`;
 
   return (
@@ -2734,61 +2734,54 @@ const PostListItemCard = ({
         </div>
         {sectionState.post ? (
           <div id={postContentId} className="rounded-md border border-border bg-background px-4 py-4 text-sm text-foreground">
-            {item.post?.content ? (
-              <p className="whitespace-pre-wrap leading-relaxed">{item.post.content}</p>
-            ) : (
-              <div className="space-y-3">
+            <div className="space-y-3">
+              {item.post?.content ? (
+                <p className="whitespace-pre-wrap leading-relaxed">{item.post.content}</p>
+              ) : (
                 <p className="text-muted-foreground">{t('posts.list.postNotGenerated', 'Post not generated.')}</p>
-                {showGenerateAction && onCustomPromptChange ? (
-                  <div className="space-y-2">
-                    <label
-                      htmlFor={customPromptFieldId}
-                      className="text-xs font-medium text-muted-foreground"
-                    >
-                      {t('posts.list.customPrompt.label', 'Custom prompt (optional)')}
-                    </label>
-                    <textarea
-                      id={customPromptFieldId}
-                      value={customPrompt}
-                      onChange={(event) => onCustomPromptChange?.(item.id, event.target.value)}
-                      placeholder={t(
-                        'posts.list.customPrompt.placeholder',
-                        'Add a custom instruction for this news.',
-                      )}
-                      className="min-h-[4.5rem] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition focus:outline-none focus:ring-2 focus:ring-primary/40"
-                      rows={3}
-                    />
-                  </div>
-                ) : null}
-                {showGenerateAction ? (
-                  <button
-                    type="button"
-                    className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={() => onGeneratePost?.(item.id)}
-                    disabled={isGenerating}
-                    aria-busy={isGenerating}
-                  >
-                    {isGenerating ? (
-                      <span className="flex items-center gap-2">
-                        <span
-                          aria-hidden="true"
-                          className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
-                        />
-                        {t('posts.list.generatingPost', 'Generating post...')}
-                      </span>
-                    ) : (
-                      t('posts.list.generatePost', 'Generate post')
+              )}
+              {showGenerateAction && onCustomPromptChange ? (
+                <div className="space-y-2">
+                  <label htmlFor={customPromptFieldId} className="text-xs font-medium text-muted-foreground">
+                    {t('posts.list.customPrompt.label', 'Custom prompt (optional)')}
+                  </label>
+                  <textarea
+                    id={customPromptFieldId}
+                    value={customPrompt}
+                    onChange={(event) => onCustomPromptChange?.(item.id, event.target.value)}
+                    placeholder={t(
+                      'posts.list.customPrompt.placeholder',
+                      'Add a custom instruction for this news.',
                     )}
-                  </button>
-                ) : null}
-                {showGenerationError ? (
-                  <p className="text-xs text-danger">{generationMessage}</p>
-                ) : null}
-                {showGenerationSuccess ? (
-                  <p className="text-xs text-primary">{generationMessage}</p>
-                ) : null}
-              </div>
-            )}
+                    className="min-h-[4.5rem] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    rows={3}
+                  />
+                </div>
+              ) : null}
+              {showGenerateAction ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => onGeneratePost?.(item.id)}
+                  disabled={isGenerating}
+                  aria-busy={isGenerating}
+                >
+                  {isGenerating ? (
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
+                      />
+                      {t('posts.list.generatingPost', 'Generating post...')}
+                    </span>
+                  ) : (
+                    t('posts.list.generatePost', 'Generate post')
+                  )}
+                </button>
+              ) : null}
+              {showGenerationError ? <p className="text-xs text-danger">{generationMessage}</p> : null}
+              {showGenerationSuccess ? <p className="text-xs text-primary">{generationMessage}</p> : null}
+            </div>
           </div>
         ) : null}
         {copyFeedback ? (
