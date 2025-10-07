@@ -667,6 +667,78 @@ describe('PostsPage', () => {
     });
   });
 
+  it('keeps the custom prompt controls available after a post is generated', async () => {
+    const user = userEvent.setup();
+
+    const generatedPost = buildPost({
+      id: 88,
+      title: 'Post existente',
+      post: {
+        content: 'Conteudo gerado anteriormente',
+        status: 'SUCCESS',
+        generatedAt: '2024-01-01T12:00:00.000Z',
+        createdAt: '2024-01-01T12:00:00.000Z',
+        attemptCount: 1,
+        promptBaseHash: null,
+        tokensInput: null,
+        tokensOutput: null,
+        modelUsed: null,
+      },
+    });
+
+    generateMutateAsync.mockResolvedValueOnce({
+      item: buildPost({
+        id: 88,
+        title: 'Post existente',
+        post: {
+          content: 'Conteudo atualizado',
+          status: 'SUCCESS',
+          generatedAt: '2024-01-01T12:05:00.000Z',
+          createdAt: '2024-01-01T12:05:00.000Z',
+        },
+      }),
+      cacheInfo: null,
+      reused: false,
+    });
+
+    mockedUsePostList.mockImplementation((params: PostListParams) => {
+      if (params.enabled) {
+        return createPostQueryResult({
+          data: {
+            items: [generatedPost],
+            meta: { nextCursor: null, limit: 10 },
+          },
+          isSuccess: true,
+          isFetched: true,
+          status: 'success',
+        });
+      }
+
+      return createPostQueryResult();
+    });
+
+    renderPage();
+
+    const promptField = await screen.findByPlaceholderText(/Add a custom instruction for this news/i);
+    expect(promptField).toBeInTheDocument();
+
+    await user.type(promptField, 'Nova orientacao');
+
+    const generateLabel = i18n.t('posts.list.generatePost');
+    const generateButton = await screen.findByRole('button', { name: new RegExp(generateLabel, 'i') });
+
+    await user.click(generateButton);
+
+    await waitFor(() => {
+      expect(generateMutateAsync).toHaveBeenCalledWith({
+        articleId: 88,
+        customPrompt: 'Nova orientacao',
+      });
+    });
+
+    expect(await screen.findByText(i18n.t('posts.list.generateSuccess'))).toBeInTheDocument();
+  });
+
   it('renders the refresh summary and allows dismissing it', async () => {
     const user = userEvent.setup();
 
