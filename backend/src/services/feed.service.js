@@ -139,14 +139,6 @@ const createFeedsInBulk = async ({ ownerKey, urls }) => {
     throw new ApiError({ statusCode: 400, code: 'INVALID_PAYLOAD', message: 'urls must be an array of strings' });
   }
 
-  if (urls.length > FEED_MAX_BULK_URLS) {
-    throw new ApiError({
-      statusCode: 413,
-      code: 'PAYLOAD_TOO_LARGE',
-      message: `A maximum of ${FEED_MAX_BULK_URLS} feeds can be created per request`,
-    });
-  }
-
   const seen = new Set();
   const candidates = [];
 
@@ -180,6 +172,14 @@ const createFeedsInBulk = async ({ ownerKey, urls }) => {
   }
 
   const urlsToCreate = candidates.filter((url) => !existingByUrl.has(url));
+
+  if (urlsToCreate.length > FEED_MAX_BULK_URLS) {
+    throw new ApiError({
+      statusCode: 413,
+      code: 'PAYLOAD_TOO_LARGE',
+      message: `A maximum of ${FEED_MAX_BULK_URLS} feeds can be created per request`,
+    });
+  }
 
   for (const url of urlsToCreate) {
     const created = await feedRepository.create({

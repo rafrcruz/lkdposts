@@ -219,6 +219,34 @@ describe('Feeds API', () => {
       );
     });
 
+    it('ignores already existing feeds while respecting the creation limit', async () => {
+      const limit = feedService.constants.MAX_BULK_FEED_URLS;
+      const existingUrls = [
+        'https://bulk-existing.example.com/rss-a',
+        'https://bulk-existing.example.com/rss-b',
+      ];
+
+      await Promise.all(
+        existingUrls.map((url) => feedService.createFeed({ ownerKey: '1', url }))
+      );
+
+      const newUrls = Array.from({ length: limit }, (_, index) => `https://bulk-existing.example.com/new-${index}`);
+      const payload = [...existingUrls, ...newUrls];
+
+      const response = await withAuth(TOKENS.user1, request(app).post('/api/v1/feeds/bulk'))
+        .send({ urls: payload })
+        .expect('Content-Type', /json/)
+        .expect(200);
+
+      expect(response.body.data.created).toHaveLength(limit);
+      expect(response.body.data.created.map((feed) => feed.url)).toEqual(newUrls);
+      expect(response.body.data.duplicates).toEqual(
+        expect.arrayContaining(
+          existingUrls.map((url) => expect.objectContaining({ url, reason: 'ALREADY_EXISTS' }))
+        )
+      );
+    });
+
     it('rejects payloads that exceed the bulk creation limit', async () => {
       const urls = Array.from({ length: feedService.constants.MAX_BULK_FEED_URLS + 1 }, (_, index) =>
         `https://bulk-limit.example.com/${index}`
