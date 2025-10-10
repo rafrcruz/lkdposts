@@ -2902,6 +2902,40 @@ const PostListContent = ({
   feedListIsSuccess,
   formattedTimeWindowDays,
 }: PostListContentProps): JSX.Element => {
+    const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+    const previousPageRef = useRef<number>(currentPage);
+    const shouldScrollToTopRef = useRef(false);
+
+    useEffect(() => {
+      if (previousPageRef.current !== currentPage) {
+        previousPageRef.current = currentPage;
+        shouldScrollToTopRef.current = true;
+      }
+    }, [currentPage]);
+
+    useEffect(() => {
+      if (!shouldScrollToTopRef.current) {
+        return;
+      }
+
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      if (isLoading || posts.length === 0) {
+        return;
+      }
+
+      const anchor = scrollAnchorRef.current;
+
+      if (!anchor) {
+        return;
+      }
+
+      shouldScrollToTopRef.current = false;
+      anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, [isLoading, posts]);
+
     const fallback = renderListFallbackContent({
       hasExecutedSequence,
       feedListIsSuccess,
@@ -2924,6 +2958,7 @@ const PostListContent = ({
 
     return (
       <div className="space-y-4">
+        <div ref={scrollAnchorRef} aria-hidden="true" />
         {posts.map((item) => {
           const sectionState = expandedSections[item.id] ?? createDefaultSectionState();
           const postContentId = `post-content-${item.id}`;
