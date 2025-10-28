@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pingflux</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-default-target="__DEFAULT_TARGET__" data-max-hops="__MAX_HOPS__">
+    <header class="page-header">
+      <h1>Pingflux</h1>
+      <p class="subtitle">Network diagnostics without leaving the browser.</p>
+    </header>
+
+    <main>
+      <section class="controls">
+        <div class="field">
+          <label for="target-input">Target</label>
+          <input id="target-input" type="text" placeholder="Destination host or IP" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="max-hops-range">Max hops: <span id="max-hops-value">__MAX_HOPS__</span></label>
+          <input id="max-hops-range" type="range" min="1" max="__MAX_HOPS__" value="__MAX_HOPS__" />
+        </div>
+        <div class="actions">
+          <button id="traceroute-button" type="button">Run traceroute</button>
+        </div>
+      </section>
+
+      <section class="traceroute-result" data-traceroute-section>
+        <div id="traceroute-message" class="message">Ready.</div>
+        <div class="table-wrapper" hidden id="traceroute-table-wrapper">
+          <table id="traceroute-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>IP</th>
+                <th>RTT1 (ms)</th>
+                <th>RTT2 (ms)</th>
+                <th>RTT3 (ms)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
